@@ -1,9 +1,8 @@
-"""Per-request OpenAI token & cost accounting.
+"""Per-request token and cost accounting.
 
-A `CostTracker` is bound to a ContextVar so any agent code that calls OpenAI
-through the helpers in this module automatically contributes to the active
-request's running total. The router reads the total at the end of the request
-and persists / surfaces it.
+A `CostTracker` is bound to a ContextVar so any agent code that records chat or
+embedding usage contributes to the active request's running total. The router
+reads the total at the end of the request and persists / surfaces it.
 """
 
 from __future__ import annotations
@@ -65,8 +64,8 @@ def current_tracker() -> CostTracker | None:
     return _tracker_ctx.get()
 
 
-def record_chat(model: str, response) -> None:  # noqa: ANN001 - openai response
-    """Pull usage from an OpenAI chat completion response and accumulate it."""
+def record_chat(model: str, response) -> None:  # noqa: ANN001 - SDK response
+    """Pull usage from a chat completion response and accumulate it."""
     tracker = current_tracker()
     if tracker is None:
         return

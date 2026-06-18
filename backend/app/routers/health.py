@@ -24,14 +24,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-async def _check_openai() -> tuple[bool, str]:
+async def _check_llm() -> tuple[bool, str]:
     settings = get_settings()
-    if not settings.openai_api_key:
-        return False, "OPENAI_API_KEY not set"
+    if not settings.resolved_llm_key:
+        return False, "No LLM API key set (LLM_API_KEY / OPENAI_API_KEY)"
     try:
-        from openai import AsyncOpenAI
+        from app.services.llm import make_llm_client
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=5.0)
+        client = make_llm_client(timeout=5.0)
         await client.models.list()
         return True, "reachable"
     except Exception as e:  # noqa: BLE001
@@ -71,11 +71,11 @@ async def _check_newsapi() -> tuple[bool, str]:
 
 @router.get("/health/ready")
 async def ready(response: Response) -> dict:
-    openai_ok, news_ok, pc_ok = await asyncio.gather(
-        _check_openai(), _check_newsapi(), _check_pinecone()
+    llm_ok, news_ok, pc_ok = await asyncio.gather(
+        _check_llm(), _check_newsapi(), _check_pinecone()
     )
     checks = {
-        "openai": {"ok": openai_ok[0], "detail": openai_ok[1]},
+        "llm": {"ok": llm_ok[0], "detail": llm_ok[1]},
         "newsapi": {"ok": news_ok[0], "detail": news_ok[1]},
         "pinecone": {"ok": pc_ok[0], "detail": pc_ok[1]},
     }

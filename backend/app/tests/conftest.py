@@ -1,6 +1,6 @@
 """Shared test fixtures.
 
-Every test runs against an isolated in-memory SQLite DB; the FinSight API key
+Every test runs against an isolated in-memory SQLite DB; the Verdict API key
 defaults to unset (auth disabled) unless a test opts in via monkeypatch.
 """
 
@@ -17,11 +17,15 @@ def _isolated_env(monkeypatch, tmp_path):
     """Reset settings + point DB at a temp file per-test."""
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
-    monkeypatch.setenv("FINSIGHT_API_KEY", "")
+    monkeypatch.setenv("VERDICT_API_KEY", "")
     # Isolate the suite from a developer's real key. Local runs put the OpenAI
     # key in backend/.env, which pytest (run from backend/) would otherwise load
     # and then make live API calls (e.g. the readiness probe's models.list()).
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    # Also isolate from a dev's LLM provider config in backend/.env (e.g. a
+    # Gemini base URL), so tests run deterministically against OpenAI defaults.
+    monkeypatch.setenv("LLM_BASE_URL", "")
+    monkeypatch.setenv("LLM_API_KEY", "")
     monkeypatch.setenv("RATE_LIMIT_RESEARCH", "1000/minute")
     monkeypatch.setenv("RATE_LIMIT_FILINGS", "1000/minute")
     get_settings.cache_clear()

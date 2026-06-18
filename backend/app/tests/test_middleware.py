@@ -21,7 +21,7 @@ def test_auth_disabled_by_default(client):
 
 
 def test_auth_required_when_key_set(monkeypatch):
-    monkeypatch.setenv("FINSIGHT_API_KEY", "super-secret")
+    monkeypatch.setenv("VERDICT_API_KEY", "super-secret")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -45,6 +45,23 @@ def test_auth_required_when_key_set(monkeypatch):
             "/research/history/AAPL", headers={"X-API-Key": "super-secret"}
         )
         assert ok.status_code == 200
+
+
+def test_auth_rejection_preserves_request_id(monkeypatch):
+    monkeypatch.setenv("VERDICT_API_KEY", "super-secret")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as c:
+        res = c.get("/research/history/AAPL", headers={"X-Request-ID": "trace-auth"})
+        assert res.status_code == 401
+        assert res.headers.get("x-request-id") == "trace-auth"
+        assert res.json()["request_id"] == "trace-auth"
 
 
 def test_error_envelope_includes_request_id(client):

@@ -27,6 +27,7 @@ from app.config import get_settings
 from app.observability.cost import record_chat
 from app.observability.logging import get_logger
 from app.schemas.research import ResearchReport
+from app.services.llm import make_llm_client
 
 log = get_logger(__name__)
 
@@ -76,7 +77,7 @@ Return ONLY a JSON object with this exact shape (no markdown fences):
 
 @lru_cache(maxsize=1)
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key, timeout=60.0)
+    return make_llm_client()
 
 
 def _state_payload(state: ResearchState) -> dict:
@@ -112,7 +113,7 @@ async def synthesizer(state: ResearchState) -> dict:
                 recommendation="Pending",
                 justification=(
                     "No agent returned usable data. Configure API keys "
-                    "(OPENAI / PINECONE / NEWS) and ingest a filing first."
+                    "(LLM / OpenAI embeddings / Pinecone / NewsAPI) and ingest a filing first."
                 ),
                 company_overview="",
                 financial_health="",
@@ -131,14 +132,14 @@ async def synthesizer(state: ResearchState) -> dict:
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:
-        log.exception("synthesizer_openai_failed", extra={"error_type": type(e).__name__})
+        log.exception("synthesizer_llm_failed", extra={"error_type": type(e).__name__})
         return {
             "report": ResearchReport(
                 ticker=ticker,
                 recommendation="Pending",
                 justification=(
                     f"Synthesizer LLM call failed ({type(e).__name__}). "
-                    "Check OPENAI_API_KEY and rate limits."
+                    "Check LLM_API_KEY / OPENAI_API_KEY and provider rate limits."
                 ),
                 company_overview="",
                 financial_health="",

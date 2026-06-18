@@ -1,20 +1,20 @@
-# FinSight
+# Verdict
 
 [![Python](https://img.shields.io/badge/python-3.11-blue)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2-7E57C2)](https://langchain-ai.github.io/langgraph/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/tests-52%20passing-brightgreen)](backend/app/tests)
+[![Tests](https://img.shields.io/badge/tests-pytest%20%2B%20tsc-brightgreen)](backend/app/tests)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-FinSight is a full-stack, multi-agent equity research app. Enter a ticker and
+Verdict is a full-stack, multi-agent equity research app. Enter a ticker and
 it builds a structured research report from SEC filing retrieval, recent news
 sentiment, and live financial metrics.
 
 > This project is for software demonstration and research workflow exploration.
 > It is not financial advice.
 
-![FinSight dashboard](docs/assets/finsight-dashboard.jpg)
+![Verdict dashboard](docs/assets/verdict-dashboard.jpg)
 
 ## What It Does
 
@@ -28,7 +28,7 @@ sentiment, and live financial metrics.
 - Synthesizes a final `Buy`, `Hold`, `Sell`, or `Pending` report with concrete
   justification.
 - Persists completed research runs to SQLite for history and comparison.
-- Tracks OpenAI token usage and estimated cost per research request.
+- Tracks LLM and embedding token usage with estimated cost per research request.
 
 ## Architecture
 
@@ -51,7 +51,7 @@ LangGraph StateGraph
     |--------------------|----------------------|
                          v
                    Synthesizer
-                   OpenAI JSON report
+                   LLM JSON report
                          |
                          v
                    SQLite research_runs
@@ -68,7 +68,7 @@ typed `error` payloads instead of crashing the whole graph.
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | API | FastAPI, Uvicorn, Gunicorn, SlowAPI, SSE Starlette |
 | Agent orchestration | LangGraph `StateGraph` |
-| LLM and embeddings | OpenAI chat completions and embeddings |
+| LLM and embeddings | OpenAI-compatible chat completions, OpenAI embeddings |
 | Retrieval | Pinecone serverless index, namespace per ticker |
 | Market/news data | SEC EDGAR, NewsAPI, VADER, yfinance |
 | Persistence | SQLAlchemy async ORM, SQLite by default |
@@ -78,15 +78,15 @@ typed `error` payloads instead of crashing the whole graph.
 ## Repository Layout
 
 ```text
-finsight/
+verdict/
 ├── backend/
 │   ├── app/
 │   │   ├── agents/              # LangGraph state and agent nodes
-│   │   ├── observability/       # JSON logs and OpenAI cost tracking
+│   │   ├── observability/       # JSON logs and token/cost tracking
 │   │   ├── persistence/         # async SQLAlchemy history store
 │   │   ├── routers/             # health, filings, research endpoints
 │   │   ├── schemas/             # Pydantic API models
-│   │   ├── services/            # SEC, Pinecone, OpenAI, NewsAPI, yfinance
+│   │   ├── services/            # SEC, Pinecone, LLM, embeddings, NewsAPI, yfinance
 │   │   └── tests/               # mocked backend test suite
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
@@ -100,7 +100,7 @@ finsight/
 │   ├── Dockerfile.dev
 │   └── nginx.conf
 ├── docs/assets/
-│   └── finsight-dashboard.jpg
+│   └── verdict-dashboard.jpg
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
 ├── .env.example
@@ -118,20 +118,30 @@ cp .env.example .env
 Fill in at least:
 
 ```bash
-OPENAI_API_KEY=...
-PINECONE_API_KEY=...
-SEC_USER_AGENT="FinSight Research your.email@example.com"
+LLM_API_KEY=...
+SEC_USER_AGENT="Verdict Research your.email@example.com"
 ```
 
 Optional:
 
 ```bash
+OPENAI_API_KEY=...
+PINECONE_API_KEY=...
 NEWS_API_KEY=...
-FINSIGHT_API_KEY=...
+VERDICT_API_KEY=...
 ```
 
-`FINSIGHT_API_KEY` enables a simple `X-API-Key` gate on non-health routes. Leave
-it empty for local development.
+The default `.env.example` is configured for Google Gemini through its
+OpenAI-compatible endpoint. To use OpenAI for chat instead, leave
+`LLM_BASE_URL` blank, set `LLM_MODEL=gpt-4o-mini`, and put the key in
+`OPENAI_API_KEY`.
+
+SEC filing ingestion and filing search use OpenAI embeddings plus Pinecone, so
+set `OPENAI_API_KEY` and `PINECONE_API_KEY` when you want the filing RAG path.
+
+`VERDICT_API_KEY` enables a simple `X-API-Key` gate on non-health routes. Leave
+it empty for local development; for standalone Vite demos, mirror the same value
+in `frontend/.env` as `VITE_VERDICT_API_KEY`.
 
 ### 2. Run With Docker
 
@@ -157,7 +167,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness probe |
-| `GET` | `/health/ready` | Dependency readiness for OpenAI, Pinecone, and NewsAPI |
+| `GET` | `/health/ready` | Dependency readiness for LLM, Pinecone, and NewsAPI |
 | `POST` | `/filings/ingest` | Fetch SEC filing, chunk, embed, and upsert to Pinecone |
 | `POST` | `/filings/query` | Query previously ingested filing chunks |
 | `POST` | `/research/{ticker}` | Run the full research graph and persist the result |
@@ -178,9 +188,11 @@ curl -N http://localhost:8000/research/AAPL/stream
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | Yes | Chat completion and embedding calls |
-| `PINECONE_API_KEY` | Yes | Filing vector store |
-| `PINECONE_INDEX_NAME` | No | Defaults to `finsight-filings` |
+| `LLM_API_KEY` | For custom LLM | Chat model key for `LLM_BASE_URL` providers |
+| `LLM_BASE_URL` | No | OpenAI-compatible chat endpoint; blank uses OpenAI |
+| `OPENAI_API_KEY` | For SEC RAG / OpenAI chat | OpenAI embeddings; also used for chat when `LLM_BASE_URL` is blank |
+| `PINECONE_API_KEY` | For SEC RAG | Filing vector store |
+| `PINECONE_INDEX_NAME` | No | Defaults to `verdict-filings` |
 | `PINECONE_CLOUD` | No | Defaults to `aws` |
 | `PINECONE_REGION` | No | Defaults to `us-east-1` |
 | `SEC_USER_AGENT` | Yes | SEC EDGAR requires an app/contact user agent |
@@ -188,11 +200,12 @@ curl -N http://localhost:8000/research/AAPL/stream
 | `NEWS_LOOKBACK_DAYS` | No | Defaults to `30` |
 | `NEWS_MAX_ARTICLES` | No | Defaults to `30` |
 | `EMBEDDING_MODEL` | No | Defaults to `text-embedding-3-small` |
-| `LLM_MODEL` | No | Defaults to `gpt-4o-mini` |
-| `FINSIGHT_API_KEY` | No | Optional API-key protection |
+| `LLM_MODEL` | No | Defaults to `gemini-2.0-flash` in `.env.example`; app default is `gpt-4o-mini` |
+| `VERDICT_API_KEY` | No | Optional API-key protection |
+| `VITE_VERDICT_API_KEY` | No | Frontend-only mirror for local/private demos with API-key protection |
 | `RATE_LIMIT_RESEARCH` | No | Defaults to `30/minute` |
 | `RATE_LIMIT_FILINGS` | No | Defaults to `60/minute` |
-| `DATABASE_URL` | No | Defaults to local SQLite at `./data/finsight.db` |
+| `DATABASE_URL` | No | Defaults to local SQLite at `./data/verdict.db` |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins |
 
 ## Local Development
@@ -239,7 +252,7 @@ npm run build
 Current local verification:
 
 - Backend ruff: passing
-- Backend pytest: `52 passed`
+- Backend pytest: `62 passed`
 - Frontend TypeScript/build: passing
 
 ## Security And Publish Notes
@@ -252,11 +265,11 @@ configuration committed.
 - Docker build contexts ignore `.env`, local virtualenvs, logs, caches, and build
   outputs.
 - Runtime SQLite files under `backend/data/` or `data/` are ignored.
-- `.claude-flow/` local session state is ignored and should not be committed.
+- Local tool state under `.swarm/` is ignored and should not be committed.
 - TypeScript build-info files are ignored.
 - The backend logs request IDs and operational metadata, but should not log raw
   API keys.
-- If `FINSIGHT_API_KEY` is set, all non-health/API-doc routes require the
+- If `VERDICT_API_KEY` is set, all non-health/API-doc routes require the
   `X-API-Key` header.
 
 Before publishing, run:
@@ -265,17 +278,17 @@ Before publishing, run:
 find . -name ".env" -o -name "*.pem" -o -name "*.key" -o -name "*.db" -o -name "*.sqlite"
 rg -n --hidden --glob '!.git/**' --glob '!frontend/node_modules/**' \
   --glob '!backend/.venv/**' --glob '!frontend/dist/**' \
-  'sk-[A-Za-z0-9]|pcsk_|ghp_|github_pat_|AKIA[0-9A-Z]{16}|BEGIN .*PRIVATE KEY'
+  'sk-[A-Za-z0-9_-]{20,}|pcsk_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
 ```
 
 ## Production Considerations
 
 - Use a real secret manager for API keys.
-- Set `FINSIGHT_API_KEY` or put the backend behind stronger auth before exposing
+- Set `VERDICT_API_KEY` or put the backend behind stronger auth before exposing
   it publicly.
 - Keep `CORS_ORIGINS` narrow.
 - Move from SQLite to Postgres for multi-instance deployments.
-- Add budget/rate controls for upstream OpenAI, Pinecone, NewsAPI, and Yahoo
+- Add budget/rate controls for upstream LLM, OpenAI embeddings, Pinecone, NewsAPI, and Yahoo
   Finance calls.
 - Do not present model output as investment advice without human review and
   appropriate compliance controls.

@@ -39,6 +39,7 @@ from app.schemas.research import (
     ResearchResponse,
     SECFindings,
 )
+from app.services.llm import llm_key_configured, make_llm_client
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -117,7 +118,7 @@ class AskResponse(BaseModel):
     request_id: str
 
 
-_ASK_SYSTEM = """You are FinSight's analyst assistant. The user has already
+_ASK_SYSTEM = """You are Verdict's analyst assistant. The user has already
 run a multi-agent research report on a public stock. You receive that report
 (SEC filing extracts, recent news sentiment, financial metrics, and a Buy/Hold/Sell
 recommendation) as JSON, plus the user's follow-up question.
@@ -142,7 +143,25 @@ Hard rules:
 
 @lru_cache(maxsize=1)
 def _ask_client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key, timeout=60.0)
+    return make_llm_client()
+
+
+def _llm_error_detail(e: OpenAIError) -> str:
+    """Turn a provider SDK error into a clear, actionable message.
+
+    Distinguishes a hard out-of-quota/billing failure (which retrying never
+    fixes) from a transient rate limit — the SDK reports both as
+    RateLimitError, which is what made the original failure look like a
+    temporary "try again" glitch.
+    """
+    msg = str(getattr(e, "message", "") or e).lower()
+    if any(s in msg for s in ("insufficient_quota", "exceeded your current quota", "billing")):
+        return (
+            "The AI provider rejected the request: this account is out of "
+            "quota/credits. Add billing/credits or switch to a free provider "
+            "(e.g. a Google Gemini key). Retrying won't help until then."
+        )
+    return f"LLM call failed ({type(e).__name__})"
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -153,16 +172,16 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     rid = get_request_id()
 
     settings = get_settings()
-    key = settings.openai_api_key.strip()
-    # Real OpenAI keys start with "sk-" and are well over 20 chars. Catch
-    # placeholder values early so we return a clean 503 instead of bouncing
-    # off the OpenAI SDK.
-    if not key or not key.startswith("sk-") or len(key) < 20:
+    # Catch missing/placeholder keys early so we return a clean 503 instead of
+    # bouncing off the provider SDK. Provider-agnostic: works for an OpenAI key
+    # (sk-...) or a Gemini key (AIza...) via LLM_API_KEY.
+    if not llm_key_configured(settings.resolved_llm_key):
         raise HTTPException(
             status_code=503,
             detail=(
-                "OPENAI_API_KEY is missing or set to a placeholder. "
-                "Set a real key (starts with sk-) in the backend .env and restart."
+                "No LLM API key configured. Set LLM_API_KEY (or OPENAI_API_KEY) "
+                "in the backend .env and restart. For free Google Gemini, also "
+                "set LLM_BASE_URL to its OpenAI-compatible endpoint."
             ),
         )
 
@@ -194,10 +213,10 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
             max_tokens=500,
         )
     except OpenAIError as e:
-        log.exception("ask_openai_failed", extra={"error_type": type(e).__name__})
+        log.exception("ask_llm_failed", extra={"error_type": type(e).__name__})
         raise HTTPException(
             status_code=502,
-            detail=f"LLM call failed ({type(e).__name__})",
+            detail=_llm_error_detail(e),
         ) from e
 
     record_chat(settings.llm_model, resp)

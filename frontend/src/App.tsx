@@ -170,7 +170,7 @@ export default function App() {
             <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white">
               F
             </span>
-            <span className="font-semibold tracking-tight">FinSight</span>
+            <span className="font-semibold tracking-tight">Verdict</span>
             <span className="hidden text-xs text-slate-500 sm:inline">
               · multi-agent equity research
             </span>
@@ -281,7 +281,7 @@ export default function App() {
         </section>
 
         <footer className="mt-12 border-t border-slate-900 pt-6 text-center text-[11px] text-slate-600">
-          FinSight is for informational purposes only. Not investment advice. Data from
+          Verdict is for informational purposes only. Not investment advice. Data from
           SEC EDGAR, NewsAPI, and Yahoo Finance via yfinance.
         </footer>
       </main>

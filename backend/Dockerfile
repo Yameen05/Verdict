@@ -22,11 +22,11 @@ FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/home/finsight/.local/bin:$PATH" \
+    PATH="/home/verdict/.local/bin:$PATH" \
     PYTHONPATH=/app
 
 # Non-root user
-RUN useradd --create-home --shell /bin/bash --uid 1000 finsight
+RUN useradd --create-home --shell /bin/bash --uid 1000 verdict
 
 # curl for healthchecks
 RUN apt-get update \
@@ -36,14 +36,14 @@ RUN apt-get update \
 WORKDIR /app
 
 # Copy the user-installed deps from the builder
-COPY --from=builder --chown=finsight:finsight /root/.local /home/finsight/.local
+COPY --from=builder --chown=verdict:verdict /root/.local /home/verdict/.local
 
-COPY --chown=finsight:finsight . .
+COPY --chown=verdict:verdict . .
 
 # Persistent SQLite directory
-RUN mkdir -p /app/data && chown finsight:finsight /app/data
+RUN mkdir -p /app/data && chown verdict:verdict /app/data
 
-USER finsight
+USER verdict
 
 EXPOSE 8000
 

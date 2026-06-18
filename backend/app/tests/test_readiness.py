@@ -11,13 +11,13 @@ async def test_ready_reports_degraded_with_no_keys(client):
     assert res.status_code == 503
     body = res.json()
     assert body["status"] == "degraded"
-    assert set(body["checks"].keys()) == {"openai", "newsapi", "pinecone"}
+    assert set(body["checks"].keys()) == {"llm", "newsapi", "pinecone"}
     # newsapi without key is "ok skipped" (optional dep)
     assert body["checks"]["newsapi"]["ok"] is True
 
 
 async def test_ready_reports_ready_when_all_ok(client, monkeypatch):
-    async def ok_openai():
+    async def ok_llm():
         return True, "reachable"
 
     async def ok_pinecone():
@@ -26,7 +26,7 @@ async def test_ready_reports_ready_when_all_ok(client, monkeypatch):
     async def ok_news():
         return True, "reachable"
 
-    monkeypatch.setattr(health_mod, "_check_openai", ok_openai)
+    monkeypatch.setattr(health_mod, "_check_llm", ok_llm)
     monkeypatch.setattr(health_mod, "_check_pinecone", ok_pinecone)
     monkeypatch.setattr(health_mod, "_check_newsapi", ok_news)
 

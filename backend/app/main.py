@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
         extra={
             "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
-            "auth_enabled": bool(settings.finsight_api_key),
+            "auth_enabled": bool(settings.verdict_api_key),
             "database_url": settings.database_url.split("@")[-1],  # hide creds if any
         },
     )
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
-        title="FinSight API",
+        title="Verdict API",
         version="1.0.0",
         description=(
             "Multi-agent financial research. SEC filings (RAG) + News sentiment "
@@ -55,8 +55,8 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Order matters: outer → inner. Request ID first so every other layer can log it.
-    app.add_middleware(RequestIdMiddleware)
+    # Starlette runs the last-added middleware first. Desired stack:
+    # RequestId -> CORS -> API key auth -> routes.
     app.add_middleware(ApiKeyAuthMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "X-API-Key", "X-Request-ID"],
         expose_headers=["X-Request-ID", "X-Cost-USD", "X-Duration-Ms"],
     )
+    app.add_middleware(RequestIdMiddleware)
 
     # Rate limiter: attach to app and wire its 429 handler.
     app.state.limiter = limiter

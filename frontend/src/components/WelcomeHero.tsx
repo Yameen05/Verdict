@@ -36,7 +36,7 @@ export function WelcomeHero() {
             <span className="block text-indigo-300">A grounded second opinion.</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
-            FinSight reads the company’s SEC filing, scans the last 30 days of news,
+            Verdict reads the company’s SEC filing, scans the last 30 days of news,
             pulls live financials, and produces a transparent Buy / Hold / Sell with
             citations. Then you can ask follow-up questions in plain English.
           </p>

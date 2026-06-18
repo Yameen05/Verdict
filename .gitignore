@@ -40,7 +40,7 @@ yarn-error.log*
 # Local data / caches
 .cache/
 .sec_cache/
-.claude-flow/
+.swarm/
 *.sqlite
 *.db
 backend/data/

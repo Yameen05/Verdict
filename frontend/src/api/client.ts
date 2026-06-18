@@ -77,17 +77,37 @@ export interface ResearchResponse {
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
+const API_KEY = import.meta.env.VITE_VERDICT_API_KEY?.trim();
 const SSE_MESSAGE_BOUNDARY = /\r?\n\r?\n/;
+
+function requestHeaders(extra: Record<string, string> = {}): HeadersInit {
+  return API_KEY ? { ...extra, "X-API-Key": API_KEY } : extra;
+}
+
+async function errorFromResponse(res: Response): Promise<Error> {
+  const text = await res.text();
+  let detail = text;
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; request_id?: unknown };
+    if (typeof parsed.detail === "string") {
+      detail = parsed.request_id
+        ? `${parsed.detail} (request ${String(parsed.request_id)})`
+        : parsed.detail;
+    }
+  } catch {
+    // Keep the original response text when it is not JSON.
+  }
+  return new Error(`${res.status} ${res.statusText}: ${detail}`);
+}
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: requestHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+    throw await errorFromResponse(res);
   }
   return (await res.json()) as T;
 }
@@ -112,7 +132,7 @@ export interface AskResponse {
 
 export const api = {
   health: async () => {
-    const res = await fetch(`${BASE_URL}/health`);
+    const res = await fetch(`${BASE_URL}/health`, { headers: requestHeaders() });
     return res.ok;
   },
 
@@ -127,9 +147,10 @@ export const api = {
   research: async (ticker: string): Promise<ResearchEnvelope> => {
     const res = await fetch(`${BASE_URL}/research/${encodeURIComponent(ticker)}`, {
       method: "POST",
+      headers: requestHeaders(),
     });
     if (!res.ok) {
-      throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+      throw await errorFromResponse(res);
     }
     return (await res.json()) as ResearchEnvelope;
   },
@@ -137,15 +158,16 @@ export const api = {
   history: async (ticker: string, limit = 20): Promise<HistoryResponse> => {
     const res = await fetch(
       `${BASE_URL}/research/history/${encodeURIComponent(ticker)}?limit=${limit}`,
+      { headers: requestHeaders() },
     );
     if (!res.ok) {
-      throw new Error(`${res.status} ${res.statusText}: ${await res.text()}`);
+      throw await errorFromResponse(res);
     }
     return (await res.json()) as HistoryResponse;
   },
 
   ready: async () => {
-    const res = await fetch(`${BASE_URL}/health/ready`);
+    const res = await fetch(`${BASE_URL}/health/ready`, { headers: requestHeaders() });
     return { status: res.status, body: (await res.json()) as ReadinessBody };
   },
 };
@@ -223,10 +245,10 @@ export async function streamResearch(
 ): Promise<void> {
   const res = await fetch(
     `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream`,
-    { headers: { Accept: "text/event-stream" }, signal },
+    { headers: requestHeaders({ Accept: "text/event-stream" }), signal },
   );
   if (!res.ok || !res.body) {
-    throw new Error(`${res.status} ${res.statusText}`);
+    throw await errorFromResponse(res);
   }
 
   const reader = res.body.getReader();

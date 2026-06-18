@@ -39,7 +39,7 @@ jobs:
           OPENAI_API_KEY: ""
           PINECONE_API_KEY: ""
           NEWS_API_KEY: ""
-          FINSIGHT_API_KEY: ""
+          VERDICT_API_KEY: ""
         run: pytest -q
 
   frontend:
@@ -74,10 +74,10 @@ jobs:
         with:
           context: ./backend
           push: false
-          tags: finsight-backend:ci
+          tags: verdict-backend:ci
       - name: Build frontend image
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           push: false
-          tags: finsight-frontend:ci
+          tags: verdict-frontend:ci

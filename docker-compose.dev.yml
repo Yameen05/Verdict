@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./backend:/app
-      - finsight-db:/app/data
+      - verdict-db:/app/data
 
   frontend:
     build:
@@ -17,6 +17,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=/api
+      - VITE_VERDICT_API_KEY=${VERDICT_API_KEY:-}
       - BACKEND_URL=http://backend:8000
     volumes:
       - ./frontend:/app

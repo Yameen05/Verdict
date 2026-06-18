@@ -2,7 +2,7 @@
 
 Resolves the ticker to a company name via the cached SEC ticker index, fetches
 recent headlines from NewsAPI, scores aggregate sentiment with VADER, and asks
-gpt-4o-mini for a short narrative summary.
+the configured chat model for a short narrative summary.
 
 Skips cleanly when NEWS_API_KEY is unset so the rest of the research pipeline
 still runs.
@@ -21,6 +21,7 @@ from app.observability.logging import get_logger
 from app.schemas.research import NewsFindings
 from app.services import sec_client
 from app.services.cache import TTLCache
+from app.services.llm import make_llm_client
 from app.services.news_client import Article, NewsAPIError, fetch_recent_articles
 from app.services.sentiment import score_articles
 
@@ -50,7 +51,7 @@ _SUMMARY_SYSTEM = (
 
 @lru_cache(maxsize=1)
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key, timeout=60.0)
+    return make_llm_client()
 
 
 async def _summarize(

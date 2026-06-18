@@ -44,7 +44,7 @@ def _fake_ask_client(content: str):
 def test_ask_route_is_not_shadowed_by_ticker_route(client, monkeypatch):
     """With a placeholder key, /research/ask returns the ask handler's own 503.
 
-    Only the `ask` endpoint emits an OPENAI_API_KEY 503; `research(ticker="ask")`
+    Only the `ask` endpoint emits the LLM-key 503; `research(ticker="ask")`
     never does. So this status+detail proves the request reached `ask`.
     """
     monkeypatch.setenv("OPENAI_API_KEY", "placeholder")
@@ -61,7 +61,7 @@ def test_ask_route_is_not_shadowed_by_ticker_route(client, monkeypatch):
     )
 
     assert resp.status_code == 503
-    assert "OPENAI_API_KEY" in resp.json()["detail"]
+    assert "LLM API key" in resp.json()["detail"]
 
 
 def test_ask_returns_answer_with_valid_key(client, monkeypatch):

@@ -1,9 +1,9 @@
 """SEC RAG agent node.
 
 For a given ticker, retrieves chunks from the existing Pinecone index for a
-fixed set of canonical research questions and uses gpt-4o-mini to synthesize
-each set of chunks into a short answer. Output is a `SECFindings` slot of
-`ResearchState`.
+fixed set of canonical research questions and uses the configured chat model to
+synthesize each set of chunks into a short answer. Output is a `SECFindings`
+slot of `ResearchState`.
 
 Assumes the filing has already been ingested via `POST /filings/ingest`. If the
 namespace is empty, returns status="skipped" with a helpful error.
@@ -23,6 +23,7 @@ from app.observability.logging import get_logger
 from app.schemas.research import SECFinding, SECFindings
 from app.services import vectorstore
 from app.services.embeddings import embed_query
+from app.services.llm import make_llm_client
 
 log = get_logger(__name__)
 
@@ -44,7 +45,7 @@ _SUMMARY_SYSTEM = (
 
 @lru_cache(maxsize=1)
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key, timeout=60.0)
+    return make_llm_client()
 
 
 async def _summarize(question: str, chunks: list[str]) -> str:

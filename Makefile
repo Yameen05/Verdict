@@ -1,7 +1,7 @@
 .PHONY: help dev up down build logs test backend-test backend-install frontend-install pinecone-init fetch-sample clean
 
 help:
-	@echo "FinSight dev targets:"
+	@echo "Verdict dev targets:"
 	@echo "  make dev               - docker-compose up (build if needed)"
 	@echo "  make up                - docker-compose up -d"
 	@echo "  make down              - docker-compose down"

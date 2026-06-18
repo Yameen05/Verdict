@@ -70,7 +70,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
     """Optional X-API-Key gate.
 
-    Active iff `FINSIGHT_API_KEY` is set. Skipped paths: /health*, /docs,
+    Active iff `VERDICT_API_KEY` is set. Skipped paths: /health*, /docs,
     /redoc, /openapi.json so the readiness probe and docs are always usable.
     """
 
@@ -82,7 +82,7 @@ class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        expected = get_settings().finsight_api_key
+        expected = get_settings().verdict_api_key
         if not expected:
             return await call_next(request)
 

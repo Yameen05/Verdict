@@ -19,20 +19,30 @@ const SUGGESTED_PROMPTS = [
 
 function friendlyError(raw: string): string {
   const r = raw.toLowerCase();
-  if (r.includes("apiconnectionerror") || r.includes("connection")) {
-    return "The backend couldn't reach OpenAI. Most often this means OPENAI_API_KEY is missing, set to a placeholder, or the server has no internet to api.openai.com.";
+  // Check quota/billing BEFORE rate-limiting: providers report "out of quota"
+  // as a 429/RateLimitError, but retrying never fixes it — so say so plainly.
+  if (
+    r.includes("insufficient_quota") ||
+    r.includes("out of quota") ||
+    r.includes("quota") ||
+    r.includes("billing")
+  ) {
+    return "The AI provider account is out of quota/credits, so every request is rejected — retrying won't help. Add credits, or use a free Google Gemini key (set LLM_API_KEY + LLM_BASE_URL in the backend .env and restart).";
   }
-  if (r.includes("authentication") || r.includes("401")) {
-    return "OpenAI rejected the API key. Set a valid OPENAI_API_KEY in the backend .env and restart.";
+  if (r.includes("apiconnectionerror") || r.includes("connection")) {
+    return "The backend couldn't reach the AI provider. Usually the API key is missing/invalid, or the server has no internet access.";
+  }
+  if (r.includes("authentication") || r.includes("401") || r.includes("invalid_api_key")) {
+    return "The AI provider rejected the API key. Set a valid LLM_API_KEY in the backend .env and restart.";
+  }
+  if (r.includes("503")) {
+    return "No AI key is configured on the server. Set LLM_API_KEY (and LLM_BASE_URL for Gemini) in the backend .env and restart.";
   }
   if (r.includes("rate") || r.includes("429")) {
     return "Rate-limited. Wait a moment and try again.";
   }
-  if (r.includes("503")) {
-    return "OPENAI_API_KEY is not configured on the server. Set it in .env and restart the backend.";
-  }
   if (r.includes("502")) {
-    return "The LLM call failed upstream. Check the backend logs — usually a bad key or network issue.";
+    return "The AI call failed upstream. Check the backend logs — usually a bad key or network issue.";
   }
   return raw;
 }
