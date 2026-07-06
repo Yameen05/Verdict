@@ -1,22 +1,22 @@
-fastapi==0.138.0
-uvicorn[standard]==0.34.0
+fastapi==0.139.0
+uvicorn[standard]==0.50.2
 pydantic==2.13.4
 pydantic-settings==2.14.2
 httpx==0.28.1
-openai==2.43.0
+openai==2.44.0
 pinecone==9.1.0
 langchain-text-splitters==1.1.2
-langgraph==1.2.6
+langgraph==1.2.7
 langchain-core==1.4.8
 vaderSentiment==3.3.2
-yfinance==1.4.1
+yfinance==1.5.1
 
 # Production: logging, auth, rate limiting, persistence, SSE
-slowapi==0.1.9
+slowapi==0.1.10
 sqlalchemy==2.0.51
-aiosqlite==0.20.0
+aiosqlite==0.22.1
 asyncpg==0.31.0
-greenlet==3.1.1
+greenlet==3.5.3
 sse-starlette==3.4.5
 gunicorn==26.0.0
 beautifulsoup4==4.15.0
