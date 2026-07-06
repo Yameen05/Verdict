@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- builder ----------
-FROM python:3.13.13-slim-trixie AS builder
+FROM python:3.14.6-slim-trixie AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --user -r requirements.txt
 
 # ---------- runtime ----------
-FROM python:3.13.13-slim-trixie AS runtime
+FROM python:3.14.6-slim-trixie AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
