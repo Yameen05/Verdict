@@ -1,45 +1,81 @@
 # Verdict
 
-[![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.13-blue)](https://www.python.org/)
+[![Node](https://img.shields.io/badge/Node-22-43853D)](https://nodejs.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.138-009688)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-7E57C2)](https://langchain-ai.github.io/langgraph/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-7E57C2)](https://langchain-ai.github.io/langgraph/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/tests-pytest%20%2B%20tsc-brightgreen)](backend/app/tests)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-Verdict is a full-stack, multi-agent equity research app. Enter a ticker and
-it builds a structured research report from SEC filing retrieval, recent news
-sentiment, and live financial metrics.
+Verdict is a full-stack, multi-agent equity research workspace. Enter a ticker,
+optionally index the latest SEC filing, run a parallel research graph, and get a
+grounded Buy / Hold / Sell report with live progress, cost tracking, run
+history, and a follow-up analyst chat.
 
-> This project is for software demonstration and research workflow exploration.
-> It is not financial advice.
+> Verdict is a software demo and research workflow exploration tool. It is not
+> financial advice.
 
-![Verdict dashboard](docs/assets/verdict-dashboard.jpg)
+![Verdict dashboard](docs/assets/verdict-dashboard.png)
+
+## Product Tour
+
+### Research Workspace
+
+Verdict starts with a protected research dashboard: stock picker, SEC filing
+ingestion, ad-hoc filing search, live backend readiness, and a streamed
+multi-agent run button.
+
+### Agent Report
+
+Each research run fans out to specialist agents, then synthesizes their output
+into one report. The UI keeps the recommendation, reasoning, source-specific
+agent status, financial metrics, SEC findings, and cost visible.
+
+![Verdict report](docs/assets/verdict-report.png)
+
+### Ask The Analyst
+
+After a report is generated, Verdict opens a contextual chat grounded in that
+run. Follow-up questions can use the current report and prior turns without
+re-running the entire pipeline.
+
+![Verdict analyst chat](docs/assets/verdict-chat.png)
+
+Screenshots above use sample AAPL documentation data captured from the real
+React UI with mocked API responses.
 
 ## What It Does
 
-- Ingests the latest SEC `10-K` or `10-Q` filing for a ticker.
-- Chunks and embeds filing text into Pinecone for per-ticker retrieval.
-- Runs a LangGraph research pipeline with specialist agents for:
+- Creates a single owner account with password auth, mandatory TOTP 2FA,
+  HttpOnly sessions, CSRF protection, origin checks, and rate limits.
+- Fetches the latest SEC `10-K` or `10-Q` for a ticker through SEC EDGAR.
+- Chunks filing text, embeds it with OpenAI embeddings, and stores vectors in a
+  Pinecone namespace per ticker.
+- Runs a LangGraph research graph with three specialist paths:
   - SEC filing RAG
-  - recent news sentiment
-  - financial metrics from yfinance
-- Streams agent progress to the browser over Server-Sent Events.
-- Synthesizes a final `Buy`, `Hold`, `Sell`, or `Pending` report with concrete
-  justification.
-- Persists completed research runs to SQLite for history and comparison.
-- Tracks LLM and embedding token usage with estimated cost per research request.
+  - recent news sentiment from NewsAPI plus VADER
+  - market and financial metrics from yfinance
+- Streams agent progress to the browser with Server-Sent Events.
+- Produces a structured `Buy`, `Hold`, `Sell`, or `Pending` report through an
+  OpenAI-compatible chat model.
+- Persists completed research runs in SQLite by default for history and
+  comparison.
+- Tracks prompt, completion, embedding, and estimated USD cost per request.
+
+Verdict degrades intentionally. Missing NewsAPI credentials skip the news agent.
+Missing Pinecone or filing vectors skip the SEC RAG path. Upstream failures
+return typed error payloads instead of taking down the whole graph.
 
 ## Architecture
 
 ```text
-React + TypeScript SPA
-  live progress, filing ingest, ad-hoc RAG query, report history
+React + TypeScript + Vite
+  auth gate, stock picker, filing search, SSE progress, report, chat, history
         |
         | REST + Server-Sent Events
         v
-FastAPI backend
-  owner auth, mandatory TOTP 2FA, CSRF protection, rate limiting, JSON audit logs
+FastAPI
+  auth, 2FA, CSRF, rate limits, readiness, JSON logs, persistence
         |
         v
 LangGraph StateGraph
@@ -47,19 +83,15 @@ LangGraph StateGraph
     |--------------------|----------------------|
     v                    v                      v
   SEC agent           News agent             Metrics agent
-  Pinecone RAG        NewsAPI + VADER        yfinance TTM metrics
+  Pinecone RAG        NewsAPI + VADER        yfinance metrics
     |--------------------|----------------------|
                          v
-                   Synthesizer
-                   LLM JSON report
+                    Synthesizer
+                    LLM JSON report
                          |
                          v
-                   SQLite research_runs
+                    SQLite research_runs
 ```
-
-The backend is designed to degrade cleanly. Missing NewsAPI credentials skip the
-news agent; missing filing vectors skip the SEC agent; upstream failures return
-typed `error` payloads instead of crashing the whole graph.
 
 ## Tech Stack
 
@@ -67,26 +99,28 @@ typed `error` payloads instead of crashing the whole graph.
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS |
 | API | FastAPI, Uvicorn, Gunicorn, SlowAPI, SSE Starlette |
-| Agent orchestration | LangGraph `StateGraph` |
-| LLM and embeddings | OpenAI-compatible chat completions, OpenAI embeddings |
+| Agents | LangGraph `StateGraph` |
+| LLM | Any OpenAI-compatible chat completion endpoint |
+| Embeddings | OpenAI embeddings |
 | Retrieval | Pinecone serverless index, namespace per ticker |
-| Market/news data | SEC EDGAR, NewsAPI, VADER, yfinance |
+| Market and news data | SEC EDGAR, NewsAPI, VADER, yfinance |
 | Persistence | SQLAlchemy async ORM, SQLite by default |
+| Security | Argon2id, encrypted TOTP seed, one-time recovery codes, CSRF |
 | Ops | Docker, Docker Compose, nginx SPA proxy, structured JSON logs |
 | Tests | pytest, pytest-asyncio, pytest-httpx, ruff, TypeScript build |
 
 ## Repository Layout
 
 ```text
-verdict/
+Verdict/
 ├── backend/
 │   ├── app/
 │   │   ├── agents/              # LangGraph state and agent nodes
-│   │   ├── observability/       # JSON logs and token/cost tracking
+│   │   ├── observability/       # JSON logging and token/cost tracking
 │   │   ├── persistence/         # async SQLAlchemy history store
-│   │   ├── routers/             # health, filings, research endpoints
-│   │   ├── schemas/             # Pydantic API models
-│   │   ├── services/            # SEC, Pinecone, LLM, embeddings, NewsAPI, yfinance
+│   │   ├── routers/             # auth, health, filings, research
+│   │   ├── schemas/             # Pydantic request/response models
+│   │   ├── services/            # SEC, Pinecone, LLM, embeddings, news, metrics
 │   │   └── tests/               # mocked backend test suite
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
@@ -94,13 +128,12 @@ verdict/
 ├── frontend/
 │   ├── src/
 │   │   ├── api/client.ts        # typed REST and SSE client
-│   │   ├── components/          # input, progress, report, history panels
+│   │   ├── components/          # auth, picker, report, chat, history
 │   │   └── App.tsx
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
 │   └── nginx.conf
-├── docs/assets/
-│   └── verdict-dashboard.jpg
+├── docs/assets/                 # README screenshots
 ├── docker-compose.yml
 ├── docker-compose.dev.yml
 ├── .env.example
@@ -115,34 +148,39 @@ verdict/
 cp .env.example .env
 ```
 
-Fill in at least:
+Fill in the required security and SEC settings:
+
+```bash
+SEC_USER_AGENT="Verdict Research your.email@example.com"
+AUTH_BOOTSTRAP_TOKEN="$(openssl rand -base64 48)"
+AUTH_ENCRYPTION_KEY="$(python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+```
+
+Then choose your model provider.
+
+For Gemini through its OpenAI-compatible endpoint, keep the default
+`LLM_BASE_URL` and set:
 
 ```bash
 LLM_API_KEY=...
-SEC_USER_AGENT="Verdict Research your.email@example.com"
-AUTH_BOOTSTRAP_TOKEN="$(openssl rand -base64 48)"
-AUTH_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+LLM_MODEL=gemini-2.0-flash
 ```
 
-Optional:
+For OpenAI chat, leave `LLM_BASE_URL` blank and set:
 
 ```bash
 OPENAI_API_KEY=...
-PINECONE_API_KEY=...
-NEWS_API_KEY=...
+LLM_MODEL=gpt-4o-mini
 ```
 
-The default `.env.example` is configured for Google Gemini through its
-OpenAI-compatible endpoint. To use OpenAI for chat instead, leave
-`LLM_BASE_URL` blank, set `LLM_MODEL=gpt-4o-mini`, and put the key in
-`OPENAI_API_KEY`.
+SEC filing search requires both `OPENAI_API_KEY` and `PINECONE_API_KEY` because
+that path uses OpenAI embeddings plus Pinecone.
 
-SEC filing ingestion and filing search use OpenAI embeddings plus Pinecone, so
-set `OPENAI_API_KEY` and `PINECONE_API_KEY` when you want the filing RAG path.
+News sentiment is optional:
 
-On first launch, the browser asks for `AUTH_BOOTSTRAP_TOKEN`, creates the sole
-owner account, and requires TOTP enrollment. Save the one-time recovery codes in
-a password manager. The bootstrap route closes permanently once the owner exists.
+```bash
+NEWS_API_KEY=...
+```
 
 ### 2. Run With Docker
 
@@ -150,9 +188,13 @@ a password manager. The bootstrap route closes permanently once the owner exists
 docker compose up --build
 ```
 
-- Frontend: http://localhost:8080
-- Backend: internal-only in the production Compose stack
-- API docs: available on http://localhost:8000/docs with the development override
+- App: http://localhost:8080
+- Backend container: internal to the Compose network
+- SQLite data: persisted in the `verdict-db` Docker volume
+
+On first launch, the browser asks for `AUTH_BOOTSTRAP_TOKEN`, creates the owner
+account, and requires TOTP enrollment. Save the recovery codes. The bootstrap
+route closes permanently once the owner exists.
 
 ### 3. Run With Hot Reload
 
@@ -160,23 +202,50 @@ docker compose up --build
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
-- Frontend with Vite HMR: http://localhost:5173
-- Backend API: http://localhost:8000
+- Vite frontend: http://localhost:5173
+- FastAPI backend: http://localhost:8000
+- API docs in development: http://localhost:8000/docs
+
+## Configuration
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `SEC_USER_AGENT` | Yes | SEC EDGAR contact user agent |
+| `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time owner creation secret |
+| `AUTH_ENCRYPTION_KEY` | Yes | Fernet key used to encrypt the TOTP seed |
+| `LLM_API_KEY` | For custom chat providers | Key for `LLM_BASE_URL` providers such as Gemini or Groq |
+| `LLM_BASE_URL` | No | OpenAI-compatible chat endpoint; blank uses OpenAI |
+| `OPENAI_API_KEY` | For SEC RAG and OpenAI chat | OpenAI embeddings and optional OpenAI chat |
+| `PINECONE_API_KEY` | For SEC RAG | Filing vector store |
+| `PINECONE_INDEX_NAME` | No | Defaults to `verdict-filings` |
+| `NEWS_API_KEY` | No | Enables the news agent; missing key skips news |
+| `EMBEDDING_MODEL` | No | Defaults to `text-embedding-3-small` |
+| `DATABASE_URL` | No | Defaults to `sqlite+aiosqlite:///./data/verdict.db` |
+| `CORS_ORIGINS` | No | Comma-separated browser origins |
+| `SESSION_COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
+| `RATE_LIMIT_AUTH` | No | Defaults to `5/minute` |
+| `RATE_LIMIT_RESEARCH` | No | Defaults to `30/minute` |
+| `RATE_LIMIT_FILINGS` | No | Defaults to `60/minute` |
+
+See [.env.example](.env.example) for the complete set of operational and cost
+tracking variables.
 
 ## API Overview
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness probe |
+| `GET` | `/health` | Public liveness probe |
+| `GET` | `/health/ready` | Authenticated dependency readiness |
+| `GET` | `/auth/status` | Bootstrap/login state |
 | `POST` | `/auth/bootstrap` | One-time owner creation |
 | `POST` | `/auth/login` | Password sign-in |
 | `POST` | `/auth/2fa/verify` | TOTP or recovery-code verification |
-| `GET` | `/health/ready` | Authenticated dependency readiness |
-| `POST` | `/filings/ingest` | Fetch SEC filing, chunk, embed, and upsert to Pinecone |
-| `POST` | `/filings/query` | Query previously ingested filing chunks |
-| `POST` | `/research/{ticker}` | Run the full research graph and persist the result |
-| `GET` | `/research/{ticker}/stream` | Stream agent progress and final result via SSE |
-| `GET` | `/research/history/{ticker}` | Return recent persisted research runs |
+| `POST` | `/filings/ingest` | Fetch, chunk, embed, and index the latest filing |
+| `POST` | `/filings/query` | Search indexed filing chunks |
+| `POST` | `/research/{ticker}` | Run the full research graph |
+| `GET` | `/research/{ticker}/stream` | Stream progress and final result over SSE |
+| `POST` | `/research/ask` | Ask a contextual follow-up question |
+| `GET` | `/research/history/{ticker}` | Return recent persisted runs |
 
 Unauthenticated liveness check:
 
@@ -184,37 +253,10 @@ Unauthenticated liveness check:
 curl --fail http://localhost:8080/api/health
 ```
 
-Use the browser client for protected routes; it manages the HttpOnly session,
-2FA challenge, and per-session CSRF token.
+Use the browser client for protected routes. It manages the HttpOnly session,
+the 2FA challenge, and the per-session CSRF token.
 
-## Configuration
-
-| Variable | Required | Description |
-| --- | --- | --- |
-| `LLM_API_KEY` | For custom LLM | Chat model key for `LLM_BASE_URL` providers |
-| `LLM_BASE_URL` | No | OpenAI-compatible chat endpoint; blank uses OpenAI |
-| `OPENAI_API_KEY` | For SEC RAG / OpenAI chat | OpenAI embeddings; also used for chat when `LLM_BASE_URL` is blank |
-| `PINECONE_API_KEY` | For SEC RAG | Filing vector store |
-| `PINECONE_INDEX_NAME` | No | Defaults to `verdict-filings` |
-| `PINECONE_CLOUD` | No | Defaults to `aws` |
-| `PINECONE_REGION` | No | Defaults to `us-east-1` |
-| `SEC_USER_AGENT` | Yes | SEC EDGAR requires an app/contact user agent |
-| `NEWS_API_KEY` | No | Enables the news agent; missing key skips news |
-| `NEWS_LOOKBACK_DAYS` | No | Defaults to `30` |
-| `NEWS_MAX_ARTICLES` | No | Defaults to `30` |
-| `EMBEDDING_MODEL` | No | Defaults to `text-embedding-3-small` |
-| `LLM_MODEL` | No | Defaults to `gemini-2.0-flash` in `.env.example`; app default is `gpt-4o-mini` |
-| `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time owner-creation secret; generate at least 32 random characters |
-| `AUTH_ENCRYPTION_KEY` | Yes | Fernet key used to encrypt the TOTP seed at rest |
-| `SESSION_COOKIE_SECURE` | Production | Must be `true` behind HTTPS |
-| `REQUIRE_2FA` | No | Defaults to `true` |
-| `RATE_LIMIT_AUTH` | No | Defaults to `5/minute` |
-| `RATE_LIMIT_RESEARCH` | No | Defaults to `30/minute` |
-| `RATE_LIMIT_FILINGS` | No | Defaults to `60/minute` |
-| `DATABASE_URL` | No | Defaults to local SQLite at `./data/verdict.db` |
-| `CORS_ORIGINS` | No | Comma-separated allowed origins |
-
-## Local Development
+## Development Commands
 
 Backend:
 
@@ -234,16 +276,7 @@ npm install
 npm run dev
 ```
 
-Useful Make targets:
-
-```bash
-make backend-test
-make frontend-install
-make pinecone-init
-make fetch-sample TICKER=AAPL
-```
-
-## Tests And Checks
+Checks:
 
 ```bash
 cd backend
@@ -255,34 +288,34 @@ npm run lint
 npm run build
 ```
 
-Current local verification:
+Useful Make targets:
 
-- Backend ruff: passing
-- Backend pytest: `68 passed`
-- Frontend TypeScript/build: passing
+```bash
+make dev
+make backend-test
+make frontend-install
+make pinecone-init
+make fetch-sample TICKER=AAPL
+```
 
-## Security And Publish Notes
-
-The repository is intended to be safe to publish with only placeholder
-configuration committed.
+## Security Notes
 
 - Real credentials belong in `.env`, which is ignored by git.
-- `.env.example` contains empty placeholders only.
-- Docker build contexts ignore `.env`, local virtualenvs, logs, caches, and build
-  outputs.
+- `.env.example` contains placeholders only.
+- Docker build contexts ignore `.env`, local virtualenvs, logs, caches, and
+  build outputs.
 - Runtime SQLite files under `backend/data/` or `data/` are ignored.
-- Local tool state under `.swarm/` is ignored and should not be committed.
-- TypeScript build-info files are ignored.
-- The backend logs request IDs and operational metadata, but should not log raw
-  API keys, passwords, session tokens, TOTP values, or recovery codes.
-- Passwords use Argon2id. Session tokens are random, stored only as SHA-256
-  digests, and delivered in HttpOnly/Secure/SameSite cookies.
-- TOTP seeds are encrypted at rest; recovery codes are one-time and keyed-hashed.
+- Passwords use Argon2id.
+- Session tokens are random, stored server-side only as SHA-256 digests, and
+  delivered in HttpOnly/Secure/SameSite cookies.
+- TOTP seeds are encrypted at rest.
+- Recovery codes are one-time and keyed-hashed.
 - Every non-health API route requires an authenticated, 2FA-verified session.
-- State-changing requests require a per-session CSRF token and an allowed Origin.
+- State-changing requests require a per-session CSRF token and an allowed
+  `Origin`.
 - Research history is scoped to the authenticated owner.
 
-Before publishing, run:
+Before publishing, scan for local secrets and databases:
 
 ```bash
 find . -name ".env" -o -name "*.pem" -o -name "*.key" -o -name "*.db" -o -name "*.sqlite"
@@ -291,19 +324,16 @@ rg -n --hidden --glob '!.git/**' --glob '!frontend/node_modules/**' \
   'sk-[A-Za-z0-9_-]{20,}|pcsk_[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
 ```
 
-## Production Considerations
+## Production Notes
 
-- Use a real secret manager for API keys.
 - Set `ENVIRONMENT=production`, `DOCS_ENABLED=false`,
-  `SESSION_COOKIE_SECURE=true`, and explicit `ALLOWED_HOSTS` /
-  `CORS_ORIGINS`.
-- Terminate TLS in a maintained reverse proxy or managed load balancer. The
-  Compose port binds to loopback by default so the backend and raw HTTP service
-  are not directly internet-exposed.
-- Keep `CORS_ORIGINS` narrow.
+  `SESSION_COOKIE_SECURE=true`, and explicit `ALLOWED_HOSTS` / `CORS_ORIGINS`.
+- Terminate TLS in a maintained reverse proxy or managed load balancer.
+- Keep `APP_BIND_ADDRESS=127.0.0.1` when a local reverse proxy owns public TLS.
 - Move from SQLite to Postgres for multi-instance deployments.
-- Add budget/rate controls for upstream LLM, OpenAI embeddings, Pinecone, NewsAPI, and Yahoo
-  Finance calls.
+- Add shared rate-limit storage before scaling beyond one backend worker.
+- Add provider budgets for LLM, embeddings, Pinecone, NewsAPI, and yfinance
+  usage.
 - Do not present model output as investment advice without human review and
   appropriate compliance controls.
 
