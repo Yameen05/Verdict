@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- builder ----------
-FROM python:3.11-slim AS builder
+FROM python:3.13.13-slim-trixie AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,7 +18,7 @@ COPY requirements.txt .
 RUN pip install --user -r requirements.txt
 
 # ---------- runtime ----------
-FROM python:3.11-slim AS runtime
+FROM python:3.13.13-slim-trixie AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -26,7 +26,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
 # Non-root user
-RUN useradd --create-home --shell /bin/bash --uid 1000 verdict
+RUN useradd --create-home --shell /usr/sbin/nologin --uid 10001 verdict
 
 # curl for healthchecks
 RUN apt-get update \
@@ -50,11 +50,13 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
-# Production server: gunicorn supervises uvicorn workers.
+# One worker is the safe default while rate limits use in-process storage and
+# SQLite is supported. Scale out only after configuring shared infrastructure.
 CMD ["gunicorn", "app.main:app", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--forwarded-allow-ips", "*", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "--timeout", "180"]

@@ -74,7 +74,8 @@ async def lookup_cik(ticker: str, client: httpx.AsyncClient | None = None) -> st
     """Return zero-padded 10-digit CIK for a ticker symbol."""
     ticker = ticker.upper().strip()
     await _ensure_ticker_cache(client)
-    assert _ticker_cache is not None
+    if _ticker_cache is None:
+        raise RuntimeError("SEC ticker cache failed to initialize")
     if ticker not in _ticker_cache:
         raise ValueError(f"Unknown ticker: {ticker}")
     return _ticker_cache[ticker].cik
@@ -86,7 +87,8 @@ async def lookup_company_name(
     """Return the SEC-registered company name for a ticker (e.g. 'Apple Inc.')."""
     ticker = ticker.upper().strip()
     await _ensure_ticker_cache(client)
-    assert _ticker_cache is not None
+    if _ticker_cache is None:
+        raise RuntimeError("SEC ticker cache failed to initialize")
     if ticker not in _ticker_cache:
         raise ValueError(f"Unknown ticker: {ticker}")
     return _ticker_cache[ticker].name

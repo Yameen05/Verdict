@@ -1,7 +1,8 @@
-"""HTTP middlewares: request IDs, structured access logging, error envelope, auth."""
+"""HTTP middlewares: request IDs, origin checks, headers, logging, error envelope."""
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -26,7 +27,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        rid = request.headers.get(self.HEADER) or uuid.uuid4().hex
+        candidate = (request.headers.get(self.HEADER) or "")[:64]
+        rid = candidate if re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", candidate) else uuid.uuid4().hex
         set_request_id(rid)
         request.state.request_id = rid
 
@@ -67,40 +69,62 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class ApiKeyAuthMiddleware(BaseHTTPMiddleware):
-    """Optional X-API-Key gate.
-
-    Active iff `VERDICT_API_KEY` is set. Skipped paths: /health*, /docs,
-    /redoc, /openapi.json so the readiness probe and docs are always usable.
-    """
-
-    HEADER = "x-api-key"
-    OPEN_PATHS = ("/health", "/docs", "/redoc", "/openapi.json")
+class OriginProtectionMiddleware(BaseHTTPMiddleware):
+    """Reject cross-origin browser writes before they reach authentication."""
 
     async def dispatch(
         self,
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
-        expected = get_settings().verdict_api_key
-        if not expected:
-            return await call_next(request)
-
-        if any(request.url.path.startswith(p) for p in self.OPEN_PATHS):
-            return await call_next(request)
-
-        provided = request.headers.get(self.HEADER)
-        if not provided or provided != expected:
-            log.warning(
-                "auth_rejected",
-                extra={"path": request.url.path, "has_header": bool(provided)},
-            )
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Missing or invalid X-API-Key",
-                    "request_id": getattr(request.state, "request_id", ""),
-                },
-            )
-
+        if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+            origin = request.headers.get("origin")
+            allowed = set(get_settings().cors_origins_list)
+            if origin and origin not in allowed:
+                log.warning("origin_rejected", extra={"path": request.url.path})
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "Origin is not allowed",
+                        "request_id": getattr(request.state, "request_id", ""),
+                    },
+                )
         return await call_next(request)
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Defense-in-depth headers for API responses."""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        response = await call_next(request)
+        headers = response.headers
+        headers.setdefault("Cache-Control", "no-store")
+        if get_settings().docs_enabled and request.url.path in {"/docs", "/redoc"}:
+            headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "img-src 'self' data: https://fastapi.tiangolo.com; "
+                "frame-ancestors 'none'",
+            )
+        else:
+            headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'none'; frame-ancestors 'none'",
+            )
+        headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()")
+        headers.setdefault("Referrer-Policy", "no-referrer")
+        headers.setdefault("X-Content-Type-Options", "nosniff")
+        headers.setdefault("X-Frame-Options", "DENY")
+        if get_settings().session_cookie_secure:
+            headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        return response

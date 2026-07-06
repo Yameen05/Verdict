@@ -262,6 +262,7 @@ async def research(
 
     run = await save_run(
         session,
+        user_id=request.state.user_id,
         ticker=ticker,
         recommendation=result.report.recommendation,
         justification=result.report.justification,
@@ -293,7 +294,7 @@ async def research(
 
 # ----- GET /research/{ticker}/stream -----
 
-async def _sse_stream(ticker: str, tracker: CostTracker, rid: str):
+async def _sse_stream(ticker: str, tracker: CostTracker, rid: str, user_id: int):
     """Run the graph via astream() and yield SSE events for each node update."""
     graph = get_graph()
     started = time.perf_counter()
@@ -320,7 +321,12 @@ async def _sse_stream(ticker: str, tracker: CostTracker, rid: str):
         log.exception("research_stream_failed", extra={"ticker": ticker})
         yield {
             "event": "error",
-            "data": json.dumps({"detail": str(e), "error_type": type(e).__name__}),
+            "data": json.dumps(
+                {
+                    "detail": "Research stream failed",
+                    "error_type": type(e).__name__,
+                }
+            ),
         }
         return
 
@@ -333,6 +339,7 @@ async def _sse_stream(ticker: str, tracker: CostTracker, rid: str):
         async for session in session_scope():
             run = await save_run(
                 session,
+                user_id=user_id,
                 ticker=ticker,
                 recommendation=result.report.recommendation,
                 justification=result.report.justification,
@@ -376,19 +383,25 @@ async def research_stream(request: Request, ticker: str) -> EventSourceResponse:
     tracker = start_tracking()
     rid = get_request_id()
     log.info("research_stream_started", extra={"ticker": ticker})
-    return EventSourceResponse(_sse_stream(ticker, tracker, rid))
+    return EventSourceResponse(_sse_stream(ticker, tracker, rid, request.state.user_id))
 
 
 # ----- GET /research/history/{ticker} -----
 
 @router.get("/history/{ticker}", response_model=HistoryResponse)
 async def history(
+    request: Request,
     ticker: str,
     limit: int = 20,
     session: AsyncSession = Depends(session_scope),
 ) -> HistoryResponse:
     ticker = _validate_ticker(ticker)
-    rows = await list_runs_for_ticker(session, ticker, limit=min(max(limit, 1), 100))
+    rows = await list_runs_for_ticker(
+        session,
+        ticker,
+        limit=min(max(limit, 1), 100),
+        user_id=request.state.user_id,
+    )
     return HistoryResponse(
         ticker=ticker,
         runs=[

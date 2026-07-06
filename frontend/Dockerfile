@@ -12,13 +12,13 @@ COPY . .
 RUN npm run build
 
 # ---------- runtime ----------
-FROM nginx:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.1-alpine AS runtime
 
 # nginx config that serves the SPA and proxies /api to the backend.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -qO- http://localhost/ > /dev/null || exit 1
+    CMD wget -qO- http://localhost:8080/ > /dev/null || exit 1

@@ -13,7 +13,10 @@ from typing import Any
 from pinecone import Pinecone, ServerlessSpec
 
 from app.config import get_settings
+from app.observability.logging import get_logger
 from app.services.chunker import Chunk
+
+log = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -71,8 +74,15 @@ async def upsert_chunks(
         # failure here just leaves trailing chunks from a previous run.
         try:
             index.delete(filter={"accession": accession}, namespace=namespace)
-        except Exception:  # noqa: BLE001 - delete is best-effort
-            pass
+        except Exception as exc:  # noqa: BLE001 - delete is best-effort
+            log.warning(
+                "vectorstore_cleanup_failed",
+                extra={
+                    "ticker": ticker,
+                    "accession": accession,
+                    "error_type": type(exc).__name__,
+                },
+            )
 
         vectors_payload = [
             {

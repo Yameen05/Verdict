@@ -1,0 +1,14 @@
+{
+  "id": "session-1781831919163",
+  "startedAt": "2026-06-19T01:18:39.163Z",
+  "cwd": "/Users/yameen/Documents/Projects/Verdict",
+  "context": {},
+  "metrics": {
+    "edits": 0,
+    "commands": 0,
+    "tasks": 0,
+    "errors": 0
+  },
+  "endedAt": "2026-06-19T01:20:32.873Z",
+  "duration": 113711
+}

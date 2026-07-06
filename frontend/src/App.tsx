@@ -28,7 +28,13 @@ function companyName(ticker: string): string {
   return POPULAR_STOCKS.find((s) => s.ticker === ticker)?.name ?? ticker;
 }
 
-export default function App() {
+export default function App({
+  userEmail,
+  onLogout,
+}: {
+  userEmail: string;
+  onLogout: () => Promise<void>;
+}) {
   const [ticker, setTicker] = useState("AAPL");
   const [form, setForm] = useState<FilingForm>("10-K");
   const [question, setQuestion] = useState("What are the principal risks?");
@@ -168,17 +174,25 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-2">
             <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white">
-              F
+              V
             </span>
             <span className="font-semibold tracking-tight">Verdict</span>
             <span className="hidden text-xs text-slate-500 sm:inline">
               · multi-agent equity research
             </span>
           </div>
-          <div className="text-right text-xs">
+          <div className="flex items-center gap-4 text-right text-xs">
             <span className={readinessSummary.color} title="Backend readiness">
               ● {readinessSummary.text}
             </span>
+            <span className="hidden text-slate-500 md:inline">{userEmail}</span>
+            <button
+              type="button"
+              onClick={() => void onLogout()}
+              className="rounded-md border border-slate-800 px-2.5 py-1.5 text-slate-300 hover:bg-slate-900"
+            >
+              Sign out
+            </button>
           </div>
         </div>
       </nav>

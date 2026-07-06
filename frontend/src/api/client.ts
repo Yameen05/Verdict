@@ -77,11 +77,15 @@ export interface ResearchResponse {
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
-const API_KEY = import.meta.env.VITE_VERDICT_API_KEY?.trim();
 const SSE_MESSAGE_BOUNDARY = /\r?\n\r?\n/;
+let csrfToken = "";
 
 function requestHeaders(extra: Record<string, string> = {}): HeadersInit {
-  return API_KEY ? { ...extra, "X-API-Key": API_KEY } : extra;
+  return csrfToken ? { ...extra, "X-CSRF-Token": csrfToken } : extra;
+}
+
+export function setCsrfToken(token: string): void {
+  csrfToken = token;
 }
 
 async function errorFromResponse(res: Response): Promise<Error> {
@@ -104,6 +108,7 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
     headers: requestHeaders({ "Content-Type": "application/json" }),
+    credentials: "include",
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -111,6 +116,93 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  two_factor_enabled: boolean;
+}
+
+export interface AuthSession {
+  user: AuthUser;
+  csrf_token: string;
+  requires_2fa_setup: boolean;
+}
+
+export interface LoginChallenge {
+  requires_2fa: true;
+  challenge_token: string;
+}
+
+export interface TwoFactorSetup {
+  secret: string;
+  provisioning_uri: string;
+  qr_code_data_uri: string;
+}
+
+export interface TwoFactorEnabled extends AuthSession {
+  recovery_codes: string[];
+}
+
+async function authJson<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    credentials: "include",
+    headers: requestHeaders((init.headers as Record<string, string> | undefined) ?? {}),
+  });
+  if (!res.ok) throw await errorFromResponse(res);
+  return (await res.json()) as T;
+}
+
+export const authApi = {
+  status: () => authJson<{ bootstrap_required: boolean }>("/auth/status"),
+  me: () => authJson<AuthSession>("/auth/me"),
+  bootstrap: (
+    email: string,
+    password: string,
+    bootstrapToken: string,
+  ) =>
+    authJson<AuthSession>("/auth/bootstrap", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Bootstrap-Token": bootstrapToken,
+      },
+      body: JSON.stringify({ email, password }),
+    }),
+  login: (email: string, password: string) =>
+    authJson<AuthSession | LoginChallenge>("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }),
+  verifyTwoFactor: (challengeToken: string, code: string) =>
+    authJson<AuthSession>("/auth/2fa/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ challenge_token: challengeToken, code }),
+    }),
+  setupTwoFactor: () =>
+    authJson<TwoFactorSetup>("/auth/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code: string) =>
+    authJson<TwoFactorEnabled>("/auth/2fa/enable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }),
+  logout: async () => {
+    const res = await fetch(`${BASE_URL}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      headers: requestHeaders(),
+    });
+    if (!res.ok && res.status !== 401) throw await errorFromResponse(res);
+    csrfToken = "";
+  },
+};
 
 export interface ChatTurn {
   role: "user" | "assistant";
@@ -148,6 +240,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/research/${encodeURIComponent(ticker)}`, {
       method: "POST",
       headers: requestHeaders(),
+      credentials: "include",
     });
     if (!res.ok) {
       throw await errorFromResponse(res);
@@ -158,7 +251,7 @@ export const api = {
   history: async (ticker: string, limit = 20): Promise<HistoryResponse> => {
     const res = await fetch(
       `${BASE_URL}/research/history/${encodeURIComponent(ticker)}?limit=${limit}`,
-      { headers: requestHeaders() },
+      { headers: requestHeaders(), credentials: "include" },
     );
     if (!res.ok) {
       throw await errorFromResponse(res);
@@ -167,7 +260,10 @@ export const api = {
   },
 
   ready: async () => {
-    const res = await fetch(`${BASE_URL}/health/ready`, { headers: requestHeaders() });
+    const res = await fetch(`${BASE_URL}/health/ready`, {
+      headers: requestHeaders(),
+      credentials: "include",
+    });
     return { status: res.status, body: (await res.json()) as ReadinessBody };
   },
 };
@@ -245,7 +341,11 @@ export async function streamResearch(
 ): Promise<void> {
   const res = await fetch(
     `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream`,
-    { headers: requestHeaders({ Accept: "text/event-stream" }), signal },
+    {
+      headers: requestHeaders({ Accept: "text/event-stream" }),
+      credentials: "include",
+      signal,
+    },
   );
   if (!res.ok || !res.body) {
     throw await errorFromResponse(res);

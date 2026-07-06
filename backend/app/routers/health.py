@@ -10,10 +10,11 @@ from __future__ import annotations
 import asyncio
 
 import httpx
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 
 from app.config import get_settings
 from app.observability.logging import get_logger
+from app.security import AuthContext, require_authenticated
 
 router = APIRouter(tags=["health"])
 log = get_logger(__name__)
@@ -35,7 +36,7 @@ async def _check_llm() -> tuple[bool, str]:
         await client.models.list()
         return True, "reachable"
     except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {e}"
+        return False, type(e).__name__
 
 
 async def _check_pinecone() -> tuple[bool, str]:
@@ -49,7 +50,7 @@ async def _check_pinecone() -> tuple[bool, str]:
         names = pc.list_indexes().names()
         return True, f"reachable ({len(names)} indexes)"
     except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {e}"
+        return False, type(e).__name__
 
 
 async def _check_newsapi() -> tuple[bool, str]:
@@ -66,11 +67,14 @@ async def _check_newsapi() -> tuple[bool, str]:
                 return True, "reachable"
             return False, f"HTTP {r.status_code}"
     except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {e}"
+        return False, type(e).__name__
 
 
 @router.get("/health/ready")
-async def ready(response: Response) -> dict:
+async def ready(
+    response: Response,
+    _auth: AuthContext = Depends(require_authenticated),
+) -> dict:
     llm_ok, news_ok, pc_ok = await asyncio.gather(
         _check_llm(), _check_newsapi(), _check_pinecone()
     )

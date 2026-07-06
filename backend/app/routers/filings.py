@@ -33,7 +33,7 @@ async def ingest_filing(request: Request, req: IngestRequest) -> IngestResponse:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:  # noqa: BLE001
         log.exception("ingest_sec_failed", extra={"ticker": req.ticker})
-        raise HTTPException(status_code=502, detail=f"SEC fetch failed: {e}") from e
+        raise HTTPException(status_code=502, detail="SEC provider request failed") from e
 
     chunks = chunk_filing(filing)
     if not chunks:

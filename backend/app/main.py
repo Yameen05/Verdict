@@ -1,26 +1,27 @@
-"""FastAPI application factory.
-
-Wires: structured logging, request IDs, optional API-key auth, per-IP rate
-limiting, SQLite history persistence, SSE streaming, and dependency-aware
-health checks.
-"""
+"""FastAPI application factory."""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
 from app.limiter import limiter
-from app.middleware import ApiKeyAuthMiddleware, RequestIdMiddleware
+from app.middleware import (
+    OriginProtectionMiddleware,
+    RequestIdMiddleware,
+    SecurityHeadersMiddleware,
+)
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
-from app.routers import filings, health, research
+from app.routers import auth, filings, health, research
+from app.security import require_authenticated
 
 
 @asynccontextmanager
@@ -33,7 +34,7 @@ async def lifespan(app: FastAPI):
         extra={
             "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
-            "auth_enabled": bool(settings.verdict_api_key),
+            "auth_enabled": True,
             "database_url": settings.database_url.split("@")[-1],  # hide creds if any
         },
     )
@@ -53,19 +54,28 @@ def create_app() -> FastAPI:
             "(NewsAPI + VADER) + Financials (yfinance) → Buy/Hold/Sell report."
         ),
         lifespan=lifespan,
+        docs_url="/docs" if settings.docs_enabled else None,
+        redoc_url="/redoc" if settings.docs_enabled else None,
+        openapi_url="/openapi.json" if settings.docs_enabled else None,
     )
 
-    # Starlette runs the last-added middleware first. Desired stack:
-    # RequestId -> CORS -> API key auth -> routes.
-    app.add_middleware(ApiKeyAuthMiddleware)
+    # Starlette runs the last-added middleware first.
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(OriginProtectionMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-API-Key", "X-Request-ID"],
+        allow_headers=[
+            "Content-Type",
+            "X-Bootstrap-Token",
+            "X-CSRF-Token",
+            "X-Request-ID",
+        ],
         expose_headers=["X-Request-ID", "X-Cost-USD", "X-Duration-Ms"],
     )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
     app.add_middleware(RequestIdMiddleware)
 
     # Rate limiter: attach to app and wire its 429 handler.
@@ -88,18 +98,41 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        # Pydantic's raw validation errors can include the rejected input.  Do
+        # not reflect passwords, OTPs, bootstrap tokens, or other request data
+        # back to clients.
+        safe_errors = [
+            {
+                "type": error.get("type", "validation_error"),
+                "loc": error.get("loc", ()),
+                "msg": error.get("msg", "Invalid value"),
+            }
+            for error in exc.errors()
+        ]
         return JSONResponse(
             status_code=422,
             content={
                 "detail": "Validation error",
-                "errors": exc.errors(),
+                "errors": safe_errors,
                 "request_id": getattr(request.state, "request_id", ""),
             },
         )
 
     app.include_router(health.router)
-    app.include_router(filings.router, prefix="/filings", tags=["filings"])
-    app.include_router(research.router, prefix="/research", tags=["research"])
+    app.include_router(auth.router, prefix="/auth", tags=["authentication"])
+    protected = [Depends(require_authenticated)]
+    app.include_router(
+        filings.router,
+        prefix="/filings",
+        tags=["filings"],
+        dependencies=protected,
+    )
+    app.include_router(
+        research.router,
+        prefix="/research",
+        tags=["research"],
+        dependencies=protected,
+    )
 
     return app
 
