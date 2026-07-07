@@ -187,7 +187,7 @@ For Gemini through its OpenAI-compatible endpoint, keep the default
 
 ```bash
 LLM_API_KEY=...
-LLM_MODEL=gemini-2.0-flash
+LLM_MODEL=gemini-2.5-flash
 ```
 
 For OpenAI chat, leave `LLM_BASE_URL` blank and set:
