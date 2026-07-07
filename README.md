@@ -21,25 +21,36 @@ history, and a follow-up analyst chat.
 
 ### Research Workspace
 
-Verdict starts with a protected research dashboard: stock picker, SEC filing
-ingestion, ad-hoc filing search, live backend readiness, and a streamed
-multi-agent run button.
+Verdict starts with a protected research dashboard: stock picker, watchlist,
+SEC filing ingestion, ad-hoc filing search, live backend readiness, and a
+streamed "put it on trial" run button.
 
-### Agent Report
+### The Trial
 
-Each research run fans out to specialist agents, then synthesizes their output
-into one report. The UI keeps the recommendation, reasoning, source-specific
-agent status, financial metrics, SEC findings, and cost visible.
+Each run gathers evidence in parallel (SEC filing RAG, news sentiment, live
+financials, insider Form 4 activity) into a citable evidence ledger. A bull
+advocate and a bear advocate then each argue their strongest case from that
+ledger, and a judge weighs both to issue the verdict — with a 0-100 confidence
+score, a five-dimension scorecard, the strongest opposing argument it
+overruled, and concrete falsifiers that would flip the call. Every claim cites
+evidence ids you can click open in the UI.
 
 ![Verdict report](docs/assets/verdict-report.png)
 
 ### Ask The Analyst
 
 After a report is generated, Verdict opens a contextual chat grounded in that
-run. Follow-up questions can use the current report and prior turns without
-re-running the entire pipeline.
+run. The analyst can also search the indexed filing live (LLM tool use) when a
+follow-up needs detail the report doesn't carry.
 
 ![Verdict analyst chat](docs/assets/verdict-chat.png)
+
+### The Scoreboard
+
+Every verdict stores the price at the moment it was issued. The scoreboard tab
+replays the book: forward return since each call, hit/miss under a disclosed
+rule, aggregate hit rate, and average return on Buys. Verdict grades its own
+homework.
 
 Screenshots above use sample AAPL documentation data captured from the real
 React UI with mocked API responses.
@@ -50,27 +61,31 @@ React UI with mocked API responses.
   HttpOnly sessions, CSRF protection, origin checks, and rate limits.
 - Fetches the latest SEC `10-K` or `10-Q` for a ticker through SEC EDGAR.
 - Chunks filing text, embeds it with OpenAI embeddings, and stores vectors in a
-  Pinecone namespace per ticker.
-- Runs a LangGraph research graph with three specialist paths:
-  - SEC filing RAG
-  - recent news sentiment from NewsAPI plus VADER
-  - market and financial metrics from yfinance
-- Streams agent progress to the browser with Server-Sent Events.
-- Produces a structured `Buy`, `Hold`, `Sell`, or `Pending` report through an
-  OpenAI-compatible chat model.
-- Persists completed research runs in SQLite by default for history and
-  comparison.
+  local SQLite vector store by default (or Pinecone when a key is set).
+- Runs a LangGraph adversarial research graph:
+  - four parallel evidence agents — SEC filing RAG, LLM-scored news sentiment,
+    yfinance financials, and SEC Form 4 insider activity
+  - a deterministic evidence ledger with citable ids
+  - bull and bear advocates that argue opposing cases from the same ledger
+  - a judge that issues the verdict with confidence, dimension scores,
+    dissent, falsifiers, and evidence citations — and may run one targeted
+    follow-up retrieval from the filing before deciding
+- Streams per-node progress and mid-debate events to the browser over SSE.
+- Persists completed runs (with price-at-verdict) in SQLite for history,
+  verdict-drift timelines, and the self-grading scoreboard.
 - Tracks prompt, completion, embedding, and estimated USD cost per request.
 
-Verdict degrades intentionally. Missing NewsAPI credentials skip the news agent.
-Missing Pinecone or filing vectors skip the SEC RAG path. Upstream failures
-return typed error payloads instead of taking down the whole graph.
+Verdict degrades intentionally. Missing NewsAPI credentials skip the news
+agent. Missing filing vectors skip the SEC RAG path. Upstream failures return
+typed error payloads instead of taking down the whole graph — the judge rules
+on whatever evidence survives.
 
 ## Architecture
 
 ```text
 React + TypeScript + Vite
-  auth gate, stock picker, filing search, SSE progress, report, chat, history
+  auth gate, watchlist, SSE trial progress, verdict card, debate panel,
+  evidence ledger, scorecard radar, timeline, scoreboard, analyst chat
         |
         | REST + Server-Sent Events
         v
@@ -80,17 +95,25 @@ FastAPI
         v
 LangGraph StateGraph
   START
-    |--------------------|----------------------|
-    v                    v                      v
-  SEC agent           News agent             Metrics agent
-  Pinecone RAG        NewsAPI + VADER        yfinance metrics
-    |--------------------|----------------------|
-                         v
-                    Synthesizer
-                    LLM JSON report
-                         |
-                         v
-                    SQLite research_runs
+    |-----------|-------------|--------------|
+    v           v             v              v
+  SEC agent   News agent    Metrics agent  Insider agent
+  local RAG   NewsAPI +     yfinance       EDGAR Form 4
+  (or         LLM scoring
+  Pinecone)
+    |-----------|------|------|--------------|
+                       v  join
+                 evidence ledger  (citable ids: sec:0, metrics:pe, …)
+                   |         |
+                   v         v
+              bull advocate  bear advocate
+                   |         |
+                   v  join   v
+                     judge  ── may loop once for a follow-up retrieval
+              verdict + confidence + scores + dissent + falsifiers
+                       |
+                       v
+              SQLite research_runs (with price-at-verdict → scoreboard)
 ```
 
 ## Tech Stack
@@ -102,8 +125,9 @@ LangGraph StateGraph
 | Agents | LangGraph `StateGraph` |
 | LLM | Any OpenAI-compatible chat completion endpoint |
 | Embeddings | OpenAI embeddings |
-| Retrieval | Pinecone serverless index, namespace per ticker |
-| Market and news data | SEC EDGAR, NewsAPI, VADER, yfinance |
+| Retrieval | Local SQLite vector store (default) or Pinecone serverless |
+| Market and news data | SEC EDGAR (filings + Form 4), NewsAPI, yfinance |
+| Sentiment | Batched LLM scoring (finance-aware, per headline) |
 | Persistence | SQLAlchemy async ORM, SQLite by default |
 | Security | Argon2id, encrypted TOTP seed, one-time recovery codes, CSRF |
 | Ops | Docker, Docker Compose, nginx SPA proxy, structured JSON logs |
@@ -173,8 +197,9 @@ OPENAI_API_KEY=...
 LLM_MODEL=gpt-4o-mini
 ```
 
-SEC filing search requires both `OPENAI_API_KEY` and `PINECONE_API_KEY` because
-that path uses OpenAI embeddings plus Pinecone.
+SEC filing search requires `OPENAI_API_KEY` for embeddings. Vectors live in a
+local SQLite file by default — no other service needed. Set `PINECONE_API_KEY`
+only if you want the Pinecone serverless backend instead.
 
 News sentiment is optional:
 
@@ -216,7 +241,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | `LLM_API_KEY` | For custom chat providers | Key for `LLM_BASE_URL` providers such as Gemini or Groq |
 | `LLM_BASE_URL` | No | OpenAI-compatible chat endpoint; blank uses OpenAI |
 | `OPENAI_API_KEY` | For SEC RAG and OpenAI chat | OpenAI embeddings and optional OpenAI chat |
-| `PINECONE_API_KEY` | For SEC RAG | Filing vector store |
+| `PINECONE_API_KEY` | No | Switches the vector store from local SQLite to Pinecone |
+| `VECTOR_DB_PATH` | No | Local vector store file; defaults to `./data/vectors.db` |
 | `PINECONE_INDEX_NAME` | No | Defaults to `verdict-filings` |
 | `NEWS_API_KEY` | No | Enables the news agent; missing key skips news |
 | `EMBEDDING_MODEL` | No | Defaults to `text-embedding-3-small` |
@@ -242,10 +268,11 @@ tracking variables.
 | `POST` | `/auth/2fa/verify` | TOTP or recovery-code verification |
 | `POST` | `/filings/ingest` | Fetch, chunk, embed, and index the latest filing |
 | `POST` | `/filings/query` | Search indexed filing chunks |
-| `POST` | `/research/{ticker}` | Run the full research graph |
-| `GET` | `/research/{ticker}/stream` | Stream progress and final result over SSE |
-| `POST` | `/research/ask` | Ask a contextual follow-up question |
+| `POST` | `/research/{ticker}` | Run the full adversarial research graph |
+| `GET` | `/research/{ticker}/stream` | Stream node + debate progress and final result over SSE |
+| `POST` | `/research/ask` | Contextual follow-up; can search the filing via tool use |
 | `GET` | `/research/history/{ticker}` | Return recent persisted runs |
+| `GET` | `/research/scoreboard` | Forward returns and hit rate for past verdicts |
 
 Unauthenticated liveness check:
 

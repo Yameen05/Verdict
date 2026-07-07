@@ -16,6 +16,7 @@ def _isolated_env(monkeypatch, tmp_path):
     """Reset settings + point DB at a temp file per-test."""
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
+    monkeypatch.setenv("VECTOR_DB_PATH", str(tmp_path / "vectors.db"))
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver,localhost")
     monkeypatch.setenv("AUTH_BOOTSTRAP_TOKEN", "test-bootstrap-token-with-at-least-32-characters")

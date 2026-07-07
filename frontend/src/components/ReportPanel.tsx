@@ -4,13 +4,6 @@ interface Props {
   result: ResearchResponse | null;
 }
 
-const recColors: Record<string, string> = {
-  Buy: "bg-emerald-700 text-emerald-100",
-  Hold: "bg-amber-700 text-amber-100",
-  Sell: "bg-rose-700 text-rose-100",
-  Pending: "bg-slate-700 text-slate-200",
-};
-
 const statusColors: Record<string, string> = {
   ok: "text-emerald-400",
   skipped: "text-amber-400",
@@ -26,49 +19,39 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/** Per-source findings: what each fetch agent actually brought back. */
 export function ReportPanel({ result }: Props) {
   if (!result) return null;
-  const { report, sec, news, metrics } = result;
+  const { report, sec, news, metrics, insider } = result;
 
   return (
-    <section className="mt-8 space-y-5">
-      <div className="rounded-lg border border-slate-800 bg-slate-900 p-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">{report.ticker} — Research report</h2>
-          <span
-            className={`rounded-full px-3 py-1 text-sm font-semibold ${
-              recColors[report.recommendation] ?? recColors.Pending
-            }`}
-          >
-            {report.recommendation}
-          </span>
-        </div>
-        <p className="text-sm leading-relaxed text-slate-200">{report.justification}</p>
-
-        {report.company_overview && (
-          <Section title="Company overview">{report.company_overview}</Section>
-        )}
-        {report.financial_health && (
-          <Section title="Financial health">{report.financial_health}</Section>
-        )}
-        {report.key_risks.length > 0 && (
-          <div className="mt-4">
-            <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
-              Key risks
-            </h3>
-            <ul className="list-inside list-disc space-y-1 text-sm text-slate-200">
-              {report.key_risks.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
+    <section className="mt-6 space-y-4">
+      {(report.company_overview || report.financial_health || report.key_risks.length > 0) && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+          <div className="grid gap-4 md:grid-cols-3">
+            {report.company_overview && (
+              <Section title="Company overview">{report.company_overview}</Section>
+            )}
+            {report.financial_health && (
+              <Section title="Financial health">{report.financial_health}</Section>
+            )}
+            {report.key_risks.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+                  Key risks
+                </h3>
+                <ul className="list-inside list-disc space-y-1 text-sm text-slate-200">
+                  {report.key_risks.map((r, i) => (
+                    <li key={i}>{r}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-        )}
-        {report.news_summary && (
-          <Section title="News summary">{report.news_summary}</Section>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AgentCard title="SEC filings" status={sec.status} error={sec.error}>
           {sec.findings.length > 0 && (
             <ul className="space-y-2 text-xs text-slate-300">
@@ -88,11 +71,49 @@ export function ReportPanel({ result }: Props) {
         <AgentCard title="News & sentiment" status={news.status} error={news.error}>
           {news.summary && <p className="text-xs text-slate-300">{news.summary}</p>}
           {news.sentiment_score !== null && (
-            <p className="mt-1 text-xs text-slate-400">score {news.sentiment_score.toFixed(2)}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              aggregate score {news.sentiment_score.toFixed(2)} · {news.article_count} articles
+            </p>
+          )}
+          {news.top_headlines.length > 0 && (
+            <ul className="mt-2 space-y-1.5 border-t border-slate-800 pt-2 text-[11px]">
+              {news.top_headlines.slice(0, 5).map((h, i) => (
+                <li key={i} className="flex items-baseline gap-1.5">
+                  <span
+                    className={`shrink-0 font-mono text-[9px] ${
+                      h.score === null
+                        ? "text-slate-600"
+                        : h.score > 0.05
+                        ? "text-emerald-400"
+                        : h.score < -0.05
+                        ? "text-rose-400"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {h.score === null ? "·" : (h.score > 0 ? "+" : "") + h.score.toFixed(1)}
+                  </span>
+                  {h.url ? (
+                    <a
+                      href={h.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-slate-300 hover:text-indigo-300 hover:underline"
+                    >
+                      {h.title}
+                    </a>
+                  ) : (
+                    <span className="text-slate-300">{h.title}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </AgentCard>
 
         <AgentCard title="Financial metrics" status={metrics.status} error={metrics.error}>
+          {metrics.current_price !== null && (
+            <Metric label="Price" value={`$${metrics.current_price.toFixed(2)}`} />
+          )}
           {metrics.revenue !== null && (
             <Metric label="Revenue (TTM)" value={`$${(metrics.revenue / 1e9).toFixed(1)}B`} />
           )}
@@ -111,6 +132,36 @@ export function ReportPanel({ result }: Props) {
             />
           )}
         </AgentCard>
+
+        <AgentCard title="Insider activity" status={insider.status} error={insider.error}>
+          {insider.summary && <p className="text-xs text-slate-300">{insider.summary}</p>}
+          {insider.transactions.length > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-slate-800 pt-2 text-[11px]">
+              {insider.transactions.slice(0, 5).map((t, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-slate-300">
+                    <span
+                      className={
+                        t.kind === "buy"
+                          ? "text-emerald-400"
+                          : t.kind === "sell"
+                          ? "text-rose-400"
+                          : "text-slate-500"
+                      }
+                    >
+                      {t.kind.toUpperCase()}
+                    </span>{" "}
+                    {t.insider}
+                    {t.role ? ` · ${t.role}` : ""}
+                  </span>
+                  <span className="shrink-0 text-slate-500">
+                    {t.value_usd ? `$${(t.value_usd / 1000).toFixed(0)}k` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </AgentCard>
       </div>
     </section>
   );
@@ -118,7 +169,7 @@ export function ReportPanel({ result }: Props) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="mt-4">
+    <div>
       <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">{title}</h3>
       <p className="text-sm leading-relaxed text-slate-200">{children}</p>
     </div>
@@ -137,7 +188,7 @@ function AgentCard({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-medium">{title}</h3>
         <StatusBadge status={status} />

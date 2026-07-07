@@ -1,3 +1,7 @@
+import type { DebateCase, ResearchResponse } from "./types";
+
+export * from "./types";
+
 export type FilingForm = "10-K" | "10-Q";
 
 export interface IngestResponse {
@@ -21,59 +25,6 @@ export interface QueryResponse {
   ticker: string;
   question: string;
   matches: QueryMatch[];
-}
-
-export type AgentStatus = "ok" | "skipped" | "not_implemented" | "error";
-
-export interface SECFinding {
-  question: string;
-  answer: string;
-  source_chunks: number;
-}
-
-export interface SECFindings {
-  status: AgentStatus;
-  findings: SECFinding[];
-  accession: string | null;
-  error: string | null;
-}
-
-export interface NewsFindings {
-  status: AgentStatus;
-  sentiment_score: number | null;
-  summary: string | null;
-  article_count: number;
-  error: string | null;
-}
-
-export interface MetricsFindings {
-  status: AgentStatus;
-  revenue: number | null;
-  eps: number | null;
-  pe_ratio: number | null;
-  profit_margin: number | null;
-  debt_to_equity: number | null;
-  week_52_low: number | null;
-  week_52_high: number | null;
-  error: string | null;
-}
-
-export interface ResearchReport {
-  ticker: string;
-  recommendation: "Buy" | "Hold" | "Sell" | "Pending";
-  justification: string;
-  company_overview: string;
-  financial_health: string;
-  key_risks: string[];
-  news_summary: string | null;
-}
-
-export interface ResearchResponse {
-  ticker: string;
-  sec: SECFindings;
-  news: NewsFindings;
-  metrics: MetricsFindings;
-  report: ResearchReport;
 }
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
@@ -220,6 +171,7 @@ export interface AskResponse {
   answer: string;
   cost_usd: number;
   request_id: string;
+  searched_filing: boolean;
 }
 
 export const api = {
@@ -246,6 +198,17 @@ export const api = {
       throw await errorFromResponse(res);
     }
     return (await res.json()) as ResearchEnvelope;
+  },
+
+  scoreboard: async (limit = 100): Promise<ScoreboardResponse> => {
+    const res = await fetch(`${BASE_URL}/research/scoreboard?limit=${limit}`, {
+      headers: requestHeaders(),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as ScoreboardResponse;
   },
 
   history: async (ticker: string, limit = 20): Promise<HistoryResponse> => {
@@ -289,9 +252,37 @@ export interface HistoryEntry {
   recommendation: "Buy" | "Hold" | "Sell" | "Pending";
   justification: string;
   sentiment_score: number | null;
+  confidence: number | null;
+  price_at_run: number | null;
   duration_ms: number | null;
   cost_usd: number | null;
   created_at: string;
+}
+
+export interface ScoreboardEntry {
+  id: number;
+  ticker: string;
+  recommendation: string;
+  confidence: number | null;
+  created_at: string;
+  price_at_run: number | null;
+  current_price: number | null;
+  return_pct: number | null;
+  outcome: "hit" | "miss" | "unscored";
+}
+
+export interface ScoreboardSummary {
+  total_runs: number;
+  scored: number;
+  hits: number;
+  hit_rate: number | null;
+  avg_return_buy_pct: number | null;
+  rule: string;
+}
+
+export interface ScoreboardResponse {
+  entries: ScoreboardEntry[];
+  summary: ScoreboardSummary;
 }
 
 export interface HistoryResponse {
@@ -311,12 +302,23 @@ export interface ReadinessBody {
 
 // ----- SSE streaming -----
 
+export type DebateStreamEvent =
+  | { kind: "debate_case"; stance: "bull" | "bear"; case: DebateCase }
+  | {
+      kind: "judge_phase";
+      phase: "deliberating" | "followup" | "followup_done";
+      question?: string;
+      reflection?: number;
+      chunks?: number;
+    };
+
 export type StreamEvent =
   | { event: "started"; data: { ticker: string; request_id: string } }
   | {
       event: "node_completed";
       data: { node: string; payload: Record<string, unknown> };
     }
+  | { event: "debate"; data: DebateStreamEvent }
   | {
       event: "completed";
       data: {

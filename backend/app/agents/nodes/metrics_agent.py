@@ -48,6 +48,7 @@ async def metrics_agent(state: ResearchState) -> dict:
             debt_to_equity=metrics.debt_to_equity,
             week_52_low=metrics.week_52_low,
             week_52_high=metrics.week_52_high,
+            current_price=metrics.current_price,
         )
     }
 

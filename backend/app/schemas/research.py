@@ -18,11 +18,20 @@ class SECFindings(BaseModel):
     error: str | None = None
 
 
+class Headline(BaseModel):
+    title: str
+    source: str = ""
+    published_at: str = ""
+    url: str = ""
+    score: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+
 class NewsFindings(BaseModel):
     status: AgentStatus
     sentiment_score: float | None = Field(default=None, ge=-1.0, le=1.0)
     summary: str | None = None
     article_count: int = 0
+    top_headlines: list[Headline] = Field(default_factory=list)
     error: str | None = None
 
 
@@ -35,7 +44,59 @@ class MetricsFindings(BaseModel):
     debt_to_equity: float | None = None
     week_52_low: float | None = None
     week_52_high: float | None = None
+    current_price: float | None = None
     error: str | None = None
+
+
+class InsiderTransaction(BaseModel):
+    insider: str
+    role: str | None = None
+    date: str = ""
+    kind: Literal["buy", "sell", "other"] = "other"
+    shares: float | None = None
+    value_usd: float | None = None
+
+
+class InsiderFindings(BaseModel):
+    status: AgentStatus
+    transactions: list[InsiderTransaction] = Field(default_factory=list)
+    buy_count: int = 0
+    sell_count: int = 0
+    summary: str | None = None
+    error: str | None = None
+
+
+class EvidenceItem(BaseModel):
+    """One citable fact collected by an agent. Referenced by id from arguments."""
+
+    id: str  # e.g. "sec:0", "news:h2", "metrics:pe", "insider:net"
+    source: Literal["sec", "news", "metrics", "insider"]
+    label: str
+    content: str
+    url: str | None = None
+
+
+class Argument(BaseModel):
+    claim: str
+    evidence: list[str] = Field(default_factory=list)  # EvidenceItem ids
+
+
+class DebateCase(BaseModel):
+    stance: Literal["bull", "bear"]
+    status: AgentStatus = "ok"
+    thesis: str = ""
+    arguments: list[Argument] = Field(default_factory=list)
+    error: str | None = None
+
+
+class DimensionScores(BaseModel):
+    """Judge-assigned 0-10 scores; None when the evidence didn't cover it."""
+
+    valuation: float | None = Field(default=None, ge=0, le=10)
+    growth: float | None = Field(default=None, ge=0, le=10)
+    profitability: float | None = Field(default=None, ge=0, le=10)
+    balance_sheet: float | None = Field(default=None, ge=0, le=10)
+    sentiment: float | None = Field(default=None, ge=0, le=10)
 
 
 class ResearchReport(BaseModel):
@@ -46,6 +107,13 @@ class ResearchReport(BaseModel):
     financial_health: str
     key_risks: list[str] = Field(default_factory=list)
     news_summary: str | None = None
+    # --- verdict extensions (all optional so pre-debate stored runs still parse) ---
+    confidence: int | None = Field(default=None, ge=0, le=100)
+    scores: DimensionScores | None = None
+    falsifiers: list[str] = Field(default_factory=list)
+    dissent: str | None = None  # strongest opposing argument the judge overruled
+    citations: list[Argument] = Field(default_factory=list)
+    delta_summary: str | None = None  # what changed vs the prior stored run
 
 
 class ResearchResponse(BaseModel):
@@ -54,3 +122,9 @@ class ResearchResponse(BaseModel):
     news: NewsFindings
     metrics: MetricsFindings
     report: ResearchReport
+    insider: InsiderFindings = Field(
+        default_factory=lambda: InsiderFindings(status="skipped")
+    )
+    bull: DebateCase | None = None
+    bear: DebateCase | None = None
+    evidence: list[EvidenceItem] = Field(default_factory=list)

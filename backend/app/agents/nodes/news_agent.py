@@ -1,34 +1,31 @@
-"""News & Sentiment agent — Phase 3.
+"""News & Sentiment agent.
 
 Resolves the ticker to a company name via the cached SEC ticker index, fetches
-recent headlines from NewsAPI, scores aggregate sentiment with VADER, and asks
-the configured chat model for a short narrative summary.
+recent headlines from NewsAPI, and scores per-headline + aggregate sentiment
+with one batched LLM call that also writes the narrative summary.
 
 Skips cleanly when NEWS_API_KEY is unset so the rest of the research pipeline
-still runs.
+still runs. If sentiment scoring fails, the headlines still ship (score-less)
+so the debate can cite them.
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
-
-from openai import AsyncOpenAI
-
 from app.agents.state import ResearchState
 from app.config import get_settings
-from app.observability.cost import record_chat
 from app.observability.logging import get_logger
-from app.schemas.research import NewsFindings
+from app.schemas.research import Headline, NewsFindings
 from app.services import sec_client
 from app.services.cache import TTLCache
-from app.services.llm import make_llm_client
 from app.services.news_client import Article, NewsAPIError, fetch_recent_articles
-from app.services.sentiment import score_articles
+from app.services.sentiment import ScoredArticle, SentimentError, score_and_summarize
 
 log = get_logger(__name__)
 
 _NEWS_TTL_SECONDS = 300  # 5 minutes
 _articles_cache: TTLCache[list[Article]] = TTLCache(_NEWS_TTL_SECONDS)
+
+TOP_HEADLINES = 8
 
 
 async def _cached_fetch_articles(company_name: str) -> list[Article]:
@@ -40,47 +37,20 @@ async def _cached_fetch_articles(company_name: str) -> list[Article]:
 def _reset_news_cache() -> None:
     _articles_cache.clear()
 
-_SUMMARY_SYSTEM = (
-    "You are a financial-research assistant summarizing recent news for an "
-    "investor. Given a company name, an aggregate sentiment score in [-1, 1], "
-    "and a list of recent headlines, produce a single 2-3 sentence summary "
-    "that captures the dominant themes and whether sentiment skews positive, "
-    "negative, or mixed. No bullet points, no preamble."
-)
 
-
-@lru_cache(maxsize=1)
-def _client() -> AsyncOpenAI:
-    return make_llm_client()
-
-
-async def _summarize(
-    company_name: str, aggregate: float, articles: list[Article]
-) -> str:
-    if not articles:
-        return "No recent news articles were found."
-    headlines = "\n".join(
-        f"- ({a.published_at[:10]}) {a.title}" for a in articles[:15]
-    )
-    model = get_settings().llm_model
-    resp = await _client().chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": _SUMMARY_SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    f"Company: {company_name}\n"
-                    f"Aggregate sentiment: {aggregate:.3f}\n\n"
-                    f"Recent headlines:\n{headlines}"
-                ),
-            },
-        ],
-        temperature=0.2,
-        max_tokens=180,
-    )
-    record_chat(model, resp)
-    return (resp.choices[0].message.content or "").strip()
+def _headlines(scored: list[ScoredArticle]) -> list[Headline]:
+    # Most opinionated first — strong signals are what the debate cites.
+    ranked = sorted(scored, key=lambda s: abs(s.score), reverse=True)[:TOP_HEADLINES]
+    return [
+        Headline(
+            title=s.article.title,
+            source=s.article.source,
+            published_at=s.article.published_at,
+            url=s.article.url,
+            score=round(s.score, 2),
+        )
+        for s in ranked
+    ]
 
 
 async def news_agent(state: ResearchState) -> dict:
@@ -114,17 +84,35 @@ async def news_agent(state: ResearchState) -> dict:
             )
         }
 
-    aggregate, _scored = score_articles(articles)
     try:
-        summary = await _summarize(company_name, aggregate, articles)
-    except Exception as e:  # noqa: BLE001 - summary is best-effort
-        summary = f"({len(articles)} headlines; summary generation failed: {e})"
+        aggregate, scored, summary = await score_and_summarize(company_name, articles)
+    except SentimentError as e:
+        # Headlines are still usable evidence even without scores.
+        log.warning("sentiment_scoring_failed", extra={"ticker": ticker, "reason": str(e)})
+        return {
+            "news": NewsFindings(
+                status="ok",
+                sentiment_score=None,
+                summary=f"({len(articles)} recent headlines; sentiment scoring unavailable: {e})",
+                article_count=len(articles),
+                top_headlines=[
+                    Headline(
+                        title=a.title,
+                        source=a.source,
+                        published_at=a.published_at,
+                        url=a.url,
+                    )
+                    for a in articles[:TOP_HEADLINES]
+                ],
+            )
+        }
 
     return {
         "news": NewsFindings(
             status="ok",
-            sentiment_score=round(aggregate, 4),
+            sentiment_score=round(aggregate, 4) if aggregate is not None else None,
             summary=summary,
             article_count=len(articles),
+            top_headlines=_headlines(scored),
         )
     }

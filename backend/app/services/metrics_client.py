@@ -28,6 +28,7 @@ class Metrics:
     debt_to_equity: float | None
     week_52_low: float | None
     week_52_high: float | None
+    current_price: float | None = None
 
 
 # yfinance dict-key -> our field name. None means "not yet populated".
@@ -39,6 +40,7 @@ _FIELD_MAP: dict[str, str] = {
     "debtToEquity": "debt_to_equity",
     "fiftyTwoWeekLow": "week_52_low",
     "fiftyTwoWeekHigh": "week_52_high",
+    "currentPrice": "current_price",
 }
 
 
@@ -86,4 +88,17 @@ def fetch_metrics(ticker: str) -> Metrics:
         debt_to_equity=_coerce_float(info.get("debtToEquity")),
         week_52_low=_coerce_float(info.get("fiftyTwoWeekLow")),
         week_52_high=_coerce_float(info.get("fiftyTwoWeekHigh")),
+        current_price=_coerce_float(
+            info.get("currentPrice") or info.get("regularMarketPrice")
+        ),
     )
+
+
+def fetch_price(ticker: str) -> float | None:
+    """Just the latest price — used by the scoreboard to compute forward returns."""
+    ticker = ticker.strip().upper()
+    try:
+        info = yf.Ticker(ticker).info or {}
+    except Exception as e:  # noqa: BLE001 - yfinance has unstable internals
+        raise MetricsClientError(f"yfinance price lookup failed for {ticker}: {e}") from e
+    return _coerce_float(info.get("currentPrice") or info.get("regularMarketPrice"))

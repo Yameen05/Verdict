@@ -15,7 +15,7 @@ import pytest
 
 from app.config import get_settings
 from app.limiter import limiter
-from app.routers import research as research_mod
+from app.routers import ask as research_mod
 
 
 @pytest.fixture(autouse=True)
