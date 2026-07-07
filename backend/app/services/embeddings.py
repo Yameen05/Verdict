@@ -20,7 +20,13 @@ _BATCH_SIZE = 100
 
 @lru_cache(maxsize=1)
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=get_settings().openai_api_key, timeout=60.0)
+    # Follows EMBEDDING_BASE_URL when set (any OpenAI-compatible provider,
+    # e.g. Gemini's compatibility layer); defaults to api.openai.com.
+    s = get_settings()
+    kwargs: dict = {"api_key": s.resolved_embedding_key, "timeout": 60.0}
+    if s.embedding_base_url.strip():
+        kwargs["base_url"] = s.embedding_base_url.strip()
+    return AsyncOpenAI(**kwargs)
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:

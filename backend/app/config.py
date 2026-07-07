@@ -38,13 +38,18 @@ class Settings(BaseSettings):
 
     embedding_model: str = Field(default="text-embedding-3-small")
     embedding_dim: int = Field(default=1536)
+    # Optional OpenAI-compatible endpoint for embeddings. Blank uses OpenAI.
+    # Gemini's compatibility layer serves embeddings too (model:
+    # gemini-embedding-001), so one free Gemini key can power the whole app.
+    embedding_base_url: str = Field(default="")
+    embedding_api_key: str = Field(default="")
     llm_model: str = Field(default="gpt-4o-mini")
 
     # --- LLM provider routing (OpenAI-compatible endpoints) ---
     # Leave blank to call api.openai.com. To use a different provider that
     # speaks the OpenAI API, set its base URL here and point LLM_MODEL at one of
     # that provider's models. Examples:
-    #   Google Gemini : https://generativelanguage.googleapis.com/v1beta/openai/   (model: gemini-2.0-flash)
+    #   Google Gemini : https://generativelanguage.googleapis.com/v1beta/openai/   (model: gemini-2.5-flash)
     #   Groq          : https://api.groq.com/openai/v1                              (model: llama-3.3-70b-versatile)
     llm_base_url: str = Field(default="")
     # API key for the LLM provider. If blank, falls back to openai_api_key so
@@ -113,6 +118,23 @@ class Settings(BaseSettings):
         if not self.llm_base_url.strip():
             return self.openai_api_key.strip()
         return ""
+
+    @property
+    def resolved_embedding_key(self) -> str:
+        """Key used for embedding calls.
+
+        Prefers EMBEDDING_API_KEY. When EMBEDDING_BASE_URL points at the same
+        provider as the chat endpoint (the common one-key Gemini setup), the
+        LLM key is reused. Without a custom base URL, falls back to OpenAI.
+        """
+        if self.embedding_api_key.strip():
+            return self.embedding_api_key.strip()
+        base = self.embedding_base_url.strip()
+        if base:
+            if base == self.llm_base_url.strip() and self.llm_api_key.strip():
+                return self.llm_api_key.strip()
+            return ""
+        return self.openai_api_key.strip()
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
