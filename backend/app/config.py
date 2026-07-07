@@ -16,7 +16,13 @@ class Settings(BaseSettings):
 
     openai_api_key: str = Field(default="", description="OpenAI API key")
 
+    # Optional. When set, filing vectors go to Pinecone serverless; when blank
+    # (the default) they live in a local SQLite file — zero external setup.
     pinecone_api_key: str = Field(default="", description="Pinecone API key")
+    vector_db_path: str = Field(
+        default="./data/vectors.db",
+        description="SQLite file for the local vector store backend",
+    )
     pinecone_index_name: str = Field(default="verdict-filings")
     pinecone_cloud: str = Field(default="aws")
     pinecone_region: str = Field(default="us-east-1")

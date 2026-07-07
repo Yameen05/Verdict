@@ -138,6 +138,10 @@ class ResearchRun(Base):
     recommendation: Mapped[str] = mapped_column(String(16))
     justification: Mapped[str] = mapped_column(Text)
     sentiment_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Price when the verdict was issued — the scoreboard measures forward
+    # returns against it. Null for runs where yfinance had no price.
+    price_at_run: Mapped[float | None] = mapped_column(Float, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)  # full ResearchResponse as JSON
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -226,6 +230,14 @@ def _migrate_legacy_schema(connection) -> None:
                 "REFERENCES users(id) ON DELETE CASCADE"
             )
         )
+    if "confidence" not in columns:
+        connection.execute(
+            text("ALTER TABLE research_runs ADD COLUMN confidence INTEGER")
+        )
+    if "price_at_run" not in columns:
+        connection.execute(
+            text("ALTER TABLE research_runs ADD COLUMN price_at_run FLOAT")
+        )
     connection.execute(
         text(
             "CREATE INDEX IF NOT EXISTS ix_research_runs_user_id "
@@ -255,6 +267,8 @@ async def save_run(
     cost_usd: float | None = None,
     request_id: str | None = None,
     user_id: int | None = None,
+    confidence: int | None = None,
+    price_at_run: float | None = None,
 ) -> ResearchRun:
     row = ResearchRun(
         user_id=user_id,
@@ -262,6 +276,8 @@ async def save_run(
         recommendation=recommendation,
         justification=justification,
         sentiment_score=sentiment_score,
+        confidence=confidence,
+        price_at_run=price_at_run,
         payload=payload,
         duration_ms=duration_ms,
         cost_usd=cost_usd,
@@ -280,6 +296,20 @@ async def list_runs_for_ticker(
     user_id: int | None = None,
 ) -> list[ResearchRun]:
     stmt = select(ResearchRun).where(ResearchRun.ticker == ticker.upper())
+    if user_id is not None:
+        stmt = stmt.where(ResearchRun.user_id == user_id)
+    stmt = stmt.order_by(ResearchRun.created_at.desc()).limit(limit)
+    res = await session.execute(stmt)
+    return list(res.scalars().all())
+
+
+async def list_recent_runs(
+    session: AsyncSession,
+    limit: int = 200,
+    user_id: int | None = None,
+) -> list[ResearchRun]:
+    """All-ticker recency feed for the scoreboard."""
+    stmt = select(ResearchRun)
     if user_id is not None:
         stmt = stmt.where(ResearchRun.user_id == user_id)
     stmt = stmt.order_by(ResearchRun.created_at.desc()).limit(limit)

@@ -20,7 +20,7 @@ from app.middleware import (
 )
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
-from app.routers import auth, filings, health, research
+from app.routers import ask, auth, filings, health, research, scoreboard
 from app.security import require_authenticated
 
 
@@ -127,10 +127,24 @@ def create_app() -> FastAPI:
         tags=["filings"],
         dependencies=protected,
     )
+    # ask.router must register before research.router: its literal /ask path
+    # would otherwise be swallowed by research's POST /{ticker}.
+    app.include_router(
+        ask.router,
+        prefix="/research",
+        tags=["research"],
+        dependencies=protected,
+    )
     app.include_router(
         research.router,
         prefix="/research",
         tags=["research"],
+        dependencies=protected,
+    )
+    app.include_router(
+        scoreboard.router,
+        prefix="/research",
+        tags=["scoreboard"],
         dependencies=protected,
     )
 

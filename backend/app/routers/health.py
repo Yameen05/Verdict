@@ -39,16 +39,22 @@ async def _check_llm() -> tuple[bool, str]:
         return False, type(e).__name__
 
 
-async def _check_pinecone() -> tuple[bool, str]:
+async def _check_vectorstore() -> tuple[bool, str]:
     settings = get_settings()
-    if not settings.pinecone_api_key:
-        return False, "PINECONE_API_KEY not set"
-    try:
-        from pinecone import Pinecone
+    if settings.pinecone_api_key:
+        try:
+            from pinecone import Pinecone
 
-        pc = Pinecone(api_key=settings.pinecone_api_key)
-        names = pc.list_indexes().names()
-        return True, f"reachable ({len(names)} indexes)"
+            pc = Pinecone(api_key=settings.pinecone_api_key)
+            names = pc.list_indexes().names()
+            return True, f"pinecone reachable ({len(names)} indexes)"
+        except Exception as e:  # noqa: BLE001
+            return False, type(e).__name__
+    try:
+        from app.services.vectorstore_local import count_chunks_sync
+
+        count = await asyncio.to_thread(count_chunks_sync)
+        return True, f"local ({count} chunks indexed)"
     except Exception as e:  # noqa: BLE001
         return False, type(e).__name__
 
@@ -75,13 +81,13 @@ async def ready(
     response: Response,
     _auth: AuthContext = Depends(require_authenticated),
 ) -> dict:
-    llm_ok, news_ok, pc_ok = await asyncio.gather(
-        _check_llm(), _check_newsapi(), _check_pinecone()
+    llm_ok, news_ok, vs_ok = await asyncio.gather(
+        _check_llm(), _check_newsapi(), _check_vectorstore()
     )
     checks = {
         "llm": {"ok": llm_ok[0], "detail": llm_ok[1]},
         "newsapi": {"ok": news_ok[0], "detail": news_ok[1]},
-        "pinecone": {"ok": pc_ok[0], "detail": pc_ok[1]},
+        "vectorstore": {"ok": vs_ok[0], "detail": vs_ok[1]},
     }
     all_ok = all(c["ok"] for c in checks.values())
     if not all_ok:

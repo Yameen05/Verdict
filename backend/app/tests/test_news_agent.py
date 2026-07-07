@@ -1,8 +1,6 @@
-"""Unit tests for the news agent node."""
+"""Unit tests for the news agent node (LLM sentiment scoring)."""
 
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import pytest
 
@@ -10,34 +8,34 @@ from app.agents.nodes import news_agent as news_agent_mod
 from app.config import get_settings
 from app.schemas.research import NewsFindings
 from app.services.news_client import Article, NewsAPIError
+from app.services.sentiment import ScoredArticle, SentimentError
 
 
-def _fake_openai_returning(content: str):
-    class _C:
-        async def create(self, **_kw):
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-            )
-
-    class _Chat:
-        completions = _C()
-
-    return SimpleNamespace(chat=_Chat())
-
-
-def _safe_clear(fn):
-    if hasattr(fn, "cache_clear"):
-        fn.cache_clear()
+def _articles() -> list[Article]:
+    return [
+        Article(
+            title="Apple posts record-breaking quarterly earnings, shares surge",
+            description="Strong iPhone sales drove the beat.",
+            source="Reuters",
+            url="u1",
+            published_at="2026-05-22T12:00:00Z",
+        ),
+        Article(
+            title="Apple invests in new manufacturing line",
+            description="Bullish expansion announced.",
+            source="Bloomberg",
+            url="u2",
+            published_at="2026-05-21T09:00:00Z",
+        ),
+    ]
 
 
 @pytest.fixture(autouse=True)
 def reset_caches():
     get_settings.cache_clear()
-    _safe_clear(news_agent_mod._client)
     news_agent_mod._reset_news_cache()
     yield
     get_settings.cache_clear()
-    _safe_clear(news_agent_mod._client)
     news_agent_mod._reset_news_cache()
 
 
@@ -56,36 +54,52 @@ async def test_news_agent_happy_path(monkeypatch):
         return "Apple Inc."
 
     async def fake_fetch(_company, days=None, limit=None):
-        return [
-            Article(
-                title="Apple posts record-breaking quarterly earnings, shares surge",
-                description="Strong iPhone sales drove the beat.",
-                source="Reuters",
-                url="u1",
-                published_at="2026-05-22T12:00:00Z",
-            ),
-            Article(
-                title="Apple invests in new manufacturing line",
-                description="Bullish expansion announced.",
-                source="Bloomberg",
-                url="u2",
-                published_at="2026-05-21T09:00:00Z",
-            ),
-        ]
+        return _articles()
+
+    async def fake_score(_company, articles):
+        scored = [ScoredArticle(article=a, score=0.6) for a in articles]
+        return 0.6, scored, "Sentiment is broadly positive."
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
     monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
-    monkeypatch.setattr(
-        news_agent_mod, "_client", lambda: _fake_openai_returning("Sentiment is broadly positive.")
-    )
+    monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
 
     result = await news_agent_mod.news_agent({"ticker": "AAPL"})
     findings: NewsFindings = result["news"]
     assert findings.status == "ok"
     assert findings.article_count == 2
-    assert findings.sentiment_score is not None
-    assert findings.sentiment_score > 0
+    assert findings.sentiment_score == pytest.approx(0.6)
     assert findings.summary == "Sentiment is broadly positive."
+    # Headlines carry per-article scores so the debate can cite them.
+    assert len(findings.top_headlines) == 2
+    assert findings.top_headlines[0].score == pytest.approx(0.6)
+    assert findings.top_headlines[0].url
+
+
+async def test_news_agent_degrades_when_scoring_fails(monkeypatch):
+    """Headlines still ship (score-less) when the sentiment LLM call fails."""
+    monkeypatch.setenv("NEWS_API_KEY", "key")
+
+    async def fake_lookup_company_name(_ticker, client=None):
+        return "Apple Inc."
+
+    async def fake_fetch(_company, days=None, limit=None):
+        return _articles()
+
+    async def fake_score(_company, articles):
+        raise SentimentError("Sentiment LLM call failed (APIError)")
+
+    monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
+    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
+
+    result = await news_agent_mod.news_agent({"ticker": "AAPL"})
+    findings: NewsFindings = result["news"]
+    assert findings.status == "ok"
+    assert findings.sentiment_score is None
+    assert "sentiment scoring unavailable" in (findings.summary or "")
+    assert len(findings.top_headlines) == 2
+    assert findings.top_headlines[0].score is None
 
 
 async def test_news_agent_no_articles(monkeypatch):

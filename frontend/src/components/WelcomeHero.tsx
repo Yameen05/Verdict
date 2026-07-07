@@ -7,18 +7,18 @@ interface Step {
 const STEPS: Step[] = [
   {
     label: "01",
-    title: "Pick a stock",
-    body: "Choose from popular tickers or paste your own. Optionally ingest the latest 10-K / 10-Q so the agents can read the actual filing.",
+    title: "Gather the evidence",
+    body: "Four agents work in parallel: SEC filings (RAG), news sentiment, live financials, and insider Form 4 activity — every fact lands in a citable evidence ledger.",
   },
   {
     label: "02",
-    title: "Run the research",
-    body: "Three agents work in parallel: SEC filings (RAG), news sentiment (last 30 days), and live financial metrics. A synthesizer turns it into a Buy / Hold / Sell.",
+    title: "Hold the trial",
+    body: "A bull advocate and a bear advocate each argue their strongest case from the same ledger. A judge weighs both, issues the verdict with a confidence score, and states what would change its mind.",
   },
   {
     label: "03",
-    title: "Ask follow-ups",
-    body: "Chat with an analyst grounded in the report you just produced. Hypotheticals like “if I invest $1,000” use the metrics already on screen — no hallucinated prices.",
+    title: "Check the record",
+    body: "Ask follow-up questions grounded in the report (the analyst can search the filing live), and watch the scoreboard grade every past verdict against what the stock actually did.",
   },
 ];
 
@@ -32,13 +32,14 @@ export function WelcomeHero() {
             Multi-agent stock research
           </span>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
-            One ticker. Three agents.
-            <span className="block text-indigo-300">A grounded second opinion.</span>
+            Every stock gets a trial.
+            <span className="block text-indigo-300">Bull vs. bear. One verdict.</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
-            Verdict reads the company’s SEC filing, scans the last 30 days of news,
-            pulls live financials, and produces a transparent Buy / Hold / Sell with
-            citations. Then you can ask follow-up questions in plain English.
+            Verdict collects the evidence — SEC filings, news, financials, insider
+            trades — then makes a bull and a bear advocate argue over it. A judge
+            issues the call with a confidence score, cited evidence, and the
+            conditions that would flip it. The scoreboard tracks whether it was right.
           </p>
         </div>
 

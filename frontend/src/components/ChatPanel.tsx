@@ -84,9 +84,12 @@ export function ChatPanel({ ticker, research }: Props) {
         context: research,
         history: historyForApi,
       });
+      const answer = res.searched_filing
+        ? `${res.answer}\n\n_(searched the indexed filing to answer this)_`
+        : res.answer;
       setThread((t) => [
         ...t,
-        { kind: "turn", turn: { role: "assistant", content: res.answer } },
+        { kind: "turn", turn: { role: "assistant", content: answer } },
       ]);
     } catch (e) {
       setThread((t) => [

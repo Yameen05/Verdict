@@ -6,9 +6,17 @@ import { AgentProgress, type AgentKey, type AgentState } from "./components/Agen
 import { HistoryPanel } from "./components/HistoryPanel";
 import { WelcomeHero } from "./components/WelcomeHero";
 import { ChatPanel } from "./components/ChatPanel";
+import { VerdictCard } from "./components/VerdictCard";
+import { DebatePanel } from "./components/DebatePanel";
+import { EvidencePanel } from "./components/EvidencePanel";
+import { ScoreboardPanel } from "./components/ScoreboardPanel";
+import { WatchlistBar } from "./components/WatchlistBar";
+import { downloadReportMarkdown } from "./lib/exportMarkdown";
 import {
   api,
   streamResearch,
+  type DebateCase,
+  type EvidenceItem,
   type FilingForm,
   type QueryResponse,
   type ResearchResponse,
@@ -21,11 +29,26 @@ const INITIAL_AGENT_STATES: AgentStates = {
   sec_agent: { status: "idle" },
   news_agent: { status: "idle" },
   metrics_agent: { status: "idle" },
-  synthesize: { status: "idle" },
+  insider_agent: { status: "idle" },
+  bull_agent: { status: "idle" },
+  bear_agent: { status: "idle" },
+  judge: { status: "idle" },
 };
 
 function companyName(ticker: string): string {
   return POPULAR_STOCKS.find((s) => s.ticker === ticker)?.name ?? ticker;
+}
+
+function summarizePayload(payload: Record<string, unknown>): string {
+  for (const k of ["sec", "news", "metrics", "insider", "bull", "bear", "report"]) {
+    const v = payload[k] as Record<string, unknown> | undefined;
+    if (v && typeof v === "object") {
+      const stat =
+        (v.recommendation as string | undefined) ?? (v.status as string | undefined);
+      if (stat) return String(stat);
+    }
+  }
+  return "done";
 }
 
 export default function App({
@@ -35,6 +58,7 @@ export default function App({
   userEmail: string;
   onLogout: () => Promise<void>;
 }) {
+  const [tab, setTab] = useState<"research" | "scoreboard">("research");
   const [ticker, setTicker] = useState("AAPL");
   const [form, setForm] = useState<FilingForm>("10-K");
   const [question, setQuestion] = useState("What are the principal risks?");
@@ -46,6 +70,10 @@ export default function App({
   const [busy, setBusy] = useState(false);
   const [readiness, setReadiness] = useState<ReadinessBody | null>(null);
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  // Live debate state — filled progressively over the SSE custom stream.
+  const [liveBull, setLiveBull] = useState<DebateCase | null>(null);
+  const [liveBear, setLiveBear] = useState<DebateCase | null>(null);
+  const [liveEvidence, setLiveEvidence] = useState<EvidenceItem[]>([]);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -55,12 +83,22 @@ export default function App({
       .catch(() => setReadiness(null));
   }, []);
 
-  function resetAgents() {
+  function setAgent(key: AgentKey, state: AgentState) {
+    setAgents((s) => ({ ...s, [key]: state }));
+  }
+
+  function resetRun() {
+    setResearch(null);
+    setMeta(null);
+    setLiveBull(null);
+    setLiveBear(null);
+    setLiveEvidence([]);
     setAgents({
+      ...INITIAL_AGENT_STATES,
       sec_agent: { status: "running" },
       news_agent: { status: "running" },
       metrics_agent: { status: "running" },
-      synthesize: { status: "idle" },
+      insider_agent: { status: "running" },
     });
   }
 
@@ -96,10 +134,8 @@ export default function App({
 
   async function onResearchStream() {
     setBusy(true);
-    setStatus(`Streaming research for ${ticker}…`);
-    setResearch(null);
-    setMeta(null);
-    resetAgents();
+    setStatus(`Convening the trial for ${ticker}…`);
+    resetRun();
 
     abortRef.current?.abort();
     const ctl = new AbortController();
@@ -110,26 +146,67 @@ export default function App({
         ticker,
         (e) => {
           if (e.event === "node_completed") {
-            const node = e.data.node as AgentKey;
+            const node = e.data.node;
             const payload = e.data.payload;
-            let summary = "done";
-            for (const k of ["sec", "news", "metrics", "report"]) {
-              const v = (payload as Record<string, unknown>)[k] as
-                | Record<string, unknown>
-                | undefined;
-              if (v && typeof v === "object") {
-                const stat = (v.status as string) ?? (v.recommendation as string);
-                if (stat) summary = String(stat);
+            if (node === "build_evidence") {
+              const ev = payload.evidence as EvidenceItem[] | undefined;
+              if (ev) setLiveEvidence(ev);
+              setAgent("bull_agent", { status: "running" });
+              setAgent("bear_agent", { status: "running" });
+              setStatus("Evidence ledger built — advocates are arguing…");
+              return;
+            }
+            if (node === "followup") {
+              setAgent("judge", { status: "running", summary: "reviewing new evidence" });
+              const ev = payload.evidence as EvidenceItem[] | undefined;
+              if (ev) setLiveEvidence(ev);
+              return;
+            }
+            if (node === "judge") {
+              if (payload.followup_question) {
+                setAgent("judge", {
+                  status: "running",
+                  summary: "requested more filing evidence",
+                });
+                return;
+              }
+              const report = payload.report as { recommendation?: string } | undefined;
+              setAgent("judge", {
+                status: "done",
+                summary: report?.recommendation ?? "done",
+              });
+              return;
+            }
+            setAgent(node as AgentKey, {
+              status: "done",
+              summary: summarizePayload(payload),
+            });
+          } else if (e.event === "debate") {
+            const d = e.data;
+            if (d.kind === "debate_case") {
+              if (d.stance === "bull") setLiveBull(d.case);
+              else setLiveBear(d.case);
+              setAgent(d.stance === "bull" ? "bull_agent" : "bear_agent", {
+                status: d.case.status === "ok" ? "done" : "error",
+                summary: d.case.status === "ok" ? "case filed" : d.case.status,
+              });
+            } else if (d.kind === "judge_phase") {
+              if (d.phase === "deliberating") {
+                setAgent("judge", { status: "running", summary: "weighing both cases" });
+                setStatus("Both cases filed — the judge is deliberating…");
+              } else if (d.phase === "followup" && d.question) {
+                setStatus(`Judge requested more evidence: “${d.question}”`);
               }
             }
-            setAgents((s) => ({ ...s, [node]: { status: "done", summary } }));
           } else if (e.event === "completed") {
             setResearch(e.data.result);
             setMeta({ duration_ms: e.data.duration_ms, cost_usd: e.data.cost.total_usd });
             setStatus(
-              `Report ready · ${e.data.result.report.recommendation} · ${(
-                e.data.duration_ms / 1000
-              ).toFixed(1)}s · $${e.data.cost.total_usd.toFixed(4)}`,
+              `Verdict: ${e.data.result.report.recommendation}` +
+                (e.data.result.report.confidence !== null
+                  ? ` (${e.data.result.report.confidence}/100)`
+                  : "") +
+                ` · ${(e.data.duration_ms / 1000).toFixed(1)}s · $${e.data.cost.total_usd.toFixed(4)}`,
             );
             setHistoryRefresh((n) => n + 1);
           } else if (e.event === "error") {
@@ -168,18 +245,35 @@ export default function App({
               .join(", "),
         };
 
+  const showDebate = busy || research !== null;
+  const debateBull = research?.bull ?? liveBull;
+  const debateBear = research?.bear ?? liveBear;
+  const debateEvidence = research?.evidence ?? liveEvidence;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <nav className="border-b border-slate-900 bg-slate-950/80 backdrop-blur">
+      <nav className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white">
-              V
-            </span>
-            <span className="font-semibold tracking-tight">Verdict</span>
-            <span className="hidden text-xs text-slate-500 sm:inline">
-              · multi-agent equity research
-            </span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white">
+                V
+              </span>
+              <span className="font-semibold tracking-tight">Verdict</span>
+            </div>
+            <div className="flex rounded-lg border border-slate-800 bg-slate-900/60 p-0.5 text-xs">
+              {(["research", "scoreboard"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded-md px-3 py-1.5 font-medium capitalize transition ${
+                    tab === t ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-4 text-right text-xs">
             <span className={readinessSummary.color} title="Backend readiness">
@@ -198,101 +292,111 @@ export default function App({
       </nav>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <WelcomeHero />
+        {tab === "scoreboard" ? (
+          <ScoreboardPanel refreshKey={historyRefresh} />
+        ) : (
+          <>
+            {!research && !busy && <WelcomeHero />}
 
-        <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-          <div>
-            <h2 className="text-base font-semibold text-slate-100">
-              1 · Choose your stock
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Pick from the curated list or use the custom field. “Ingest filing” downloads
-              and indexes the latest SEC filing — only required for SEC-specific questions.
-            </p>
-          </div>
+            <WatchlistBar ticker={ticker} onSelect={setTicker} />
 
-          <StockPicker
-            ticker={ticker}
-            setTicker={setTicker}
-            form={form}
-            setForm={setForm}
-            onIngest={onIngest}
-            disabled={busy}
-          />
-
-          <div className="border-t border-slate-800 pt-6">
-            <h2 className="text-base font-semibold text-slate-100">
-              2 · Run the analysis
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-400">
-              Full research runs three agents in parallel and synthesizes a recommendation.
-              The ad-hoc query searches only the indexed filing.
-            </p>
-
-            <div className="mt-4">
-              <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
-                Ad-hoc question (SEC filing only)
-              </label>
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                rows={2}
-                className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+              <StockPicker
+                ticker={ticker}
+                setTicker={setTicker}
+                form={form}
+                setForm={setForm}
+                onIngest={onIngest}
+                disabled={busy}
               />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  onClick={onResearchStream}
-                  disabled={busy}
-                  className="rounded-md bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50"
-                >
-                  Run full research →
-                </button>
-                <button
-                  onClick={onQuery}
-                  disabled={busy}
-                  className="rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
-                >
-                  Query filing
-                </button>
-                {busy && (
+
+              <div className="border-t border-slate-800 pt-5">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={onCancel}
-                    className="rounded-md border border-rose-700 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-900/30"
+                    onClick={onResearchStream}
+                    disabled={busy}
+                    className="rounded-md bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50"
                   >
-                    Cancel
+                    Put {ticker} on trial →
                   </button>
-                )}
+                  {busy && (
+                    <button
+                      onClick={onCancel}
+                      className="rounded-md border border-rose-700 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-900/30"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <span className="text-xs text-slate-500">
+                    Four evidence agents → bull vs bear advocates → the judge’s verdict, streamed live.
+                  </span>
+                </div>
+
+                <div className="mt-4">
+                  <AgentProgress states={agents} />
+                </div>
+
+                {status && <p className="mt-3 text-xs text-slate-400">{status}</p>}
+
+                <details className="mt-4 rounded-md border border-slate-800 bg-slate-950/40">
+                  <summary className="cursor-pointer select-none px-3 py-2 text-xs uppercase tracking-wider text-slate-400 hover:text-slate-200">
+                    Ad-hoc filing search
+                  </summary>
+                  <div className="space-y-2 px-3 pb-3">
+                    <textarea
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      rows={2}
+                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                    <button
+                      onClick={onQuery}
+                      disabled={busy}
+                      className="rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      Query filing
+                    </button>
+                  </div>
+                </details>
               </div>
-            </div>
+            </section>
 
-            <div className="mt-5">
-              <AgentProgress states={agents} />
-            </div>
-
-            {status && <p className="mt-3 text-xs text-slate-400">{status}</p>}
-            {meta && (
-              <p className="text-[11px] text-slate-500">
-                run · {(meta.duration_ms / 1000).toFixed(2)}s · $
-                {meta.cost_usd.toFixed(4)}
-              </p>
+            {research && (
+              <div className="mt-6">
+                <VerdictCard
+                  result={research}
+                  meta={meta}
+                  onExport={() => downloadReportMarkdown(research, meta)}
+                />
+              </div>
             )}
-          </div>
-        </section>
 
-        <ReportPanel result={research} />
+            {showDebate && (
+              <DebatePanel
+                bull={debateBull}
+                bear={debateBear}
+                evidence={debateEvidence}
+                live={busy && !research}
+              />
+            )}
 
-        <ChatPanel ticker={ticker} research={research} />
+            <ReportPanel result={research} />
+            <EvidencePanel evidence={research?.evidence ?? []} />
 
-        <QueryResultPanel result={queryResult} />
+            <ChatPanel ticker={ticker} research={research} />
 
-        <section className="mt-8">
-          <h2 className="mb-2 text-sm font-semibold text-slate-200">
-            Recent reports for{" "}
-            <span className="font-mono text-indigo-300">{ticker}</span>{" "}
-            <span className="font-normal text-slate-500">({companyName(ticker)})</span>
-          </h2>
-          <HistoryPanel ticker={ticker} refreshKey={historyRefresh} />
-        </section>
+            <QueryResultPanel result={queryResult} />
+
+            <section className="mt-8">
+              <h2 className="mb-2 text-sm font-semibold text-slate-200">
+                Verdict history for{" "}
+                <span className="font-mono text-indigo-300">{ticker}</span>{" "}
+                <span className="font-normal text-slate-500">({companyName(ticker)})</span>
+              </h2>
+              <HistoryPanel ticker={ticker} refreshKey={historyRefresh} />
+            </section>
+          </>
+        )}
 
         <footer className="mt-12 border-t border-slate-900 pt-6 text-center text-[11px] text-slate-600">
           Verdict is for informational purposes only. Not investment advice. Data from

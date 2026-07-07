@@ -8,8 +8,10 @@ pinecone==9.1.0
 langchain-text-splitters==1.1.2
 langgraph==1.2.6
 langchain-core==1.4.8
-vaderSentiment==3.3.2
+
 yfinance==1.4.1
+numpy==2.4.6
+defusedxml==0.7.1
 
 # Production: logging, auth, rate limiting, persistence, SSE
 slowapi==0.1.9
