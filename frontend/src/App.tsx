@@ -177,6 +177,9 @@ export default function App({
               });
               return;
             }
+            // Advocate tiles get their richer summary from the debate_case
+            // custom event, which arrives before this node update — keep it.
+            if (node === "bull_agent" || node === "bear_agent") return;
             setAgent(node as AgentKey, {
               status: "done",
               summary: summarizePayload(payload),
