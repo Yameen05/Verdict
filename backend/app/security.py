@@ -294,8 +294,19 @@ def basic_auth_payload(context: AuthContext) -> dict:
         "user": {
             "id": context.user.id,
             "email": context.user.email,
+            "role": context.user.role,
             "two_factor_enabled": context.user.totp_enabled,
         },
         "csrf_token": context.session.csrf_token,
         "requires_2fa_setup": not context.session.mfa_verified,
     }
+
+
+async def require_owner(
+    request: Request,
+    context: Annotated[AuthContext, Depends(require_authenticated)],
+) -> AuthContext:
+    """Owner-gated endpoints (invite management)."""
+    if context.user.role != "owner":
+        raise HTTPException(status_code=403, detail="Owner access required")
+    return context

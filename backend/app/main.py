@@ -20,7 +20,7 @@ from app.middleware import (
 )
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
-from app.routers import ask, auth, filings, health, research, scoreboard
+from app.routers import ask, auth, filings, health, invites, research, scoreboard
 from app.security import require_authenticated
 
 
@@ -120,6 +120,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/auth", tags=["authentication"])
+    app.include_router(invites.router, prefix="/auth", tags=["authentication"])
     protected = [Depends(require_authenticated)]
     app.include_router(
         filings.router,

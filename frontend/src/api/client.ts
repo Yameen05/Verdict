@@ -71,7 +71,25 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 export interface AuthUser {
   id: number;
   email: string;
+  role: "owner" | "member";
   two_factor_enabled: boolean;
+}
+
+export interface InviteEntry {
+  id: number;
+  note: string;
+  status: "pending" | "used" | "expired";
+  created_at: string;
+  expires_at: string;
+  used_by_email: string | null;
+  used_at: string | null;
+}
+
+export interface InviteCreated {
+  id: number;
+  code: string; // shown exactly once
+  note: string;
+  expires_at: string;
 }
 
 export interface AuthSession {
@@ -130,6 +148,27 @@ export const authApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     }),
+  register: (inviteCode: string, email: string, password: string) =>
+    authJson<AuthSession>("/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invite_code: inviteCode, email, password }),
+    }),
+  createInvite: (note: string) =>
+    authJson<InviteCreated>("/auth/invites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    }),
+  listInvites: () => authJson<{ invites: InviteEntry[] }>("/auth/invites"),
+  revokeInvite: async (id: number) => {
+    const res = await fetch(`${BASE_URL}/auth/invites/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: requestHeaders(),
+    });
+    if (!res.ok) throw await errorFromResponse(res);
+  },
   verifyTwoFactor: (challengeToken: string, code: string) =>
     authJson<AuthSession>("/auth/2fa/verify", {
       method: "POST",
@@ -243,6 +282,8 @@ export interface ResearchEnvelope {
   duration_ms: number;
   cost: CostBreakdown;
   persisted_id: number | null;
+  cached: boolean;
+  cache_age_minutes: number | null;
   result: ResearchResponse;
 }
 
@@ -324,8 +365,10 @@ export type StreamEvent =
       data: {
         request_id: string;
         duration_ms: number;
-        cost: CostBreakdown;
+        cost: CostBreakdown | Record<string, never>;
         persisted_id: number | null;
+        cached?: boolean;
+        cache_age_minutes?: number | null;
         result: ResearchResponse;
       };
     }
@@ -340,9 +383,10 @@ export async function streamResearch(
   ticker: string,
   onEvent: (e: StreamEvent) => void,
   signal?: AbortSignal,
+  fresh = false,
 ): Promise<void> {
   const res = await fetch(
-    `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream`,
+    `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream${fresh ? "?fresh=true" : ""}`,
     {
       headers: requestHeaders({ Accept: "text/event-stream" }),
       credentials: "include",
