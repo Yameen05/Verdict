@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     event,
+    func,
     inspect,
     select,
     text,
@@ -40,14 +41,17 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
-    """The self-hosted owner account."""
+    """An account: the bootstrap owner, or an invited member."""
 
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    # Enforce the single-owner deployment model at the database layer so two
-    # simultaneous bootstrap requests cannot create two owners.
+    # Historical single-owner guard. The owner keeps value 1 (so two
+    # simultaneous bootstraps still cannot create two owners); invited members
+    # get a random value because legacy databases carry a UNIQUE constraint on
+    # this column that SQLite cannot drop without a table rebuild.
     singleton_key: Mapped[int] = mapped_column(Integer, default=1, unique=True)
+    role: Mapped[str] = mapped_column(String(16), default="member")
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512))
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -103,6 +107,29 @@ class LoginChallenge(Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
+class Invite(Base):
+    """One-time registration code issued by the owner. Only a digest is stored."""
+
+    __tablename__ = "invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    note: Mapped[str] = mapped_column(String(120), default="")
+    created_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -220,6 +247,14 @@ def _migrate_legacy_schema(connection) -> None:
             connection.execute(
                 text("ALTER TABLE users ADD COLUMN totp_last_counter INTEGER")
             )
+        if "role" not in user_columns:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'member'")
+            )
+            # The pre-multi-user database had exactly one account: the owner.
+            connection.execute(
+                text("UPDATE users SET role = 'owner' WHERE id = (SELECT MIN(id) FROM users)")
+            )
     if "research_runs" not in tables:
         return
     columns = {c["name"] for c in inspect(connection).get_columns("research_runs")}
@@ -315,6 +350,31 @@ async def list_recent_runs(
     stmt = stmt.order_by(ResearchRun.created_at.desc()).limit(limit)
     res = await session.execute(stmt)
     return list(res.scalars().all())
+
+
+async def latest_run_for_ticker(
+    session: AsyncSession, ticker: str
+) -> ResearchRun | None:
+    """Most recent run for `ticker` by ANY user — research runs are communal."""
+    stmt = (
+        select(ResearchRun)
+        .where(ResearchRun.ticker == ticker.upper())
+        .order_by(ResearchRun.created_at.desc())
+        .limit(1)
+    )
+    return await session.scalar(stmt)
+
+
+async def count_runs_since(
+    session: AsyncSession,
+    since: datetime,
+    user_id: int | None = None,
+) -> int:
+    """Fresh (non-cached) runs since `since` — quota accounting."""
+    stmt = select(func.count(ResearchRun.id)).where(ResearchRun.created_at >= since)
+    if user_id is not None:
+        stmt = stmt.where(ResearchRun.user_id == user_id)
+    return int(await session.scalar(stmt) or 0)
 
 
 # Test helper — wiped between tests via dependency override or env var.

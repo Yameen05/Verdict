@@ -93,9 +93,8 @@ async def scoreboard(
     limit: int = 100,
     session: AsyncSession = Depends(session_scope),
 ) -> ScoreboardResponse:
-    rows = await list_recent_runs(
-        session, limit=min(max(limit, 1), 500), user_id=request.state.user_id
-    )
+    # Global on purpose: the scoreboard grades the app, not one user.
+    rows = await list_recent_runs(session, limit=min(max(limit, 1), 500))
 
     # Price the distinct tickers concurrently (capped — yfinance is slow).
     scorable = [r for r in rows if r.price_at_run and r.recommendation != "Pending"]

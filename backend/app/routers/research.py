@@ -18,11 +18,11 @@ The scoreboard lives in routers/scoreboard.py.
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
@@ -38,6 +38,8 @@ from app.observability.cost import CostTracker, start_tracking
 from app.observability.logging import get_logger, get_request_id
 from app.persistence.db import (
     ResearchRun,
+    count_runs_since,
+    latest_run_for_ticker,
     list_runs_for_ticker,
     save_run,
     session_scope,
@@ -67,10 +69,57 @@ def _prior_run_dict(row: ResearchRun) -> dict[str, Any]:
 
 
 async def _load_prior_run(
-    session: AsyncSession, ticker: str, user_id: int | None
+    session: AsyncSession, ticker: str
 ) -> dict[str, Any] | None:
-    rows = await list_runs_for_ticker(session, ticker, limit=1, user_id=user_id)
-    return _prior_run_dict(rows[0]) if rows else None
+    row = await latest_run_for_ticker(session, ticker)
+    return _prior_run_dict(row) if row else None
+
+
+def _cache_age_minutes(row: ResearchRun) -> float:
+    created = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - created).total_seconds() / 60.0
+
+
+async def _cached_run(session: AsyncSession, ticker: str) -> ResearchRun | None:
+    """Recent run by ANY user within the cache window — research is communal."""
+    ttl = get_settings().research_cache_minutes
+    if ttl <= 0:
+        return None
+    row = await latest_run_for_ticker(session, ticker)
+    if row is None or _cache_age_minutes(row) > ttl:
+        return None
+    try:
+        # Ensure the stored payload still parses before serving it.
+        ResearchResponse(**row.payload)
+    except (ValidationError, TypeError):
+        return None
+    return row
+
+
+async def _enforce_quota(session: AsyncSession, user_id: int | None) -> None:
+    """Daily caps on FRESH runs — the free-tier kill-switch. Cache hits are free."""
+    settings = get_settings()
+    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    if await count_runs_since(session, day_start) >= settings.daily_runs_global:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "The community's daily research budget is used up — fresh runs "
+                "reset at midnight UTC. Recent verdicts are still served instantly."
+            ),
+        )
+    if (
+        user_id is not None
+        and await count_runs_since(session, day_start, user_id=user_id)
+        >= settings.daily_runs_per_user
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"You've used your {settings.daily_runs_per_user} fresh runs for "
+                "today (resets midnight UTC). Cached verdicts remain available."
+            ),
+        )
 
 
 async def _persist(
@@ -106,7 +155,21 @@ class ResearchEnvelope(BaseModel):
     duration_ms: float = 0.0
     cost: dict[str, Any] = Field(default_factory=dict)
     persisted_id: int | None = None
+    cached: bool = False
+    cache_age_minutes: float | None = None
     result: ResearchResponse
+
+
+def _envelope_from_cache(row: ResearchRun, rid: str) -> ResearchEnvelope:
+    return ResearchEnvelope(
+        request_id=rid,
+        duration_ms=0.0,
+        cost={},
+        persisted_id=row.id,
+        cached=True,
+        cache_age_minutes=round(_cache_age_minutes(row), 1),
+        result=ResearchResponse(**row.payload),
+    )
 
 
 class HistoryEntry(BaseModel):
@@ -135,14 +198,23 @@ async def research(
     request: Request,
     response: Response,
     ticker: str,
+    fresh: bool = False,
     session: AsyncSession = Depends(session_scope),
 ) -> ResearchEnvelope:
     ticker = _validate_ticker(ticker)
     tracker = start_tracking()
     rid = get_request_id()
+
+    if not fresh:
+        cached = await _cached_run(session, ticker)
+        if cached is not None:
+            log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
+            return _envelope_from_cache(cached, rid)
+
+    await _enforce_quota(session, request.state.user_id)
     log.info("research_started", extra={"ticker": ticker})
 
-    prior_run = await _load_prior_run(session, ticker, request.state.user_id)
+    prior_run = await _load_prior_run(session, ticker)
 
     started = time.perf_counter()
     try:
@@ -269,7 +341,32 @@ async def _sse_stream(
                 "duration_ms": duration_ms,
                 "cost": tracker.to_dict(),
                 "persisted_id": persisted_id,
+                "cached": False,
                 "result": result.model_dump(),
+            },
+            default=str,
+        ),
+    }
+
+
+async def _sse_cached(row: ResearchRun, rid: str, ticker: str):
+    """Serve a cache hit over the same SSE contract: started → completed."""
+    envelope = _envelope_from_cache(row, rid)
+    yield {
+        "event": "started",
+        "data": json.dumps({"ticker": ticker, "request_id": rid}),
+    }
+    yield {
+        "event": "completed",
+        "data": json.dumps(
+            {
+                "request_id": rid,
+                "duration_ms": 0.0,
+                "cost": {},
+                "persisted_id": row.id,
+                "cached": True,
+                "cache_age_minutes": envelope.cache_age_minutes,
+                "result": envelope.result.model_dump(),
             },
             default=str,
         ),
@@ -291,14 +388,23 @@ def _serializable(d: dict) -> dict:
 async def research_stream(
     request: Request,
     ticker: str,
+    fresh: bool = False,
     session: AsyncSession = Depends(session_scope),
 ) -> EventSourceResponse:
     ticker = _validate_ticker(ticker)
     tracker = start_tracking()
     rid = get_request_id()
+
+    if not fresh:
+        cached = await _cached_run(session, ticker)
+        if cached is not None:
+            log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
+            return EventSourceResponse(_sse_cached(cached, rid, ticker))
+
+    await _enforce_quota(session, request.state.user_id)
     # Load the prior run up front (into a plain dict) so the stream generator
     # never touches this request-scoped session after the response starts.
-    prior_run = await _load_prior_run(session, ticker, request.state.user_id)
+    prior_run = await _load_prior_run(session, ticker)
     log.info("research_stream_started", extra={"ticker": ticker})
     return EventSourceResponse(
         _sse_stream(ticker, tracker, rid, request.state.user_id, prior_run)
@@ -315,11 +421,12 @@ async def history(
     session: AsyncSession = Depends(session_scope),
 ) -> HistoryResponse:
     ticker = _validate_ticker(ticker)
+    # Research runs are communal in the multi-user model: everyone sees the
+    # shared record (that's what makes the cache and scoreboard honest).
     rows = await list_runs_for_ticker(
         session,
         ticker,
         limit=min(max(limit, 1), 100),
-        user_id=request.state.user_id,
     )
     return HistoryResponse(
         ticker=ticker,

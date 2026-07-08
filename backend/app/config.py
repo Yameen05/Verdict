@@ -82,6 +82,15 @@ class Settings(BaseSettings):
     login_challenge_minutes: int = Field(default=5, ge=1, le=15)
     require_2fa: bool = Field(default=True)
 
+    # --- Free-tier protection: shared run cache + daily quotas ---
+    # A research run for a ticker is served to everyone from the most recent
+    # stored run within this window instead of re-running the pipeline
+    # (?fresh=true bypasses). Zero LLM cost for cache hits.
+    research_cache_minutes: int = Field(default=360, ge=0)
+    # Fresh (non-cached) runs allowed per user and across all users per UTC day.
+    daily_runs_per_user: int = Field(default=10, ge=1)
+    daily_runs_global: int = Field(default=40, ge=1)
+
     # Per-IP rate limits (slowapi syntax: "<count>/<window>")
     rate_limit_research: str = Field(default="30/minute")
     rate_limit_filings: str = Field(default="60/minute")

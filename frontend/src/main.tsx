@@ -7,7 +7,13 @@ import "./styles/index.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthGate>
-      {(session, logout) => <App userEmail={session.user.email} onLogout={logout} />}
+      {(session, logout) => (
+        <App
+          userEmail={session.user.email}
+          userRole={session.user.role}
+          onLogout={logout}
+        />
+      )}
     </AuthGate>
   </React.StrictMode>,
 );

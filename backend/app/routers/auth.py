@@ -113,7 +113,7 @@ async def bootstrap(
 
     email = normalize_email(body.email)
     validate_password(body.password, email)
-    user = User(email=email, password_hash=hash_password(body.password))
+    user = User(email=email, password_hash=hash_password(body.password), role="owner")
     db.add(user)
     try:
         await db.flush()

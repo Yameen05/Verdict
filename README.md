@@ -57,8 +57,14 @@ React UI with mocked API responses.
 
 ## What It Does
 
-- Creates a single owner account with password auth, mandatory TOTP 2FA,
-  HttpOnly sessions, CSRF protection, origin checks, and rate limits.
+- Small-circle multi-user: the bootstrap owner mints one-time invite codes
+  (7-day expiry, digest-only storage); friends register with a code — no email
+  service required. Password auth, optional TOTP 2FA, HttpOnly sessions, CSRF
+  protection, origin checks, and rate limits for every account.
+- Free-tier protection built in: research runs are communal — a recent run for
+  a ticker is served to everyone from cache (zero LLM cost), and fresh runs
+  are capped per user and globally per day (`DAILY_RUNS_PER_USER`,
+  `DAILY_RUNS_GLOBAL`, `RESEARCH_CACHE_MINUTES`).
 - Fetches the latest SEC `10-K` or `10-Q` for a ticker through SEC EDGAR.
 - Chunks filing text, embeds it with OpenAI embeddings, and stores vectors in a
   local SQLite vector store by default (or Pinecone when a key is set).

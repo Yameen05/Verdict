@@ -11,6 +11,7 @@ import { DebatePanel } from "./components/DebatePanel";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { ScoreboardPanel } from "./components/ScoreboardPanel";
 import { WatchlistBar } from "./components/WatchlistBar";
+import { InvitesPanel } from "./components/InvitesPanel";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
 import {
   api,
@@ -53,9 +54,11 @@ function summarizePayload(payload: Record<string, unknown>): string {
 
 export default function App({
   userEmail,
+  userRole,
   onLogout,
 }: {
   userEmail: string;
+  userRole: "owner" | "member";
   onLogout: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<"research" | "scoreboard">("research");
@@ -70,6 +73,8 @@ export default function App({
   const [busy, setBusy] = useState(false);
   const [readiness, setReadiness] = useState<ReadinessBody | null>(null);
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [showInvites, setShowInvites] = useState(false);
+  const [cacheInfo, setCacheInfo] = useState<{ ageMinutes: number } | null>(null);
   // Live debate state — filled progressively over the SSE custom stream.
   const [liveBull, setLiveBull] = useState<DebateCase | null>(null);
   const [liveBear, setLiveBear] = useState<DebateCase | null>(null);
@@ -90,6 +95,7 @@ export default function App({
   function resetRun() {
     setResearch(null);
     setMeta(null);
+    setCacheInfo(null);
     setLiveBull(null);
     setLiveBear(null);
     setLiveEvidence([]);
@@ -132,7 +138,7 @@ export default function App({
     }
   }
 
-  async function onResearchStream() {
+  async function onResearchStream(fresh = false) {
     setBusy(true);
     setStatus(`Convening the trial for ${ticker}…`);
     resetRun();
@@ -203,20 +209,37 @@ export default function App({
             }
           } else if (e.event === "completed") {
             setResearch(e.data.result);
-            setMeta({ duration_ms: e.data.duration_ms, cost_usd: e.data.cost.total_usd });
-            setStatus(
-              `Verdict: ${e.data.result.report.recommendation}` +
-                (e.data.result.report.confidence !== null
-                  ? ` (${e.data.result.report.confidence}/100)`
-                  : "") +
-                ` · ${(e.data.duration_ms / 1000).toFixed(1)}s · $${e.data.cost.total_usd.toFixed(4)}`,
-            );
+            const totalUsd =
+              "total_usd" in e.data.cost ? (e.data.cost.total_usd as number) : 0;
+            setMeta({ duration_ms: e.data.duration_ms, cost_usd: totalUsd });
+            if (e.data.cached) {
+              setCacheInfo({ ageMinutes: e.data.cache_age_minutes ?? 0 });
+              setAgents((s) => {
+                const done: typeof s = { ...s };
+                (Object.keys(done) as AgentKey[]).forEach((k) => {
+                  done[k] = { status: "done", summary: "from shared cache" };
+                });
+                return done;
+              });
+              setStatus(
+                `Verdict: ${e.data.result.report.recommendation} · served from a shared run`,
+              );
+            } else {
+              setStatus(
+                `Verdict: ${e.data.result.report.recommendation}` +
+                  (e.data.result.report.confidence !== null
+                    ? ` (${e.data.result.report.confidence}/100)`
+                    : "") +
+                  ` · ${(e.data.duration_ms / 1000).toFixed(1)}s · $${totalUsd.toFixed(4)}`,
+              );
+            }
             setHistoryRefresh((n) => n + 1);
           } else if (e.event === "error") {
             setStatus(`Research failed: ${e.data.detail}`);
           }
         },
         ctl.signal,
+        fresh,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -282,6 +305,19 @@ export default function App({
             <span className={readinessSummary.color} title="Backend readiness">
               ● {readinessSummary.text}
             </span>
+            {userRole === "owner" && (
+              <button
+                type="button"
+                onClick={() => setShowInvites((v) => !v)}
+                className={`rounded-md border px-2.5 py-1.5 ${
+                  showInvites
+                    ? "border-indigo-500 text-indigo-300"
+                    : "border-slate-800 text-slate-300 hover:bg-slate-900"
+                }`}
+              >
+                Invites
+              </button>
+            )}
             <span className="hidden text-slate-500 md:inline">{userEmail}</span>
             <button
               type="button"
@@ -299,6 +335,7 @@ export default function App({
           <ScoreboardPanel refreshKey={historyRefresh} />
         ) : (
           <>
+            {showInvites && <InvitesPanel onClose={() => setShowInvites(false)} />}
             {!research && !busy && <WelcomeHero />}
 
             <WatchlistBar ticker={ticker} onSelect={setTicker} />
@@ -316,7 +353,7 @@ export default function App({
               <div className="border-t border-slate-800 pt-5">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={onResearchStream}
+                    onClick={() => void onResearchStream()}
                     disabled={busy}
                     className="rounded-md bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50"
                   >
@@ -366,6 +403,24 @@ export default function App({
 
             {research && (
               <div className="mt-6">
+                {cacheInfo && (
+                  <div className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-cyan-500/25 bg-cyan-500/5 px-4 py-2.5 text-xs text-cyan-200">
+                    <span>
+                      ⚡ Served instantly from a shared run{" "}
+                      {cacheInfo.ageMinutes < 1
+                        ? "moments"
+                        : `${Math.round(cacheInfo.ageMinutes)} min`}{" "}
+                      ago — cache hits don't touch your daily quota.
+                    </span>
+                    <button
+                      onClick={() => void onResearchStream(true)}
+                      disabled={busy}
+                      className="rounded-md border border-cyan-500/40 px-2.5 py-1 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50"
+                    >
+                      Re-run fresh
+                    </button>
+                  </div>
+                )}
                 <VerdictCard
                   result={research}
                   meta={meta}

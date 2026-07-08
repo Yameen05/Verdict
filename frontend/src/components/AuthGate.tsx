@@ -7,7 +7,15 @@ import {
   type TwoFactorSetup,
 } from "../api/client";
 
-type View = "loading" | "login" | "bootstrap" | "verify" | "setup" | "recovery" | "ready";
+type View =
+  | "loading"
+  | "login"
+  | "bootstrap"
+  | "register"
+  | "verify"
+  | "setup"
+  | "recovery"
+  | "ready";
 
 interface Props {
   children: (session: AuthSession, logout: () => Promise<void>) => ReactNode;
@@ -24,6 +32,7 @@ export function AuthGate({ children }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [challengeToken, setChallengeToken] = useState("");
   const [code, setCode] = useState("");
   const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
@@ -75,7 +84,7 @@ export function AuthGate({ children }: Props) {
   async function submitCredentials(event: FormEvent) {
     event.preventDefault();
     setError("");
-    if (view === "bootstrap" && password !== confirmPassword) {
+    if ((view === "bootstrap" || view === "register") && password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -83,6 +92,9 @@ export function AuthGate({ children }: Props) {
     try {
       if (view === "bootstrap") {
         acceptSession(await authApi.bootstrap(email, password, bootstrapToken));
+      } else if (view === "register") {
+        acceptSession(await authApi.register(inviteCode.trim(), email, password));
+        setInviteCode("");
       } else {
         const result = await authApi.login(email, password);
         if (isChallenge(result)) {
@@ -258,16 +270,35 @@ export function AuthGate({ children }: Props) {
   }
 
   const isBootstrap = view === "bootstrap";
+  const isRegister = view === "register";
+  const needsNewPassword = isBootstrap || isRegister;
   return (
     <AuthShell
-      title={isBootstrap ? "Create the owner account" : "Sign in to Verdict"}
+      title={
+        isBootstrap
+          ? "Create the owner account"
+          : isRegister
+          ? "Join with an invite"
+          : "Sign in to Verdict"
+      }
       subtitle={
         isBootstrap
           ? "This one-time setup closes permanently after the first account is created."
+          : isRegister
+          ? "Paste the invite code you received to create your account."
           : "Your research data is protected by password and authenticator verification."
       }
     >
       <form className="space-y-4" onSubmit={submitCredentials}>
+        {isRegister && (
+          <Field
+            label="Invite code"
+            value={inviteCode}
+            onChange={setInviteCode}
+            autoComplete="off"
+            placeholder="Paste your invite code"
+          />
+        )}
         <Field
           label="Email"
           type="email"
@@ -281,10 +312,10 @@ export function AuthGate({ children }: Props) {
           type="password"
           value={password}
           onChange={setPassword}
-          autoComplete={isBootstrap ? "new-password" : "current-password"}
-          placeholder={isBootstrap ? "At least 12 characters" : "Your password"}
+          autoComplete={needsNewPassword ? "new-password" : "current-password"}
+          placeholder={needsNewPassword ? "At least 12 characters" : "Your password"}
         />
-        {isBootstrap && (
+        {needsNewPassword && (
           <Field
             label="Confirm password"
             type="password"
@@ -307,8 +338,26 @@ export function AuthGate({ children }: Props) {
         <ErrorMessage message={error} />
         <SubmitButton
           busy={busy}
-          label={isBootstrap ? "Create owner account" : "Continue securely"}
+          label={
+            isBootstrap
+              ? "Create owner account"
+              : isRegister
+              ? "Create my account"
+              : "Continue securely"
+          }
         />
+        {!isBootstrap && (
+          <button
+            type="button"
+            onClick={() => {
+              setView(isRegister ? "login" : "register");
+              setError("");
+            }}
+            className="w-full text-xs text-slate-400 hover:text-slate-200"
+          >
+            {isRegister ? "Back to sign in" : "Have an invite code? Create an account"}
+          </button>
+        )}
       </form>
     </AuthShell>
   );
