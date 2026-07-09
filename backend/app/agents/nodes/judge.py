@@ -134,7 +134,7 @@ _NEEDS_EVIDENCE_FIELD = """,
 
 def _all_agents_unusable(state: ResearchState) -> bool:
     statuses = []
-    for key in ("sec", "news", "metrics", "insider"):
+    for key in ("sec", "news", "metrics", "insider", "signals"):
         val = state.get(key)
         if val is None:
             continue
@@ -237,6 +237,56 @@ def _fallback_recommendation(state: ResearchState) -> tuple[str, int, list[str]]
         score += 1
         reasons.append("recent insider buying is heavier than selling")
 
+    signals = state.get("signals")
+    analyst = getattr(signals, "analyst", None) if signals else None
+    if analyst is not None:
+        if analyst.score >= 0.35:
+            score += 2
+            reasons.append(f"analyst consensus is {analyst.consensus}")
+        elif analyst.score >= 0.15:
+            score += 1
+            reasons.append(f"analyst consensus leans {analyst.consensus}")
+        elif analyst.score <= -0.35:
+            score -= 2
+            reasons.append(f"analyst consensus is {analyst.consensus}")
+        elif analyst.score <= -0.15:
+            score -= 1
+            reasons.append(f"analyst consensus leans {analyst.consensus}")
+
+    retail = getattr(signals, "retail", None) if signals else None
+    if retail is not None and retail.sample >= 5:
+        if retail.score >= 0.35:
+            score += 1
+            reasons.append(f"retail sentiment is {retail.label}")
+        elif retail.score <= -0.35:
+            score -= 1
+            reasons.append(f"retail sentiment is {retail.label}")
+
+    fundamentals = getattr(signals, "fundamentals", None) if signals else None
+    target = getattr(fundamentals, "analyst_target", None) if fundamentals else None
+    if target is not None and price:
+        target_gap = (target / price - 1.0) * 100.0
+        if target_gap >= 15:
+            score += 1
+            reasons.append(f"analyst target is {_pct(target_gap)} above the latest quote")
+        elif target_gap <= -10:
+            score -= 1
+            reasons.append(f"analyst target is {_pct(target_gap)} below the latest quote")
+
+    macro = getattr(signals, "macro", None) if signals else None
+    regime = getattr(macro, "regime", None) if macro else None
+    if regime == "restrictive":
+        score -= 1
+        reasons.append("macro backdrop is restrictive")
+    elif regime == "supportive":
+        score += 1
+        reasons.append("macro backdrop is supportive")
+
+    earnings_days = getattr(signals, "earnings_days", None) if signals else None
+    if earnings_days is not None and earnings_days <= 7:
+        score -= 1
+        reasons.append(f"earnings are close ({earnings_days} day(s))")
+
     if score >= 2:
         return "Buy", min(68, 50 + score * 4), reasons
     if score <= -2:
@@ -261,6 +311,8 @@ def _fallback_report(state: ResearchState, reason: str) -> dict:
     pe = getattr(metrics, "pe_ratio", None) if metrics else None
     margin = getattr(metrics, "profit_margin", None) if metrics else None
     sentiment = getattr(news, "sentiment_score", None) if news else None
+    signals = state.get("signals")
+    signal_sources = getattr(signals, "sources_used", []) if signals else []
 
     sec_findings = getattr(sec, "findings", None) or []
     company_overview = sec_findings[1].answer if len(sec_findings) > 1 else ""
@@ -298,6 +350,7 @@ def _fallback_report(state: ResearchState, reason: str) -> dict:
             f"Current price is {_money(price)}. "
             f"Recent move for the selected window is {_pct(recent)}; "
             f"typical swing is {_pct(swing)}."
+            + (f" Extra signal sources used: {', '.join(signal_sources)}." if signal_sources else "")
         ),
         key_risks=key_risks,
         news_summary=getattr(news, "summary", None) if news else None,

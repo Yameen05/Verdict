@@ -5,6 +5,7 @@ const SOURCE_STYLE: Record<EvidenceItem["source"], { label: string; chip: string
   news: { label: "News", chip: "bg-cyan-500/15 text-cyan-300" },
   metrics: { label: "Financials", chip: "bg-emerald-500/15 text-emerald-300" },
   insider: { label: "Insiders", chip: "bg-amber-500/15 text-amber-300" },
+  signals: { label: "Signals", chip: "bg-fuchsia-500/15 text-fuchsia-300" },
 };
 
 export function EvidencePanel({ evidence }: { evidence: EvidenceItem[] }) {

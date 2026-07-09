@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 import yfinance as yf
 
+from app.config import get_settings
 from app.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -224,7 +225,7 @@ def _resolve_history_window(range_key: str, interval_key: str) -> tuple[str, str
     resolved = interval_key
     if interval_key == "1M" and range_key not in {"1D", "5D"}:
         resolved = "5M"
-    if interval_key in {"1M", "5M"} and range_key in {"6M", "1Y"}:
+    if interval_key in {"1M", "5M"} and range_key in {"3M", "6M", "1Y"}:
         resolved = "1H"
     if interval_key in {"1M", "5M", "15M", "1H"} and range_key == "5Y":
         resolved = "1D"
@@ -277,6 +278,113 @@ _STOOQ_INTERVALS: dict[str, str] = {"1D": "d", "1W": "w"}
 _RANGE_CUTOFF_DAYS: dict[str, int] = {
     "1D": 4, "5D": 8, "1M": 32, "3M": 95, "6M": 190, "1Y": 372, "5Y": 1835,
 }
+
+
+def _history_date_range(range_key: str) -> tuple[str, str]:
+    today = datetime.now(UTC).date()
+    cutoff = today - timedelta(days=_RANGE_CUTOFF_DAYS.get(range_key, 372))
+    return cutoff.isoformat(), today.isoformat()
+
+
+def fetch_polygon_history(
+    ticker: str,
+    range_key: str,
+    resolved_interval: str,
+) -> list[PriceBar]:
+    """Keyed Polygon/Massive fallback for daily/weekly OHLCV bars."""
+    key = get_settings().polygon_api_key.strip()
+    if not key or resolved_interval not in {"1D", "1W"}:
+        return []
+    start, end = _history_date_range(range_key)
+    timespan = "week" if resolved_interval == "1W" else "day"
+    url = (
+        "https://api.polygon.io/v2/aggs/ticker/"
+        f"{ticker}/range/1/{timespan}/{start}/{end}"
+    )
+    try:
+        resp = httpx.get(
+            url,
+            params={"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": key},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 - fallback source failed
+        return []
+    rows = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return []
+    bars: list[PriceBar] = []
+    for row in rows:
+        ts = _coerce_float(row.get("t")) if isinstance(row, dict) else None
+        open_ = _coerce_float(row.get("o")) if isinstance(row, dict) else None
+        high = _coerce_float(row.get("h")) if isinstance(row, dict) else None
+        low = _coerce_float(row.get("l")) if isinstance(row, dict) else None
+        close = _coerce_float(row.get("c")) if isinstance(row, dict) else None
+        if ts is None or open_ is None or high is None or low is None or close is None:
+            continue
+        volume = _coerce_float(row.get("v"))
+        bars.append(
+            PriceBar(
+                time=datetime.fromtimestamp(ts / 1000.0, tz=UTC)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                open=round(open_, 4),
+                high=round(high, 4),
+                low=round(low, 4),
+                close=round(close, 4),
+                volume=int(volume) if volume is not None else None,
+            )
+        )
+    return bars
+
+
+def fetch_tiingo_history(
+    ticker: str,
+    range_key: str,
+    resolved_interval: str,
+) -> list[PriceBar]:
+    """Keyed Tiingo EOD fallback for daily OHLCV bars."""
+    key = get_settings().tiingo_api_key.strip()
+    if not key or resolved_interval != "1D":
+        return []
+    start, end = _history_date_range(range_key)
+    try:
+        resp = httpx.get(
+            f"https://api.tiingo.com/tiingo/daily/{ticker.lower()}/prices",
+            params={"startDate": start, "endDate": end},
+            headers={"Authorization": f"Token {key}"},
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:  # noqa: BLE001 - fallback source failed
+        return []
+    if not isinstance(data, list):
+        return []
+    bars: list[PriceBar] = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        open_ = _coerce_float(row.get("adjOpen")) or _coerce_float(row.get("open"))
+        high = _coerce_float(row.get("adjHigh")) or _coerce_float(row.get("high"))
+        low = _coerce_float(row.get("adjLow")) or _coerce_float(row.get("low"))
+        close = _coerce_float(row.get("adjClose")) or _coerce_float(row.get("close"))
+        if open_ is None or high is None or low is None or close is None:
+            continue
+        volume = _coerce_float(row.get("adjVolume")) or _coerce_float(row.get("volume"))
+        raw_time = str(row.get("date") or "")
+        bars.append(
+            PriceBar(
+                time=raw_time.replace("+00:00", "Z") or f"{end}T00:00:00Z",
+                open=round(open_, 4),
+                high=round(high, 4),
+                low=round(low, 4),
+                close=round(close, 4),
+                volume=int(volume) if volume is not None else None,
+            )
+        )
+    return bars
 
 
 def _stooq_symbol(ticker: str) -> str:
@@ -348,6 +456,18 @@ def fetch_price_history(
     try:
         bars = _yfinance_history(ticker, period, interval)
     except MetricsClientError as yf_err:
+        for source_name, fallback_fetch in (
+            ("polygon", fetch_polygon_history),
+            ("tiingo", fetch_tiingo_history),
+        ):
+            fallback = fallback_fetch(ticker, range_key.strip().upper(), resolved_interval)
+            if fallback:
+                log.info(
+                    "price_history_provider_fallback",
+                    extra={"ticker": ticker, "source": source_name},
+                )
+                return fallback, resolved_interval
+
         stooq_interval = _STOOQ_INTERVALS.get(resolved_interval)
         if stooq_interval is None:
             raise

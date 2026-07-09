@@ -3,7 +3,7 @@ import binascii
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,44 @@ class Settings(BaseSettings):
     news_api_key: str = Field(default="", description="NewsAPI.org key for the news agent")
     news_lookback_days: int = Field(default=30, ge=1, le=30)
     news_max_articles: int = Field(default=30, ge=1, le=100)
+
+    # --- Optional market-signal providers (all key-gated; blank = skipped) ---
+    # Each adds a distinct signal to the timing agent and degrades gracefully.
+    alphavantage_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("ALPHAVANTAGE_API_KEY", "ALPHA_VANTAGE_API_KEY"),
+        description="Alpha Vantage: fundamentals overview",
+    )
+    finnhub_api_key: str = Field(default="", description="Finnhub: analyst ratings, earnings, quote")
+    polygon_api_key: str = Field(default="", description="Polygon.io: quote/prev-close")
+    tiingo_api_key: str = Field(default="", description="Tiingo: daily price")
+    fred_api_key: str = Field(default="", description="FRED (St. Louis Fed): macro regime")
+    # Retail sentiment calls are public/best-effort; toggle off if they become noisy.
+    stocktwits_enabled: bool = Field(default=True)
+    reddit_enabled: bool = Field(default=True)
+    reddit_user_agent: str = Field(default="VerdictResearch/1.0")
+    # How long aggregated market signals are cached (seconds).
+    signals_cache_seconds: int = Field(default=300, ge=0)
+
+    @property
+    def signal_sources_configured(self) -> list[str]:
+        """Provider names whose credentials are present (or that need none)."""
+        out: list[str] = []
+        if self.finnhub_api_key.strip():
+            out.append("finnhub")
+        if self.alphavantage_api_key.strip():
+            out.append("alphavantage")
+        if self.polygon_api_key.strip():
+            out.append("polygon")
+        if self.tiingo_api_key.strip():
+            out.append("tiingo")
+        if self.fred_api_key.strip():
+            out.append("fred")
+        if self.stocktwits_enabled:
+            out.append("stocktwits")
+        if self.reddit_enabled:
+            out.append("reddit")
+        return out
 
     embedding_model: str = Field(default="text-embedding-3-small")
     embedding_dim: int = Field(default=1536)

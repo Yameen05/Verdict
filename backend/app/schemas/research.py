@@ -2,6 +2,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.services.signals.types import (
+    AnalystRatings,
+    Fundamentals,
+    MacroRegime,
+    QuoteSignal,
+    RetailSentiment,
+)
+
 AgentStatus = Literal["ok", "skipped", "not_implemented", "error"]
 
 
@@ -72,11 +80,24 @@ class InsiderFindings(BaseModel):
     error: str | None = None
 
 
+class SignalFindings(BaseModel):
+    status: AgentStatus
+    analyst: AnalystRatings | None = None
+    retail: RetailSentiment | None = None
+    macro: MacroRegime | None = None
+    fundamentals: Fundamentals | None = None
+    quotes: list[QuoteSignal] = Field(default_factory=list)
+    earnings_days: int | None = None
+    sources_used: list[str] = Field(default_factory=list)
+    sources_available: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
 class EvidenceItem(BaseModel):
     """One citable fact collected by an agent. Referenced by id from arguments."""
 
     id: str  # e.g. "sec:0", "news:h2", "metrics:pe", "insider:net"
-    source: Literal["sec", "news", "metrics", "insider"]
+    source: Literal["sec", "news", "metrics", "insider", "signals"]
     label: str
     content: str
     url: str | None = None
@@ -134,6 +155,9 @@ class ResearchResponse(BaseModel):
     report: ResearchReport
     insider: InsiderFindings = Field(
         default_factory=lambda: InsiderFindings(status="skipped")
+    )
+    signals: SignalFindings = Field(
+        default_factory=lambda: SignalFindings(status="skipped")
     )
     bull: DebateCase | None = None
     bear: DebateCase | None = None

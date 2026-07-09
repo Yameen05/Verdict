@@ -6,10 +6,10 @@ Topology:
               │  start   │
               └────┬─────┘
                    │ fan-out (parallel)
-     ┌────────┬────┴────┬───────────┐
-     ▼        ▼         ▼           ▼
-   sec      news     metrics     insider
-     └────────┴────┬────┴───────────┘
+     ┌────────┬────┴────┬───────────┬──────────┐
+     ▼        ▼         ▼           ▼          ▼
+   sec      news     metrics     insider    signals
+     └────────┴────┬────┴───────────┴──────────┘
                    ▼ join
             build_evidence          (deterministic ledger of citable facts)
               ┌────┴────┐
@@ -40,6 +40,7 @@ from app.agents.nodes.judge import followup, judge, route_after_judge
 from app.agents.nodes.metrics_agent import metrics_agent
 from app.agents.nodes.news_agent import news_agent
 from app.agents.nodes.sec_agent import sec_agent
+from app.agents.nodes.signals_agent import signals_agent
 from app.agents.state import ResearchState
 from app.schemas.research import (
     InsiderFindings,
@@ -48,9 +49,16 @@ from app.schemas.research import (
     ResearchReport,
     ResearchResponse,
     SECFindings,
+    SignalFindings,
 )
 
-FETCH_NODES = ("sec_agent", "news_agent", "metrics_agent", "insider_agent")
+FETCH_NODES = (
+    "sec_agent",
+    "news_agent",
+    "metrics_agent",
+    "insider_agent",
+    "signals_agent",
+)
 
 
 def _build_graph():
@@ -60,6 +68,7 @@ def _build_graph():
     g.add_node("news_agent", news_agent)
     g.add_node("metrics_agent", metrics_agent)
     g.add_node("insider_agent", insider_agent)
+    g.add_node("signals_agent", signals_agent)
     g.add_node("build_evidence", build_evidence)
     g.add_node("bull_agent", bull_agent)
     g.add_node("bear_agent", bear_agent)
@@ -107,6 +116,7 @@ def state_to_response(ticker: str, state: dict) -> ResearchResponse:
         news=state.get("news") or NewsFindings(status="skipped"),
         metrics=state.get("metrics") or MetricsFindings(status="skipped"),
         insider=state.get("insider") or InsiderFindings(status="skipped"),
+        signals=state.get("signals") or SignalFindings(status="skipped"),
         bull=state.get("bull"),
         bear=state.get("bear"),
         evidence=state.get("evidence") or [],

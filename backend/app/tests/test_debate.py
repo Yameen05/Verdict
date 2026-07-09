@@ -16,6 +16,14 @@ from app.schemas.research import (
     NewsFindings,
     SECFinding,
     SECFindings,
+    SignalFindings,
+)
+from app.services.signals.types import (
+    AnalystRatings,
+    Fundamentals,
+    MacroRegime,
+    QuoteSignal,
+    RetailSentiment,
 )
 
 
@@ -107,6 +115,61 @@ def test_build_evidence_skips_unusable_agents():
     }
     out = debate_mod.build_evidence(state)
     assert out["evidence"] == []
+
+
+def test_build_evidence_includes_market_signals():
+    state = {
+        "ticker": "AAPL",
+        "signals": SignalFindings(
+            status="ok",
+            analyst=AnalystRatings(
+                strong_buy=10,
+                buy=12,
+                hold=4,
+                sell=1,
+                strong_sell=0,
+                period="2026-07-01",
+                consensus="Buy",
+                score=0.57,
+            ),
+            retail=RetailSentiment(
+                bullish=18,
+                bearish=7,
+                sample=25,
+                score=0.44,
+                label="bullish",
+                source="stocktwits+reddit",
+            ),
+            macro=MacroRegime(
+                fed_funds_pct=4.75,
+                cpi_yoy_pct=3.2,
+                unemployment_pct=4.1,
+                yield_spread_10y_2y=-0.2,
+                regime="restrictive",
+                note="policy rate is high",
+            ),
+            fundamentals=Fundamentals(
+                pe_ratio=28.0,
+                peg_ratio=1.8,
+                profit_margin=0.25,
+                analyst_target=250.0,
+            ),
+            quotes=[QuoteSignal(price=210.0, change_pct=1.2, source="finnhub")],
+            earnings_days=6,
+            sources_used=["finnhub", "alphavantage", "fred", "stocktwits", "reddit"],
+        ),
+    }
+
+    out = debate_mod.build_evidence(state)
+    ids = {e.id for e in out["evidence"]}
+    assert {
+        "signals:analyst",
+        "signals:earnings",
+        "signals:fundamentals",
+        "signals:quotes",
+        "signals:retail",
+        "signals:macro",
+    } <= ids
 
 
 async def test_advocate_filters_unknown_evidence_ids(monkeypatch):
