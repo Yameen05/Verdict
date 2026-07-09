@@ -5,6 +5,7 @@ export type AgentKey =
   | "news_agent"
   | "metrics_agent"
   | "insider_agent"
+  | "signals_agent"
   | "bull_agent"
   | "bear_agent"
   | "judge";
@@ -23,6 +24,7 @@ const EVIDENCE_ROW: { key: AgentKey; label: string }[] = [
   { key: "news_agent", label: "News & sentiment" },
   { key: "metrics_agent", label: "Financials" },
   { key: "insider_agent", label: "Insider activity" },
+  { key: "signals_agent", label: "Market signals" },
 ];
 
 const TRIAL_ROW: { key: AgentKey; label: string }[] = [
@@ -63,7 +65,7 @@ export function AgentProgress({ states }: Props) {
         <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
           Gathering evidence
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
           {EVIDENCE_ROW.map(({ key, label }) => (
             <Tile key={key} label={label} state={states[key]} />
           ))}

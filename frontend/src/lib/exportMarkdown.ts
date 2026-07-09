@@ -12,7 +12,7 @@ export function researchToMarkdown(
   result: ResearchResponse,
   meta: { duration_ms: number; cost_usd: number } | null,
 ): string {
-  const { report, metrics, news, insider, evidence } = result;
+  const { report, metrics, news, insider, signals, evidence } = result;
   const lines: string[] = [
     `# Verdict — ${report.ticker}: ${report.recommendation}` +
       (report.confidence !== null ? ` (confidence ${report.confidence}/100)` : ""),
@@ -57,6 +57,15 @@ export function researchToMarkdown(
   }
   if (news.summary) lines.push("", "## News", "", news.summary);
   if (insider.summary) lines.push("", "## Insider activity", "", insider.summary);
+  if (signals.status === "ok") {
+    const s: string[] = [];
+    if (signals.sources_used.length) s.push(`Sources: ${signals.sources_used.join(", ")}`);
+    if (signals.analyst) s.push(`Analysts: ${signals.analyst.consensus} (${signals.analyst.score.toFixed(2)})`);
+    if (signals.earnings_days !== null) s.push(`Earnings: ~${signals.earnings_days} day(s)`);
+    if (signals.retail) s.push(`Retail: ${signals.retail.label} (${signals.retail.sample} tagged posts/messages)`);
+    if (signals.macro) s.push(`Macro: ${signals.macro.regime}`);
+    if (s.length) lines.push("", "## Market signals", "", ...s.map((x) => `- ${x}`));
+  }
   if (report.delta_summary) lines.push("", "## Since the last run", "", report.delta_summary);
 
   const m: string[] = [];

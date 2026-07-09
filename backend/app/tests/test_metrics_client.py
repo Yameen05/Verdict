@@ -237,6 +237,39 @@ class TestPriceHistory:
         _bars, interval = mc.fetch_price_history("AAPL", "1M", "1M")
         assert interval == "5M"
 
+    def test_three_month_intraday_promotes_to_hourly(self, monkeypatch):
+        import app.services.metrics_client as mc
+
+        class _FakeHistory:
+            empty = False
+
+            def iterrows(self):
+                return iter([
+                    (
+                        "2026-07-08",
+                        {
+                            "Open": 100.0,
+                            "High": 101.0,
+                            "Low": 99.0,
+                            "Close": 100.5,
+                            "Volume": 1000,
+                        },
+                    )
+                ])
+
+        class _FakeTicker:
+            def __init__(self, _t):
+                pass
+
+            def history(self, period, interval, auto_adjust):
+                assert period == "3mo"
+                assert interval == "1h"
+                return _FakeHistory()
+
+        monkeypatch.setattr(mc.yf, "Ticker", _FakeTicker)
+        _bars, interval = mc.fetch_price_history("AAPL", "3M", "1M")
+        assert interval == "1H"
+
     def test_fetch_latest_price_bar_returns_last_bar(self, monkeypatch):
         import app.services.metrics_client as mc
 

@@ -68,9 +68,67 @@ export interface InsiderFindings {
   error: string | null;
 }
 
+export interface AnalystRatings {
+  strong_buy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strong_sell: number;
+  period: string | null;
+  consensus: string;
+  score: number;
+  source: string;
+}
+
+export interface RetailSentiment {
+  bullish: number;
+  bearish: number;
+  sample: number;
+  score: number;
+  label: string;
+  source: string;
+}
+
+export interface MacroRegime {
+  fed_funds_pct: number | null;
+  cpi_yoy_pct: number | null;
+  unemployment_pct: number | null;
+  yield_spread_10y_2y: number | null;
+  regime: string;
+  note: string;
+  source: string;
+}
+
+export interface Fundamentals {
+  pe_ratio: number | null;
+  peg_ratio: number | null;
+  profit_margin: number | null;
+  analyst_target: number | null;
+  source: string;
+}
+
+export interface QuoteSignal {
+  price: number | null;
+  change_pct: number | null;
+  source: string;
+}
+
+export interface SignalFindings {
+  status: AgentStatus;
+  analyst: AnalystRatings | null;
+  retail: RetailSentiment | null;
+  macro: MacroRegime | null;
+  fundamentals: Fundamentals | null;
+  quotes: QuoteSignal[];
+  earnings_days: number | null;
+  sources_used: string[];
+  sources_available: string[];
+  error: string | null;
+}
+
 export interface EvidenceItem {
   id: string;
-  source: "sec" | "news" | "metrics" | "insider";
+  source: "sec" | "news" | "metrics" | "insider" | "signals";
   label: string;
   content: string;
   url: string | null;
@@ -122,9 +180,9 @@ export interface ResearchResponse {
   news: NewsFindings;
   metrics: MetricsFindings;
   insider: InsiderFindings;
+  signals: SignalFindings;
   bull: DebateCase | null;
   bear: DebateCase | null;
   evidence: EvidenceItem[];
   report: ResearchReport;
 }
-

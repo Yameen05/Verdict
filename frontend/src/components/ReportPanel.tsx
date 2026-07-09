@@ -22,7 +22,7 @@ function StatusBadge({ status }: { status: string }) {
 /** Per-source findings: what each fetch agent actually brought back. */
 export function ReportPanel({ result }: Props) {
   if (!result) return null;
-  const { report, sec, news, metrics, insider } = result;
+  const { report, sec, news, metrics, insider, signals } = result;
 
   return (
     <section className="mt-6 space-y-4">
@@ -51,7 +51,7 @@ export function ReportPanel({ result }: Props) {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <AgentCard title="SEC filings" status={sec.status} error={sec.error}>
           {sec.findings.length > 0 && (
             <ul className="space-y-2 text-xs text-slate-300">
@@ -168,6 +168,52 @@ export function ReportPanel({ result }: Props) {
                   </span>
                   <span className="shrink-0 text-slate-500">
                     {t.value_usd ? `$${(t.value_usd / 1000).toFixed(0)}k` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </AgentCard>
+
+        <AgentCard title="Market signals" status={signals.status} error={signals.error}>
+          {signals.sources_used.length > 0 && (
+            <p className="mb-2 text-[11px] text-slate-500">
+              sources: {signals.sources_used.join(", ")}
+            </p>
+          )}
+          {signals.analyst && (
+            <Metric
+              label="Analysts"
+              value={`${signals.analyst.consensus} (${signals.analyst.score.toFixed(2)})`}
+            />
+          )}
+          {signals.earnings_days !== null && (
+            <Metric label="Earnings" value={`~${signals.earnings_days} day(s)`} />
+          )}
+          {signals.fundamentals?.analyst_target !== null &&
+            signals.fundamentals?.analyst_target !== undefined && (
+              <Metric
+                label="Target"
+                value={`$${signals.fundamentals.analyst_target.toFixed(2)}`}
+              />
+            )}
+          {signals.retail && (
+            <Metric
+              label="Retail"
+              value={`${signals.retail.label} (${signals.retail.sample})`}
+            />
+          )}
+          {signals.macro && <Metric label="Macro" value={signals.macro.regime} />}
+          {signals.quotes.length > 0 && (
+            <ul className="mt-2 space-y-1 border-t border-slate-800 pt-2 text-[11px]">
+              {signals.quotes.slice(0, 4).map((q) => (
+                <li key={q.source} className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-slate-400">{q.source}</span>
+                  <span className="shrink-0 text-slate-200">
+                    {q.price !== null ? `$${q.price.toFixed(2)}` : "n/a"}
+                    {q.change_pct !== null
+                      ? ` ${q.change_pct > 0 ? "+" : ""}${q.change_pct.toFixed(1)}%`
+                      : ""}
                   </span>
                 </li>
               ))}

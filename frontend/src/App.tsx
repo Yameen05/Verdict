@@ -34,6 +34,7 @@ const INITIAL_AGENT_STATES: AgentStates = {
   news_agent: { status: "idle" },
   metrics_agent: { status: "idle" },
   insider_agent: { status: "idle" },
+  signals_agent: { status: "idle" },
   bull_agent: { status: "idle" },
   bear_agent: { status: "idle" },
   judge: { status: "idle" },
@@ -53,7 +54,7 @@ const HORIZONS: { days: number; label: string; hint: string }[] = [
 ];
 
 function summarizePayload(payload: Record<string, unknown>): string {
-  for (const k of ["sec", "news", "metrics", "insider", "bull", "bear", "report"]) {
+  for (const k of ["sec", "news", "metrics", "insider", "signals", "bull", "bear", "report"]) {
     const v = payload[k] as Record<string, unknown> | undefined;
     if (v && typeof v === "object") {
       const stat =
@@ -118,6 +119,30 @@ export default function App({
       news_agent: { status: "running" },
       metrics_agent: { status: "running" },
       insider_agent: { status: "running" },
+      signals_agent: { status: "running" },
+    });
+  }
+
+  function friendlyResearchError(message: string): string {
+    if (/429|too many requests|rate.?limit/i.test(message)) {
+      return "Research is rate-limited right now. Wait about a minute, then try again; cached reports still load without a fresh AI run.";
+    }
+    if (/quota/i.test(message)) {
+      return "The AI provider quota is out right now. Try again after the provider resets, or switch to a key/model with more quota.";
+    }
+    return `Research failed: ${message}`;
+  }
+
+  function markRunFailed(message: string) {
+    setStatus(message);
+    setAgents((s) => {
+      const next: AgentStates = { ...s };
+      (Object.keys(next) as AgentKey[]).forEach((k) => {
+        if (next[k].status === "running") {
+          next[k] = { status: "error", summary: "stopped" };
+        }
+      });
+      return next;
     });
   }
 
@@ -261,7 +286,7 @@ export default function App({
             }
             setHistoryRefresh((n) => n + 1);
           } else if (e.event === "error") {
-            setStatus(`Research failed: ${e.data.detail}`);
+            markRunFailed(friendlyResearchError(`${e.data.detail} ${e.data.error_type}`));
           }
         },
         ctl.signal,
@@ -270,17 +295,18 @@ export default function App({
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
-        setStatus(`Research failed: ${(e as Error).message}`);
+        markRunFailed(friendlyResearchError((e as Error).message));
       }
     } finally {
+      if (abortRef.current === ctl) abortRef.current = null;
       setBusy(false);
     }
   }
 
   function onCancel() {
     abortRef.current?.abort();
+    markRunFailed("Cancelled");
     setBusy(false);
-    setStatus("Cancelled");
   }
 
   const readinessSummary =

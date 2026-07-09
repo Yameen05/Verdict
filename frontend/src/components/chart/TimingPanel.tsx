@@ -9,6 +9,29 @@ const ACTION_STYLE: Record<TimingAction, string> = {
   avoid: "border-rose-500/50 bg-rose-500/10 text-rose-300",
 };
 
+const ACTION_HELP: Record<TimingAction, { title: string; body: string }> = {
+  buy_now: {
+    title: "Buy now",
+    body: "The setup looks good enough to enter now for the selected time window. It does not mean guaranteed profit.",
+  },
+  accumulate: {
+    title: "Accumulate gradually",
+    body: "Do not put all the money in at once. Split the buy into smaller chunks so a bad entry hurts less.",
+  },
+  wait_pullback: {
+    title: "Wait for a pullback",
+    body: "The stock may be worth watching, but the current price looks stretched. Wait for a dip toward a better entry zone.",
+  },
+  wait_watch: {
+    title: "Wait and watch",
+    body: "The signals are mixed or unclear. Staying out for now is cleaner than forcing a trade.",
+  },
+  avoid: {
+    title: "Avoid for now",
+    body: "The current setup looks weak or too risky. Do not buy unless the chart, news, or fundamentals improve.",
+  },
+};
+
 const HORIZONS: { days: number; label: string }[] = [
   { days: 7, label: "1 week" },
   { days: 14, label: "2 weeks" },
@@ -27,6 +50,29 @@ function Tech({ label, value }: { label: string; value: string }) {
 
 function fmtNum(v: unknown, suffix = ""): string {
   return typeof v === "number" ? `${v}${suffix}` : "—";
+}
+
+function ActionHelpIcon({ action }: { action: TimingAction }) {
+  const help = ACTION_HELP[action];
+  return (
+    <span className="group relative inline-flex">
+      <span
+        tabIndex={0}
+        role="img"
+        aria-label={`${help.title}: ${help.body}`}
+        title={`${help.title}: ${help.body}`}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-xs font-bold text-slate-300 outline-none transition hover:border-cyan-500/70 hover:text-cyan-200 focus:border-cyan-500/70 focus:text-cyan-200"
+      >
+        i
+      </span>
+      <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 max-w-[calc(100vw-3rem)] rounded-md border border-slate-700 bg-slate-950 p-3 text-left shadow-xl shadow-black/40 group-hover:block group-focus-within:block">
+        <span className="block text-xs font-semibold text-slate-100">{help.title}</span>
+        <span className="mt-1 block text-[11px] leading-relaxed text-slate-400">
+          {help.body}
+        </span>
+      </span>
+    </span>
+  );
 }
 
 export function TimingPanel({ ticker }: { ticker: string }) {
@@ -92,6 +138,7 @@ export function TimingPanel({ ticker }: { ticker: string }) {
       {data && !error && (
         <div className="space-y-4 px-4 py-4">
           <div className="flex flex-wrap items-center gap-3">
+            <ActionHelpIcon action={data.action} />
             <span
               className={`rounded-lg border px-3 py-1.5 text-sm font-bold ${ACTION_STYLE[data.action]}`}
             >

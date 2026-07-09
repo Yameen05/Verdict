@@ -67,6 +67,13 @@ def _fmt_usd(v: float) -> str:
     return f"${v:,.2f}"
 
 
+def _fmt_pct(v: float | None, *, signed: bool = False) -> str:
+    if v is None:
+        return "n/a"
+    sign = "+" if signed and v > 0 else ""
+    return f"{sign}{v:.1f}%"
+
+
 def build_evidence(state: ResearchState) -> dict:
     """Pure node: convert agent findings into citable evidence items."""
     items: list[EvidenceItem] = []
@@ -175,6 +182,124 @@ def build_evidence(state: ResearchState) -> dict:
                     source="insider",
                     label=f"{t.insider}{' — ' + t.role if t.role else ''}",
                     content=f"{t.kind.upper()} {shares}{val} on {t.date}",
+                )
+            )
+
+    signals = state.get("signals")
+    if signals is not None and signals.status == "ok":
+        analyst = signals.analyst
+        if analyst is not None:
+            total = (
+                analyst.strong_buy
+                + analyst.buy
+                + analyst.hold
+                + analyst.sell
+                + analyst.strong_sell
+            )
+            items.append(
+                EvidenceItem(
+                    id="signals:analyst",
+                    source="signals",
+                    label=f"Analyst consensus ({analyst.source}, {analyst.period or 'latest'})",
+                    content=(
+                        f"{analyst.consensus} consensus from {total} analysts "
+                        f"(strong buy {analyst.strong_buy}, buy {analyst.buy}, "
+                        f"hold {analyst.hold}, sell {analyst.sell}, "
+                        f"strong sell {analyst.strong_sell}); score {analyst.score:+.2f}."
+                    ),
+                )
+            )
+
+        if signals.earnings_days is not None:
+            items.append(
+                EvidenceItem(
+                    id="signals:earnings",
+                    source="signals",
+                    label="Next earnings date",
+                    content=(
+                        f"Next earnings event is in about {signals.earnings_days} "
+                        "calendar day(s); short holds can gap sharply around it."
+                    ),
+                )
+            )
+
+        fundamentals = signals.fundamentals
+        if fundamentals is not None:
+            quote_price = next((q.price for q in signals.quotes if q.price), None)
+            parts: list[str] = []
+            if fundamentals.pe_ratio is not None:
+                parts.append(f"P/E {fundamentals.pe_ratio:.1f}")
+            if fundamentals.peg_ratio is not None:
+                parts.append(f"PEG {fundamentals.peg_ratio:.2f}")
+            if fundamentals.profit_margin is not None:
+                parts.append(f"profit margin {fundamentals.profit_margin * 100:.1f}%")
+            if fundamentals.analyst_target is not None:
+                target = f"analyst target ${fundamentals.analyst_target:.2f}"
+                if quote_price:
+                    upside = (fundamentals.analyst_target / quote_price - 1.0) * 100.0
+                    target += f" ({_fmt_pct(upside, signed=True)} vs latest quote)"
+                parts.append(target)
+            if parts:
+                items.append(
+                    EvidenceItem(
+                        id="signals:fundamentals",
+                        source="signals",
+                        label=f"Fundamental snapshot ({fundamentals.source})",
+                        content="; ".join(parts) + ".",
+                    )
+                )
+
+        if signals.quotes:
+            quote_text = []
+            for q in signals.quotes[:6]:
+                move = (
+                    f" {_fmt_pct(q.change_pct, signed=True)}"
+                    if q.change_pct is not None
+                    else ""
+                )
+                quote_text.append(f"{q.source}: ${q.price:.2f}{move}")
+            items.append(
+                EvidenceItem(
+                    id="signals:quotes",
+                    source="signals",
+                    label="Provider quote cross-check",
+                    content="; ".join(quote_text),
+                )
+            )
+
+        retail = signals.retail
+        if retail is not None:
+            items.append(
+                EvidenceItem(
+                    id="signals:retail",
+                    source="signals",
+                    label=f"Retail sentiment ({retail.source})",
+                    content=(
+                        f"{retail.label}; {retail.bullish} bullish vs "
+                        f"{retail.bearish} bearish tagged posts/messages "
+                        f"(sample {retail.sample}, score {retail.score:+.2f})."
+                    ),
+                )
+            )
+
+        macro = signals.macro
+        if macro is not None:
+            parts = [
+                f"regime {macro.regime}",
+                f"fed funds {_fmt_pct(macro.fed_funds_pct)}",
+                f"CPI YoY {_fmt_pct(macro.cpi_yoy_pct)}",
+                f"unemployment {_fmt_pct(macro.unemployment_pct)}",
+            ]
+            if macro.yield_spread_10y_2y is not None:
+                parts.append(f"10Y-2Y spread {macro.yield_spread_10y_2y:+.2f} pts")
+            if macro.note:
+                parts.append(macro.note)
+            items.append(
+                EvidenceItem(
+                    id="signals:macro",
+                    source="signals",
+                    label=f"Macro regime ({macro.source})",
+                    content="; ".join(parts) + ".",
                 )
             )
 

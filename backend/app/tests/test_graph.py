@@ -19,6 +19,7 @@ from app.agents.nodes import judge as judge_mod
 from app.agents.nodes import metrics_agent as metrics_agent_mod
 from app.agents.nodes import news_agent as news_agent_mod
 from app.agents.nodes import sec_agent as sec_agent_mod
+from app.agents.nodes import signals_agent as signals_agent_mod
 from app.config import get_settings
 from app.services.insider_client import Form4Transaction
 from app.services.metrics_client import Metrics
@@ -78,6 +79,7 @@ def stub_externals(monkeypatch):
     metrics_agent_mod._reset_cache()
     news_agent_mod._reset_news_cache()
     insider_agent_mod._reset_cache()
+    signals_agent_mod._reset_cache()
 
     # --- SEC ---
     async def fake_embed_query(_t):
@@ -170,10 +172,11 @@ async def test_graph_end_to_end_full_trial(stub_externals):
     assert result.news.status == "ok"
     assert result.metrics.status == "ok"
     assert result.insider.status == "ok"
+    assert result.signals.status == "skipped"
     assert result.metrics.profit_margin == pytest.approx(0.253)
     assert result.metrics.current_price == pytest.approx(210.0)
 
-    # Evidence ledger built from all four agents.
+    # Evidence ledger built from all configured agents.
     ids = {e.id for e in result.evidence}
     assert {"sec:0", "news:sentiment", "metrics:margin", "insider:net"} <= ids
 
@@ -226,7 +229,7 @@ async def test_graph_astream_emits_updates_and_custom_events(stub_externals):
             custom_kinds.append(chunk.get("kind"))
 
     assert modes_seen == {"updates", "custom"}
-    for node in ("sec_agent", "news_agent", "metrics_agent", "insider_agent",
+    for node in ("sec_agent", "news_agent", "metrics_agent", "insider_agent", "signals_agent",
                  "build_evidence", "bull_agent", "bear_agent", "judge"):
         assert node in nodes_completed, node
     # advocates + judge emit progress over the custom stream

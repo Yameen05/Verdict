@@ -12,6 +12,7 @@ from app.schemas.research import (
     NewsFindings,
     ResearchReport,
     SECFindings,
+    SignalFindings,
 )
 
 
@@ -24,6 +25,7 @@ class ResearchState(TypedDict, total=False):
     news: NewsFindings
     metrics: MetricsFindings
     insider: InsiderFindings
+    signals: SignalFindings
     # Deterministic evidence ledger built after the fetch agents complete.
     evidence: list[EvidenceItem]
     # Adversarial debate slots.

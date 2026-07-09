@@ -465,6 +465,7 @@ export interface TimingAssessment {
   entry_zone_low: number | null;
   entry_zone_high: number | null;
   technicals: Record<string, unknown>;
+  market_signals: Record<string, unknown>;
   headlines: string[];
   as_of: string;
   source: "llm" | "rules";

@@ -34,6 +34,8 @@ def _isolated_env(monkeypatch, tmp_path):
     # Gemini base URL), so tests run deterministically against OpenAI defaults.
     monkeypatch.setenv("LLM_BASE_URL", "")
     monkeypatch.setenv("LLM_API_KEY", "")
+    monkeypatch.setenv("STOCKTWITS_ENABLED", "false")
+    monkeypatch.setenv("REDDIT_ENABLED", "false")
     monkeypatch.setenv("RATE_LIMIT_RESEARCH", "1000/minute")
     monkeypatch.setenv("RATE_LIMIT_FILINGS", "1000/minute")
     monkeypatch.setenv("RATE_LIMIT_AUTH", "1000/minute")

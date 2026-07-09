@@ -28,6 +28,8 @@ from app.services.metrics_client import (
     fetch_days_to_earnings,
     fetch_price_history,
 )
+from app.services.signals.aggregate import gather_market_signals
+from app.services.signals.types import MarketSignals
 from app.services.technicals import TechnicalSnapshot, compute_snapshot
 
 log = get_logger(__name__)
@@ -61,6 +63,7 @@ class TimingAssessment(BaseModel):
     entry_zone_low: float | None = None
     entry_zone_high: float | None = None
     technicals: dict = Field(default_factory=dict)
+    market_signals: dict = Field(default_factory=dict)
     headlines: list[str] = Field(default_factory=list)
     as_of: str
     source: Literal["llm", "rules"] = "rules"
@@ -75,7 +78,49 @@ def _earnings_imminent(snap: TechnicalSnapshot) -> bool:
     return snap.days_to_earnings is not None and snap.days_to_earnings <= 3
 
 
-def _rules_action(snap: TechnicalSnapshot) -> tuple[TimingAction, int]:
+def _signal_bias(signals: MarketSignals | None) -> tuple[int, list[str], list[str]]:
+    if signals is None:
+        return 0, [], []
+    score = 0
+    notes: list[str] = []
+    risks: list[str] = []
+
+    if signals.analyst is not None:
+        analyst = signals.analyst
+        if analyst.score >= 0.35:
+            score += 2
+        elif analyst.score >= 0.15:
+            score += 1
+        elif analyst.score <= -0.35:
+            score -= 2
+        elif analyst.score <= -0.15:
+            score -= 1
+        notes.append(f"analysts: {analyst.consensus} consensus")
+
+    if signals.retail is not None and signals.retail.sample >= 5:
+        if signals.retail.score >= 0.35:
+            score += 1
+        elif signals.retail.score <= -0.35:
+            score -= 1
+        notes.append(f"retail sentiment: {signals.retail.label}")
+
+    if signals.macro is not None:
+        if signals.macro.regime == "restrictive":
+            score -= 1
+            risks.append("Macro backdrop is restrictive, which can pressure stocks.")
+        elif signals.macro.regime == "supportive":
+            score += 1
+        notes.append(f"macro regime: {signals.macro.regime}")
+
+    if signals.earnings_days is not None and signals.earnings_days <= 7:
+        score -= 1
+        risks.append(
+            f"Earnings in ~{signals.earnings_days} day(s) — the price can gap sharply either way."
+        )
+    return score, notes, risks
+
+
+def _rules_action(snap: TechnicalSnapshot, signal_score: int = 0) -> tuple[TimingAction, int]:
     overbought = snap.rsi14 is not None and snap.rsi14 >= 70
     oversold = snap.rsi14 is not None and snap.rsi14 <= 30
     if snap.bias == "bullish":
@@ -84,21 +129,34 @@ def _rules_action(snap: TechnicalSnapshot) -> tuple[TimingAction, int]:
         # Don't chase into a binary earnings event.
         if _earnings_imminent(snap):
             return "wait_watch", 55
+        if signal_score <= -2:
+            return "wait_watch", 58
         return "buy_now", min(80, 55 + 8 * snap.bias_score)
     if snap.bias == "bearish":
         if oversold:
             return "wait_watch", 55
+        if signal_score >= 2:
+            return "wait_watch", 58
         return "avoid", min(80, 55 + 8 * abs(snap.bias_score))
     # neutral
+    if signal_score >= 2 and not _earnings_imminent(snap):
+        return "accumulate", 58
+    if signal_score <= -2:
+        return "wait_watch", 55
     if snap.trend == "up" and not _earnings_imminent(snap):
         return "accumulate", 55
     return "wait_watch", 50
 
 
 def _rules_assessment(
-    ticker: str, horizon_days: int, snap: TechnicalSnapshot, headlines: list[str]
+    ticker: str,
+    horizon_days: int,
+    snap: TechnicalSnapshot,
+    headlines: list[str],
+    signals: MarketSignals | None,
 ) -> TimingAssessment:
-    action, confidence = _rules_action(snap)
+    signal_score, signal_notes, signal_risks = _signal_bias(signals)
+    action, confidence = _rules_action(snap, signal_score)
     entry_low = snap.support
     entry_high = snap.sma20 or snap.close
     summary = (
@@ -116,8 +174,10 @@ def _rules_assessment(
         risks.append("Near the 52-week high; limited room before resistance.")
     if snap.volatility_pct is not None and snap.volatility_pct >= 4:
         risks.append(f"High volatility (~{snap.volatility_pct:.1f}%/day) can whipsaw entries.")
+    risks.extend(r for r in signal_risks if r not in risks)
     if not risks:
         risks.append("Even a clean setup can reverse on news; use a stop.")
+    rationale = (snap.signals + signal_notes)[:8]
     return TimingAssessment(
         ticker=ticker,
         horizon_days=horizon_days,
@@ -125,11 +185,12 @@ def _rules_assessment(
         action_label=ACTION_LABELS[action],
         confidence=confidence,
         summary=summary,
-        rationale=snap.signals,
+        rationale=rationale,
         risks=risks,
         entry_zone_low=min(entry_low, entry_high) if entry_low and entry_high else entry_low,
         entry_zone_high=max(entry_low, entry_high) if entry_low and entry_high else entry_high,
         technicals=asdict(snap),
+        market_signals=signals.model_dump(exclude_none=True) if signals else {},
         headlines=headlines,
         as_of=snap.as_of,
         source="rules",
@@ -137,8 +198,9 @@ def _rules_assessment(
 
 
 _SYSTEM = """You are a disciplined trading-timing analyst. You are given a
-deterministic technical snapshot of {ticker} and recent news headlines. The user
-plans to hold for about {horizon} days.
+deterministic technical snapshot of {ticker}, optional market signals
+(analyst ratings, earnings, macro, retail sentiment, provider quotes), and
+recent news headlines. The user plans to hold for about {horizon} days.
 
 Decide ONLY among these actions:
   buy_now        — setup favors entering now
@@ -156,12 +218,21 @@ JSON: {{"action": <one of the above>, "confidence": <0-100 int>, "summary":
 
 
 async def _llm_assessment(
-    ticker: str, horizon_days: int, snap: TechnicalSnapshot, headlines: list[str]
+    ticker: str,
+    horizon_days: int,
+    snap: TechnicalSnapshot,
+    headlines: list[str],
+    signals: MarketSignals | None,
 ) -> TimingAssessment:
     client = make_llm_client()
     settings = get_settings()
     user_payload = json.dumps(
-        {"technicals": asdict(snap), "headlines": headlines[:8]}, default=str
+        {
+            "technicals": asdict(snap),
+            "market_signals": signals.model_dump(exclude_none=True) if signals else {},
+            "headlines": headlines[:8],
+        },
+        default=str,
     )
     resp = await client.chat.completions.create(
         model=settings.llm_model,
@@ -189,6 +260,7 @@ async def _llm_assessment(
         entry_zone_low=_opt_float(data.get("entry_zone_low")),
         entry_zone_high=_opt_float(data.get("entry_zone_high")),
         technicals=asdict(snap),
+        market_signals=signals.model_dump(exclude_none=True) if signals else {},
         headlines=headlines,
         as_of=snap.as_of,
         source="llm",
@@ -225,7 +297,10 @@ async def assess_timing(ticker: str, horizon_days: int = 14) -> TimingAssessment
         raise TimingError(f"Not enough price history for {ticker} to assess timing")
 
     snap = compute_snapshot(bars)
-    snap.days_to_earnings = await asyncio.to_thread(fetch_days_to_earnings, ticker)
+    signals = await gather_market_signals(ticker)
+    snap.days_to_earnings = signals.earnings_days
+    if snap.days_to_earnings is None:
+        snap.days_to_earnings = await asyncio.to_thread(fetch_days_to_earnings, ticker)
     if snap.days_to_earnings is not None and snap.days_to_earnings <= 7:
         snap.signals.append(
             f"earnings in ~{snap.days_to_earnings} day(s) — a binary event that can gap the price"
@@ -234,10 +309,10 @@ async def assess_timing(ticker: str, horizon_days: int = 14) -> TimingAssessment
 
     if llm_key_configured(get_settings().resolved_llm_key):
         try:
-            return await _llm_assessment(ticker, horizon_days, snap, headlines)
+            return await _llm_assessment(ticker, horizon_days, snap, headlines, signals)
         except (ValidationError, TimingError, json.JSONDecodeError, KeyError) as e:
             log.warning("timing_llm_failed_fallback", extra={"ticker": ticker, "reason": str(e)})
         except Exception:  # noqa: BLE001 - any provider error → deterministic fallback
             log.exception("timing_llm_error_fallback", extra={"ticker": ticker})
 
-    return _rules_assessment(ticker, horizon_days, snap, headlines)
+    return _rules_assessment(ticker, horizon_days, snap, headlines, signals)
