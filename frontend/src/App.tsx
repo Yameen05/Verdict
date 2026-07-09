@@ -10,8 +10,11 @@ import { VerdictCard } from "./components/VerdictCard";
 import { DebatePanel } from "./components/DebatePanel";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { ScoreboardPanel } from "./components/ScoreboardPanel";
+import { BacktestPanel } from "./components/BacktestPanel";
 import { WatchlistBar } from "./components/WatchlistBar";
 import { InvitesPanel } from "./components/InvitesPanel";
+import { StockChartPanel } from "./components/StockChartPanel";
+import { TimingPanel } from "./components/chart/TimingPanel";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
 import {
   api,
@@ -356,7 +359,10 @@ export default function App({
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         {tab === "scoreboard" ? (
-          <ScoreboardPanel refreshKey={historyRefresh} />
+          <>
+            <ScoreboardPanel refreshKey={historyRefresh} />
+            <BacktestPanel refreshKey={historyRefresh} />
+          </>
         ) : (
           <>
             {showInvites && <InvitesPanel onClose={() => setShowInvites(false)} />}
@@ -366,6 +372,10 @@ export default function App({
 
             <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
               <StockPicker ticker={ticker} setTicker={setTicker} />
+
+              <StockChartPanel ticker={ticker} />
+
+              <TimingPanel ticker={ticker} />
 
               <div className="border-t border-slate-800 pt-5">
                 <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-400">

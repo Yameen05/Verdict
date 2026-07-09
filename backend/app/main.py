@@ -20,7 +20,7 @@ from app.middleware import (
 )
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
-from app.routers import ask, auth, filings, health, invites, research, scoreboard
+from app.routers import ask, auth, filings, health, invites, market, research, scoreboard
 from app.security import require_authenticated
 
 
@@ -146,6 +146,12 @@ def create_app() -> FastAPI:
         scoreboard.router,
         prefix="/research",
         tags=["scoreboard"],
+        dependencies=protected,
+    )
+    app.include_router(
+        market.router,
+        prefix="/market",
+        tags=["market"],
         dependencies=protected,
     )
 

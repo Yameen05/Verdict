@@ -213,6 +213,33 @@ export interface AskResponse {
   searched_filing: boolean;
 }
 
+export type PriceRange = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y";
+export type PriceInterval = "1M" | "5M" | "15M" | "1H" | "1D" | "1W";
+
+export interface PriceBar {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
+}
+
+export interface PriceHistoryResponse {
+  ticker: string;
+  range: PriceRange;
+  interval: PriceInterval;
+  requested_interval: PriceInterval;
+  bars: PriceBar[];
+}
+
+export interface LatestPriceResponse {
+  ticker: string;
+  interval: PriceInterval;
+  requested_interval: PriceInterval;
+  bar: PriceBar;
+}
+
 export const api = {
   health: async () => {
     const res = await fetch(`${BASE_URL}/health`, { headers: requestHeaders() });
@@ -226,6 +253,37 @@ export const api = {
     postJson<QueryResponse>("/filings/query", { ticker, question, top_k }),
 
   ask: (body: AskRequest) => postJson<AskResponse>("/research/ask", body),
+
+  priceHistory: async (
+    ticker: string,
+    range: PriceRange = "1M",
+    interval: PriceInterval = "1D",
+  ): Promise<PriceHistoryResponse> => {
+    const params = new URLSearchParams({ range, interval });
+    const res = await fetch(
+      `${BASE_URL}/market/${encodeURIComponent(ticker)}/history?${params}`,
+      { headers: requestHeaders(), credentials: "include" },
+    );
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as PriceHistoryResponse;
+  },
+
+  latestPrice: async (
+    ticker: string,
+    interval: PriceInterval = "1M",
+  ): Promise<LatestPriceResponse> => {
+    const params = new URLSearchParams({ interval });
+    const res = await fetch(
+      `${BASE_URL}/market/${encodeURIComponent(ticker)}/quote?${params}`,
+      { headers: requestHeaders(), credentials: "include" },
+    );
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as LatestPriceResponse;
+  },
 
   research: async (ticker: string): Promise<ResearchEnvelope> => {
     const res = await fetch(`${BASE_URL}/research/${encodeURIComponent(ticker)}`, {
@@ -259,6 +317,28 @@ export const api = {
       throw await errorFromResponse(res);
     }
     return (await res.json()) as HistoryResponse;
+  },
+
+  backtest: async (limit = 200): Promise<BacktestResponse> => {
+    const res = await fetch(`${BASE_URL}/market/backtest?limit=${limit}`, {
+      headers: requestHeaders(),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as BacktestResponse;
+  },
+
+  timing: async (ticker: string, horizonDays = 14): Promise<TimingAssessment> => {
+    const res = await fetch(
+      `${BASE_URL}/market/${encodeURIComponent(ticker)}/timing?horizon=${horizonDays}`,
+      { headers: requestHeaders(), credentials: "include" },
+    );
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as TimingAssessment;
   },
 
   ready: async () => {
@@ -324,6 +404,71 @@ export interface ScoreboardSummary {
 export interface ScoreboardResponse {
   entries: ScoreboardEntry[];
   summary: ScoreboardSummary;
+}
+
+export type BacktestOutcome = "hit" | "miss" | "immature" | "unscored";
+
+export interface BacktestEntry {
+  id: number;
+  ticker: string;
+  recommendation: string;
+  confidence: number | null;
+  horizon_days: number;
+  created_at: string;
+  evaluated_at: string | null;
+  price_at_run: number | null;
+  price_at_horizon: number | null;
+  return_pct: number | null;
+  outcome: BacktestOutcome;
+}
+
+export interface BacktestHorizonStat {
+  horizon_days: number;
+  scored: number;
+  hits: number;
+  hit_rate: number | null;
+  avg_return_pct: number | null;
+}
+
+export interface BacktestSummary {
+  total_runs: number;
+  scored: number;
+  hits: number;
+  immature: number;
+  hit_rate: number | null;
+  avg_return_pct: number | null;
+  by_horizon: BacktestHorizonStat[];
+  rule: string;
+}
+
+export interface BacktestResponse {
+  entries: BacktestEntry[];
+  summary: BacktestSummary;
+}
+
+export type TimingAction =
+  | "buy_now"
+  | "accumulate"
+  | "wait_pullback"
+  | "wait_watch"
+  | "avoid";
+
+export interface TimingAssessment {
+  ticker: string;
+  horizon_days: number;
+  action: TimingAction;
+  action_label: string;
+  confidence: number;
+  summary: string;
+  rationale: string[];
+  risks: string[];
+  entry_zone_low: number | null;
+  entry_zone_high: number | null;
+  technicals: Record<string, unknown>;
+  headlines: string[];
+  as_of: string;
+  source: "llm" | "rules";
+  disclaimer: string;
 }
 
 export interface HistoryResponse {
