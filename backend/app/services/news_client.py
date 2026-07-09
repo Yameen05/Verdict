@@ -93,7 +93,7 @@ def _published_at(item: dict[str, Any]) -> str:
     if isinstance(raw, str) and raw:
         return raw
     epoch = content.get("providerPublishTime") or item.get("providerPublishTime")
-    if isinstance(epoch, (int, float)):
+    if isinstance(epoch, int | float):
         return datetime.fromtimestamp(epoch, tz=UTC).isoformat().replace("+00:00", "Z")
     return raw if isinstance(raw, str) else ""
 
