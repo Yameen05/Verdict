@@ -87,10 +87,15 @@ def get_graph():
     return _build_graph()
 
 
-def initial_state(ticker: str, prior_run: dict[str, Any] | None = None) -> dict:
+def initial_state(
+    ticker: str,
+    prior_run: dict[str, Any] | None = None,
+    horizon_days: int = 14,
+) -> dict:
     return {
         "ticker": ticker.upper(),
         "prior_run": prior_run,
+        "horizon_days": horizon_days,
         "reflection_count": 0,
     }
 
@@ -117,8 +122,10 @@ def state_to_response(ticker: str, state: dict) -> ResearchResponse:
 
 
 async def run_research(
-    ticker: str, prior_run: dict[str, Any] | None = None
+    ticker: str,
+    prior_run: dict[str, Any] | None = None,
+    horizon_days: int = 14,
 ) -> ResearchResponse:
     graph = get_graph()
-    final_state = await graph.ainvoke(initial_state(ticker, prior_run))
+    final_state = await graph.ainvoke(initial_state(ticker, prior_run, horizon_days))
     return state_to_response(ticker, final_state)

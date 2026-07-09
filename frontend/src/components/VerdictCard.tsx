@@ -1,5 +1,51 @@
-import type { ResearchResponse } from "../api/client";
+import { useState } from "react";
+import type { MetricsFindings, ResearchResponse } from "../api/client";
 import { ScoreRadar } from "./ScoreRadar";
+
+export function horizonLabel(days: number | null): string {
+  if (!days) return "2 weeks";
+  if (days <= 7) return "1 week";
+  if (days <= 14) return "2 weeks";
+  if (days <= 31) return "1 month";
+  if (days <= 92) return "3 months";
+  return "1 year (52 weeks)";
+}
+
+/** "$100 for 2 weeks" card — deterministic, from real price history. */
+function HundredDollarCard({ metrics, label }: { metrics: MetricsFindings; label: string }) {
+  if (metrics.typical_swing_pct === null) return null;
+  const swing = metrics.typical_swing_pct;
+  const low = (100 * (1 - swing / 100)).toFixed(0);
+  const high = (100 * (1 + swing / 100)).toFixed(0);
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        If you put in $100 for {label}
+      </h3>
+      <p className="text-xs leading-relaxed text-slate-300">
+        Based on how it actually moved over the past year, a normal {label} lands
+        it between <span className="font-semibold text-slate-100">${low}</span> and{" "}
+        <span className="font-semibold text-slate-100">${high}</span>.
+        {metrics.best_window_pct !== null && metrics.worst_window_pct !== null && (
+          <>
+            {" "}Its best {label} stretch would have made it{" "}
+            <span className="text-emerald-300">
+              ${(100 * (1 + metrics.best_window_pct / 100)).toFixed(0)}
+            </span>
+            , its worst{" "}
+            <span className="text-rose-300">
+              ${(100 * (1 + metrics.worst_window_pct / 100)).toFixed(0)}
+            </span>
+            .
+          </>
+        )}
+      </p>
+      <p className="mt-1 text-[10px] text-slate-600">
+        Past moves don't promise future ones — this shows the usual size of swings, not a prediction.
+      </p>
+    </div>
+  );
+}
 
 export const VERDICT_STYLES: Record<
   string,
@@ -69,8 +115,10 @@ interface Props {
 }
 
 export function VerdictCard({ result, meta, onExport }: Props) {
-  const { report } = result;
+  const { report, metrics } = result;
   const style = VERDICT_STYLES[report.recommendation] ?? VERDICT_STYLES.Pending;
+  const [simple, setSimple] = useState(false);
+  const label = horizonLabel(report.horizon_days);
 
   return (
     <section
@@ -87,6 +135,9 @@ export function VerdictCard({ result, meta, onExport }: Props) {
           >
             {report.recommendation}
           </span>
+          <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-0.5 text-[10px] text-slate-400">
+            for a {label} hold
+          </span>
           {report.confidence !== null && (
             <ConfidenceGauge value={report.confidence} color={style.gauge} />
           )}
@@ -100,20 +151,47 @@ export function VerdictCard({ result, meta, onExport }: Props) {
         {/* The reasoning */}
         <div className="min-w-0 flex-1 space-y-4">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm leading-relaxed text-slate-100">{report.justification}</p>
-            <button
-              onClick={onExport}
-              className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1.5 text-[11px] text-slate-300 hover:bg-slate-800"
-              title="Download this report as Markdown"
-            >
-              ↓ Export
-            </button>
+            <p className="text-sm leading-relaxed text-slate-100">
+              {simple && report.simple_summary ? report.simple_summary : report.justification}
+            </p>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <button
+                onClick={onExport}
+                className="rounded-md border border-slate-700 px-2.5 py-1.5 text-[11px] text-slate-300 hover:bg-slate-800"
+                title="Download this report as Markdown"
+              >
+                ↓ Export
+              </button>
+              {report.simple_summary && (
+                <button
+                  onClick={() => setSimple((v) => !v)}
+                  className={`rounded-md border px-2.5 py-1.5 text-[11px] transition ${
+                    simple
+                      ? "border-indigo-500 bg-indigo-500/15 text-indigo-200"
+                      : "border-slate-700 text-slate-300 hover:bg-slate-800"
+                  }`}
+                >
+                  {simple ? "Analyst view" : "Explain it simply"}
+                </button>
+              )}
+            </div>
           </div>
 
-          {report.dissent && (
+          <HundredDollarCard metrics={metrics} label={label} />
+
+          {report.horizon_outlook && !simple && (
             <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
               <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                Strongest opposing argument (overruled)
+                What could move it in the next {label}
+              </h3>
+              <p className="text-xs leading-relaxed text-slate-300">{report.horizon_outlook}</p>
+            </div>
+          )}
+
+          {report.dissent && !simple && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+              <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                The best argument against this — and why it lost
               </h3>
               <p className="text-xs leading-relaxed text-slate-300">{report.dissent}</p>
             </div>

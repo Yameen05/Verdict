@@ -12,7 +12,6 @@ from app.services import news_client
 
 _URL_RE = re.compile(r"^https://newsapi\.org/v2/everything")
 
-
 @pytest.fixture(autouse=True)
 def set_news_key(monkeypatch):
     get_settings.cache_clear()
@@ -90,3 +89,35 @@ async def test_fetch_raises_when_key_missing(monkeypatch):
     monkeypatch.setenv("NEWS_API_KEY", "")
     with pytest.raises(news_client.NewsAPIError, match="NEWS_API_KEY"):
         await news_client.fetch_recent_articles("X")
+
+
+async def test_fetch_market_articles_uses_yfinance_when_key_missing(monkeypatch):
+    get_settings.cache_clear()
+    monkeypatch.setenv("NEWS_API_KEY", "")
+
+    class _FakeTicker:
+        def __init__(self, ticker: str):
+            assert ticker == "NVDA"
+
+        @property
+        def news(self):
+            return [
+                {
+                    "content": {
+                        "title": "Nvidia shares rise after analyst note",
+                        "summary": "Chip demand remains strong.",
+                        "provider": {"displayName": "Yahoo Finance"},
+                        "canonicalUrl": {"url": "https://finance.yahoo.com/news/nvda"},
+                        "pubDate": "2026-07-08T13:15:00Z",
+                    }
+                }
+            ]
+
+    monkeypatch.setattr(news_client.yf, "Ticker", _FakeTicker)
+
+    articles = await news_client.fetch_market_articles("NVDA", "NVIDIA Corporation")
+
+    assert len(articles) == 1
+    assert articles[0].title.startswith("Nvidia shares rise")
+    assert articles[0].source == "Yahoo Finance"
+    assert articles[0].published_at == "2026-07-08T13:15:00Z"

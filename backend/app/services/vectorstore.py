@@ -48,3 +48,11 @@ async def query(
     top_k: int = 5,
 ) -> list[QueryMatch]:
     return await _backend().query(ticker, vector, top_k=top_k)
+
+
+async def count_chunks(ticker: str | None = None) -> int:
+    return await _backend().count_chunks(ticker)
+
+
+async def has_chunks(ticker: str) -> bool:
+    return await count_chunks(ticker) > 0

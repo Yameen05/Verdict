@@ -39,12 +39,32 @@ def reset_caches():
     news_agent_mod._reset_news_cache()
 
 
-async def test_news_agent_skips_when_key_missing(monkeypatch):
+async def test_news_agent_uses_yahoo_fallback_when_key_missing(monkeypatch):
     monkeypatch.setenv("NEWS_API_KEY", "")
+    get_settings.cache_clear()
+
+    async def fake_lookup_company_name(_ticker, client=None):
+        return "Apple Inc."
+
+    async def fake_fetch(ticker, company_name):
+        assert ticker == "AAPL"
+        assert company_name == "Apple Inc."
+        return _articles()
+
+    async def fake_score(_company, articles):
+        scored = [ScoredArticle(article=a, score=0.2) for a in articles]
+        return 0.2, scored, "Yahoo headlines lean positive."
+
+    monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
+
     result = await news_agent_mod.news_agent({"ticker": "AAPL"})
     findings: NewsFindings = result["news"]
-    assert findings.status == "skipped"
-    assert findings.error and "NEWS_API_KEY" in findings.error
+    assert findings.status == "ok"
+    assert findings.error is None
+    assert findings.article_count == 2
+    assert findings.summary == "Yahoo headlines lean positive."
 
 
 async def test_news_agent_happy_path(monkeypatch):
@@ -53,7 +73,7 @@ async def test_news_agent_happy_path(monkeypatch):
     async def fake_lookup_company_name(_ticker, client=None):
         return "Apple Inc."
 
-    async def fake_fetch(_company, days=None, limit=None):
+    async def fake_fetch(_ticker, _company):
         return _articles()
 
     async def fake_score(_company, articles):
@@ -61,7 +81,7 @@ async def test_news_agent_happy_path(monkeypatch):
         return 0.6, scored, "Sentiment is broadly positive."
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
-    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch)
     monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
 
     result = await news_agent_mod.news_agent({"ticker": "AAPL"})
@@ -83,14 +103,14 @@ async def test_news_agent_degrades_when_scoring_fails(monkeypatch):
     async def fake_lookup_company_name(_ticker, client=None):
         return "Apple Inc."
 
-    async def fake_fetch(_company, days=None, limit=None):
+    async def fake_fetch(_ticker, _company):
         return _articles()
 
     async def fake_score(_company, articles):
         raise SentimentError("Sentiment LLM call failed (APIError)")
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
-    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch)
     monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
 
     result = await news_agent_mod.news_agent({"ticker": "AAPL"})
@@ -108,18 +128,18 @@ async def test_news_agent_no_articles(monkeypatch):
     async def fake_lookup_company_name(_ticker, client=None):
         return "Obscure Corp"
 
-    async def fake_fetch(_company, days=None, limit=None):
+    async def fake_fetch(_ticker, _company):
         return []
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
-    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch)
 
     result = await news_agent_mod.news_agent({"ticker": "OBSC"})
     findings: NewsFindings = result["news"]
     assert findings.status == "ok"
     assert findings.article_count == 0
     assert findings.sentiment_score == 0.0
-    assert "No recent articles" in (findings.summary or "")
+    assert "No recent market headlines" in (findings.summary or "")
 
 
 async def test_news_agent_unknown_ticker(monkeypatch):
@@ -142,11 +162,11 @@ async def test_news_agent_handles_api_error(monkeypatch):
     async def fake_lookup_company_name(_ticker, client=None):
         return "Apple Inc."
 
-    async def fake_fetch(_company, days=None, limit=None):
+    async def fake_fetch(_ticker, _company):
         raise NewsAPIError("HTTP 429: rate limit")
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
-    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch)
 
     result = await news_agent_mod.news_agent({"ticker": "AAPL"})
     findings: NewsFindings = result["news"]

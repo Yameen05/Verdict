@@ -45,6 +45,7 @@ async def _seed_run(ticker: str, user_id: int | None) -> None:
             sentiment_score=None,
             confidence=70,
             price_at_run=100.0,
+            horizon_days=14,
             payload=_payload(ticker),
         )
         break
@@ -78,13 +79,17 @@ async def test_stream_serves_cache_as_completed_event(client):
 async def test_fresh_flag_bypasses_cache(client, monkeypatch):
     await _seed_run("AAPL", _user_id(client))
 
-    async def fake_run_research(ticker, prior_run=None):
+    async def fake_run_research(ticker, prior_run=None, horizon_days=14):
         assert prior_run is not None  # prior run reached the pipeline
         return ResearchResponse(**_payload(ticker))
+
+    async def no_ingest(_ticker):
+        return False
 
     import app.routers.research as research_mod
 
     monkeypatch.setattr(research_mod, "run_research", fake_run_research)
+    monkeypatch.setattr(research_mod, "_needs_auto_ingest", no_ingest)
     res = client.post("/research/AAPL?fresh=true")
     assert res.status_code == 200, res.text
     assert res.json()["cached"] is False
@@ -125,13 +130,33 @@ async def test_cache_disabled_when_ttl_zero(client, monkeypatch):
     get_settings.cache_clear()
     await _seed_run("AAPL", _user_id(client))
 
-    async def fake_run_research(ticker, prior_run=None):
+    async def fake_run_research(ticker, prior_run=None, horizon_days=14):
         return ResearchResponse(**_payload(ticker))
+
+    async def no_ingest(_ticker):
+        return False
 
     import app.routers.research as research_mod
 
     monkeypatch.setattr(research_mod, "run_research", fake_run_research)
+    monkeypatch.setattr(research_mod, "_needs_auto_ingest", no_ingest)
     res = client.post("/research/AAPL")
     assert res.status_code == 200
     assert res.json()["cached"] is False
     get_settings.cache_clear()
+
+
+async def test_needs_auto_ingest_uses_active_vectorstore(monkeypatch):
+    import app.routers.research as research_mod
+    from app.services import vectorstore as vectorstore_mod
+
+    seen: list[str] = []
+
+    async def fake_has_chunks(ticker: str) -> bool:
+        seen.append(ticker)
+        return False
+
+    monkeypatch.setattr(vectorstore_mod, "has_chunks", fake_has_chunks)
+
+    assert await research_mod._needs_auto_ingest("NVDA") is True
+    assert seen == ["NVDA"]

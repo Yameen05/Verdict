@@ -65,6 +65,14 @@ React UI with mocked API responses.
   a ticker is served to everyone from cache (zero LLM cost), and fresh runs
   are capped per user and globally per day (`DAILY_RUNS_PER_USER`,
   `DAILY_RUNS_GLOBAL`, `RESEARCH_CACHE_MINUTES`).
+- One-button analysis for stocks AND crypto: pick an asset, pick a holding
+  period (1 week to 1 year), press Analyze. The filing is fetched and indexed
+  automatically on first run; coins skip SEC/insider evidence with a plain
+  explanation.
+- Horizon-aware verdicts: the debate and judge are framed for the user's
+  window, with rolling-window stats (typical swing, best/worst stretch) from a
+  year of price history, a "$100 for 2 weeks" outlook card, and an
+  "Explain it simply" mode with zero finance jargon.
 - Fetches the latest SEC `10-K` or `10-Q` for a ticker through SEC EDGAR.
 - Chunks filing text, embeds it with OpenAI embeddings, and stores vectors in a
   local SQLite vector store by default (or Pinecone when a key is set).

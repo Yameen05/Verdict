@@ -59,6 +59,14 @@ def _validate_ticker(raw: str) -> str:
     return t
 
 
+# Holding periods the UI offers; anything else falls back to 2 weeks.
+ALLOWED_HORIZONS = {7, 14, 30, 90, 365}
+
+
+def _validate_horizon(days: int) -> int:
+    return days if days in ALLOWED_HORIZONS else 14
+
+
 def _prior_run_dict(row: ResearchRun) -> dict[str, Any]:
     return {
         "recommendation": row.recommendation,
@@ -80,13 +88,21 @@ def _cache_age_minutes(row: ResearchRun) -> float:
     return (datetime.now(UTC) - created).total_seconds() / 60.0
 
 
-async def _cached_run(session: AsyncSession, ticker: str) -> ResearchRun | None:
-    """Recent run by ANY user within the cache window — research is communal."""
+async def _cached_run(
+    session: AsyncSession, ticker: str, horizon_days: int
+) -> ResearchRun | None:
+    """Recent run by ANY user within the cache window — research is communal.
+
+    A verdict framed for a 2-week hold is not a 1-year verdict, so cache hits
+    require a matching holding period.
+    """
     ttl = get_settings().research_cache_minutes
     if ttl <= 0:
         return None
     row = await latest_run_for_ticker(session, ticker)
     if row is None or _cache_age_minutes(row) > ttl:
+        return None
+    if row.horizon_days != horizon_days:
         return None
     try:
         # Ensure the stored payload still parses before serving it.
@@ -141,11 +157,43 @@ async def _persist(
         sentiment_score=result.news.sentiment_score,
         confidence=result.report.confidence,
         price_at_run=result.metrics.current_price,
+        horizon_days=result.report.horizon_days,
         payload=result.model_dump(),
         duration_ms=duration_ms,
         cost_usd=cost_usd,
         request_id=request_id,
     )
+
+
+# ----- auto-ingest: the one-button experience -----
+
+async def _needs_auto_ingest(ticker: str) -> bool:
+    """First run for a stock? Index its filing automatically."""
+    from app.services import vectorstore
+    from app.services.assets import is_crypto
+
+    if is_crypto(ticker):
+        return False
+
+    try:
+        return not await vectorstore.has_chunks(ticker)
+    except Exception:  # noqa: BLE001 - never block research on the check
+        log.warning("auto_ingest_check_failed", extra={"ticker": ticker})
+        return True
+
+
+async def _auto_ingest(ticker: str) -> int:
+    """Fetch + chunk + embed + index the latest 10-K. Returns chunk count."""
+    from app.services import sec_client, vectorstore
+    from app.services.chunker import chunk_filing
+    from app.services.embeddings import embed_texts
+
+    filing = await sec_client.fetch_latest_10k(ticker)
+    chunks = chunk_filing(filing)
+    if not chunks:
+        return 0
+    vectors = await embed_texts([c.text for c in chunks])
+    return await vectorstore.upsert_chunks(filing.ticker, chunks, vectors)
 
 
 class ResearchEnvelope(BaseModel):
@@ -199,27 +247,36 @@ async def research(
     response: Response,
     ticker: str,
     fresh: bool = False,
+    horizon: int = 14,
     session: AsyncSession = Depends(session_scope),
 ) -> ResearchEnvelope:
     ticker = _validate_ticker(ticker)
+    horizon = _validate_horizon(horizon)
     tracker = start_tracking()
     rid = get_request_id()
 
     if not fresh:
-        cached = await _cached_run(session, ticker)
+        cached = await _cached_run(session, ticker, horizon)
         if cached is not None:
             log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
             return _envelope_from_cache(cached, rid)
 
     await _enforce_quota(session, request.state.user_id)
-    log.info("research_started", extra={"ticker": ticker})
+    log.info("research_started", extra={"ticker": ticker, "horizon": horizon})
+
+    if await _needs_auto_ingest(ticker):
+        try:
+            indexed = await _auto_ingest(ticker)
+            log.info("auto_ingest_done", extra={"ticker": ticker, "chunks": indexed})
+        except Exception as e:  # noqa: BLE001 - research proceeds without the filing
+            log.warning("auto_ingest_failed", extra={"ticker": ticker, "reason": str(e)})
 
     prior_run = await _load_prior_run(session, ticker)
 
     started = time.perf_counter()
     try:
         result = await asyncio.wait_for(
-            run_research(ticker, prior_run),
+            run_research(ticker, prior_run, horizon),
             timeout=get_settings().request_timeout_seconds,
         )
     except TimeoutError as e:
@@ -269,12 +326,16 @@ async def _sse_stream(
     rid: str,
     user_id: int,
     prior_run: dict[str, Any] | None,
+    horizon_days: int,
+    needs_ingest: bool,
 ):
     """Run the graph via astream() and emit SSE events.
 
     Two stream modes are multiplexed: "updates" (a node finished — same events
     the UI always had) and "custom" (mid-node debate/judge progress emitted by
-    the advocates and the judge via get_stream_writer()).
+    the advocates and the judge via get_stream_writer()). If this is the first
+    run for the ticker, the filing is downloaded and indexed automatically
+    first, with its own progress events.
     """
     graph = get_graph()
     started = time.perf_counter()
@@ -284,10 +345,35 @@ async def _sse_stream(
         "data": json.dumps({"ticker": ticker, "request_id": rid}),
     }
 
+    if needs_ingest:
+        yield {
+            "event": "ingest",
+            "data": json.dumps(
+                {"phase": "started", "detail": "First time analyzing this one — grabbing its latest annual report from the SEC…"}
+            ),
+        }
+        try:
+            indexed = await _auto_ingest(ticker)
+            yield {
+                "event": "ingest",
+                "data": json.dumps(
+                    {"phase": "done", "detail": f"Report indexed ({indexed} sections). Starting the analysis…"}
+                ),
+            }
+        except Exception as e:  # noqa: BLE001 - research proceeds without the filing
+            log.warning("auto_ingest_failed", extra={"ticker": ticker, "reason": str(e)})
+            yield {
+                "event": "ingest",
+                "data": json.dumps(
+                    {"phase": "failed", "detail": "Couldn't fetch the SEC report — continuing with price, news, and insider data."}
+                ),
+            }
+
     final_state: dict = {}
     try:
         async for mode, chunk in graph.astream(
-            initial_state(ticker, prior_run), stream_mode=["updates", "custom"]
+            initial_state(ticker, prior_run, horizon_days),
+            stream_mode=["updates", "custom"],
         ):
             if mode == "custom":
                 yield {"event": "debate", "data": json.dumps(chunk, default=str)}
@@ -389,14 +475,16 @@ async def research_stream(
     request: Request,
     ticker: str,
     fresh: bool = False,
+    horizon: int = 14,
     session: AsyncSession = Depends(session_scope),
 ) -> EventSourceResponse:
     ticker = _validate_ticker(ticker)
+    horizon = _validate_horizon(horizon)
     tracker = start_tracking()
     rid = get_request_id()
 
     if not fresh:
-        cached = await _cached_run(session, ticker)
+        cached = await _cached_run(session, ticker, horizon)
         if cached is not None:
             log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
             return EventSourceResponse(_sse_cached(cached, rid, ticker))
@@ -405,9 +493,12 @@ async def research_stream(
     # Load the prior run up front (into a plain dict) so the stream generator
     # never touches this request-scoped session after the response starts.
     prior_run = await _load_prior_run(session, ticker)
-    log.info("research_stream_started", extra={"ticker": ticker})
+    needs_ingest = await _needs_auto_ingest(ticker)
+    log.info("research_stream_started", extra={"ticker": ticker, "horizon": horizon})
     return EventSourceResponse(
-        _sse_stream(ticker, tracker, rid, request.state.user_id, prior_run)
+        _sse_stream(
+            ticker, tracker, rid, request.state.user_id, prior_run, horizon, needs_ingest
+        )
     )
 
 

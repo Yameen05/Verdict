@@ -40,6 +40,15 @@ function companyName(ticker: string): string {
   return POPULAR_STOCKS.find((s) => s.ticker === ticker)?.name ?? ticker;
 }
 
+// Holding periods the backend accepts; labels avoid jargon on purpose.
+const HORIZONS: { days: number; label: string; hint: string }[] = [
+  { days: 7, label: "1 week", hint: "quick trade" },
+  { days: 14, label: "2 weeks", hint: "short hold" },
+  { days: 30, label: "1 month", hint: "" },
+  { days: 90, label: "3 months", hint: "" },
+  { days: 365, label: "1 year", hint: "52 weeks — the long game" },
+];
+
 function summarizePayload(payload: Record<string, unknown>): string {
   for (const k of ["sec", "news", "metrics", "insider", "bull", "bear", "report"]) {
     const v = payload[k] as Record<string, unknown> | undefined;
@@ -63,6 +72,7 @@ export default function App({
 }) {
   const [tab, setTab] = useState<"research" | "scoreboard">("research");
   const [ticker, setTicker] = useState("AAPL");
+  const [horizonDays, setHorizonDays] = useState(14);
   const [form, setForm] = useState<FilingForm>("10-K");
   const [question, setQuestion] = useState("What are the principal risks?");
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
@@ -151,6 +161,19 @@ export default function App({
       await streamResearch(
         ticker,
         (e) => {
+          if (e.event === "ingest") {
+            setStatus(e.data.detail);
+            setAgent("sec_agent", {
+              status: e.data.phase === "failed" ? "error" : "running",
+              summary:
+                e.data.phase === "started"
+                  ? "downloading annual report"
+                  : e.data.phase === "done"
+                  ? "report indexed"
+                  : "no filing available",
+            });
+            return;
+          }
           if (e.event === "node_completed") {
             const node = e.data.node;
             const payload = e.data.payload;
@@ -240,6 +263,7 @@ export default function App({
         },
         ctl.signal,
         fresh,
+        horizonDays,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -341,23 +365,44 @@ export default function App({
             <WatchlistBar ticker={ticker} onSelect={setTicker} />
 
             <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-              <StockPicker
-                ticker={ticker}
-                setTicker={setTicker}
-                form={form}
-                setForm={setForm}
-                onIngest={onIngest}
-                disabled={busy}
-              />
+              <StockPicker ticker={ticker} setTicker={setTicker} />
 
               <div className="border-t border-slate-800 pt-5">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-400">
+                  How long would you hold it?
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {HORIZONS.map((h) => (
+                    <button
+                      key={h.days}
+                      onClick={() => setHorizonDays(h.days)}
+                      disabled={busy}
+                      title={h.hint}
+                      className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition disabled:opacity-50 ${
+                        horizonDays === h.days
+                          ? "border-indigo-500 bg-indigo-500/15 text-indigo-200"
+                          : "border-slate-700 bg-slate-950/40 text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                      }`}
+                    >
+                      {h.label}
+                      {h.days === 365 && (
+                        <span className="ml-1 text-[9px] text-slate-500">(52 weeks)</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  The analysis is tailored to your window — a coin can be a bad 1-week bet
+                  but a fine 1-year one.
+                </p>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => void onResearchStream()}
                     disabled={busy}
                     className="rounded-md bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50"
                   >
-                    Put {ticker} on trial →
+                    Analyze {ticker} →
                   </button>
                   {busy && (
                     <button
@@ -368,7 +413,7 @@ export default function App({
                     </button>
                   )}
                   <span className="text-xs text-slate-500">
-                    Four evidence agents → bull vs bear advocates → the judge’s verdict, streamed live.
+                    One click — we fetch the reports, argue both sides, and give a verdict.
                   </span>
                 </div>
 
@@ -380,7 +425,7 @@ export default function App({
 
                 <details className="mt-4 rounded-md border border-slate-800 bg-slate-950/40">
                   <summary className="cursor-pointer select-none px-3 py-2 text-xs uppercase tracking-wider text-slate-400 hover:text-slate-200">
-                    Ad-hoc filing search
+                    Advanced tools
                   </summary>
                   <div className="space-y-2 px-3 pb-3">
                     <textarea
@@ -396,6 +441,27 @@ export default function App({
                     >
                       Query filing
                     </button>
+                    <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
+                      <span className="text-[11px] text-slate-500">
+                        Reports are indexed automatically on first analysis. To refresh or
+                        switch report type:
+                      </span>
+                      <select
+                        value={form}
+                        onChange={(e) => setForm(e.target.value as FilingForm)}
+                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs"
+                      >
+                        <option value="10-K">10-K (annual report)</option>
+                        <option value="10-Q">10-Q (quarterly report)</option>
+                      </select>
+                      <button
+                        onClick={() => void onIngest()}
+                        disabled={busy}
+                        className="rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50"
+                      >
+                        Re-index {ticker}
+                      </button>
+                    </div>
                   </div>
                 </details>
               </div>

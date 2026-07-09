@@ -146,3 +146,7 @@ def count_chunks_sync(ticker: str | None = None) -> int:
         else:
             row = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()
     return int(row[0])
+
+
+async def count_chunks(ticker: str | None = None) -> int:
+    return await asyncio.to_thread(count_chunks_sync, ticker)

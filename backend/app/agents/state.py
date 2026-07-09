@@ -17,6 +17,8 @@ from app.schemas.research import (
 
 class ResearchState(TypedDict, total=False):
     ticker: str
+    # Calendar days the user plans to hold — frames the whole trial.
+    horizon_days: int
     # Each agent node populates its slot; missing slots are treated as "skipped".
     sec: SECFindings
     news: NewsFindings

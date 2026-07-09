@@ -68,6 +68,12 @@ def _summarize(buys: list[Form4Transaction], sells: list[Form4Transaction]) -> s
 
 async def insider_agent(state: ResearchState) -> dict:
     ticker = state["ticker"]
+
+    from app.services.assets import CRYPTO_SKIP_REASON, is_crypto
+
+    if is_crypto(ticker):
+        return {"insider": InsiderFindings(status="skipped", error=CRYPTO_SKIP_REASON)}
+
     try:
         transactions = await _cached_fetch(ticker)
     except ValueError as e:  # unknown ticker

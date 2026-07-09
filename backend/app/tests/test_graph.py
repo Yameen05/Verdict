@@ -106,7 +106,7 @@ def stub_externals(monkeypatch):
     async def fake_lookup_company_name(_ticker, client=None):
         return "Apple Inc."
 
-    async def fake_fetch_articles(_company, days=None, limit=None):
+    async def fake_fetch_articles(_ticker, _company):
         from app.services.news_client import Article
 
         return [
@@ -123,7 +123,7 @@ def stub_externals(monkeypatch):
         return 0.5, [ScoredArticle(article=a, score=0.5) for a in articles], "Positive."
 
     monkeypatch.setattr(news_agent_mod.sec_client, "lookup_company_name", fake_lookup_company_name)
-    monkeypatch.setattr(news_agent_mod, "fetch_recent_articles", fake_fetch_articles)
+    monkeypatch.setattr(news_agent_mod, "fetch_market_articles", fake_fetch_articles)
     monkeypatch.setattr(news_agent_mod, "score_and_summarize", fake_score)
 
     # --- Metrics ---

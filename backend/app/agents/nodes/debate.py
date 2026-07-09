@@ -47,6 +47,18 @@ def _writer() -> Callable[[dict], None]:
 
 # ----- evidence ledger -----
 
+def _horizon_label(days: int) -> str:
+    if days <= 7:
+        return "1-week"
+    if days <= 14:
+        return "2-week"
+    if days <= 31:
+        return "1-month"
+    if days <= 92:
+        return "3-month"
+    return "1-year"
+
+
 def _fmt_usd(v: float) -> str:
     if abs(v) >= 1e9:
         return f"${v / 1e9:.1f}B"
@@ -116,11 +128,29 @@ def build_evidence(state: ResearchState) -> dict:
             rng = f"${metrics.week_52_low:.2f} – ${metrics.week_52_high:.2f}"
             if metrics.current_price is not None:
                 rng += f" (current ${metrics.current_price:.2f})"
-            rows.append(("metrics:range", "52-week range", rng))
+            rows.append(("metrics:range", "Price range over the past year", rng))
         elif metrics.current_price is not None:
             rows.append(
                 ("metrics:price", "Current price", f"${metrics.current_price:.2f}")
             )
+        if metrics.horizon_days and metrics.recent_return_pct is not None:
+            label = _horizon_label(metrics.horizon_days)
+            rows.append(
+                (
+                    "metrics:recent",
+                    f"Most recent {label} move",
+                    f"{metrics.recent_return_pct:+.1f}%",
+                )
+            )
+        if metrics.horizon_days and metrics.typical_swing_pct is not None:
+            label = _horizon_label(metrics.horizon_days)
+            content = f"±{metrics.typical_swing_pct:.1f}% is a normal {label} move for this asset"
+            if metrics.best_window_pct is not None and metrics.worst_window_pct is not None:
+                content += (
+                    f" (best {label} in the past year {metrics.best_window_pct:+.1f}%, "
+                    f"worst {metrics.worst_window_pct:+.1f}%)"
+                )
+            rows.append(("metrics:swing", f"Typical {label} swing", content))
         for eid, label, content in rows:
             items.append(
                 EvidenceItem(id=eid, source="metrics", label=label, content=content)
@@ -157,6 +187,10 @@ _ADVOCATE_SYSTEM = """You are the {stance} advocate in an adversarial equity
 research debate about {ticker}. You receive an evidence ledger: lines of the
 form  [id] label: content.
 
+The user plans to hold for about {horizon}. Weight your arguments for that
+window — momentum, news, and typical swings dominate short holds; valuation
+and fundamentals dominate long holds.
+
 Build the strongest honest {stance} case. Rules:
   • 3-5 arguments, each a single concrete claim grounded in the ledger.
   • Every argument MUST cite the ids of the evidence it rests on.
@@ -192,7 +226,9 @@ async def _advocate(state: ResearchState, stance: Literal["bull", "bear"]) -> De
                 {
                     "role": "system",
                     "content": _ADVOCATE_SYSTEM.format(
-                        stance=stance, ticker=state["ticker"]
+                        stance=stance,
+                        ticker=state["ticker"],
+                        horizon=_horizon_label(state.get("horizon_days") or 14),
                     ),
                 },
                 {"role": "user", "content": _ledger_lines(evidence)},

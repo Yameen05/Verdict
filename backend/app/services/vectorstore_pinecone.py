@@ -118,6 +118,40 @@ async def query(
     return await asyncio.to_thread(_sync)
 
 
+async def count_chunks(ticker: str | None = None) -> int:
+    def _sync() -> int:
+        index = _ensure_index()
+        stats = index.describe_index_stats()
+        namespaces = getattr(stats, "namespaces", None)
+        if namespaces is None and isinstance(stats, dict):
+            namespaces = stats.get("namespaces", {})
+        namespaces = namespaces or {}
+
+        if ticker:
+            namespace = _namespace_for(ticker)
+            entry = namespaces.get(namespace, {})
+            count = getattr(entry, "vector_count", None)
+            if count is None and isinstance(entry, dict):
+                count = entry.get("vector_count", 0)
+            return int(count or 0)
+
+        total = getattr(stats, "total_vector_count", None)
+        if total is None and isinstance(stats, dict):
+            total = stats.get("total_vector_count")
+        if total is not None:
+            return int(total)
+
+        out = 0
+        for entry in namespaces.values():
+            count = getattr(entry, "vector_count", None)
+            if count is None and isinstance(entry, dict):
+                count = entry.get("vector_count", 0)
+            out += int(count or 0)
+        return out
+
+    return await asyncio.to_thread(_sync)
+
+
 def init_index_sync() -> str:
     """Idempotent index creation. Returns the index name."""
     _ensure_index()
