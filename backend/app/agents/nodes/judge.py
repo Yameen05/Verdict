@@ -44,6 +44,18 @@ log = get_logger(__name__)
 MAX_REFLECTIONS = 1
 
 
+def _horizon_label(days: int) -> str:
+    if days <= 7:
+        return "1 week"
+    if days <= 14:
+        return "2 weeks"
+    if days <= 31:
+        return "1 month"
+    if days <= 92:
+        return "3 months"
+    return "1 year"
+
+
 @lru_cache(maxsize=1)
 def _client() -> AsyncOpenAI:
     return make_llm_client()
@@ -61,6 +73,12 @@ _SYSTEM = """You are the judge in an adversarial equity-research debate about
   • an evidence ledger — lines of the form  [id] label: content
   • the bull advocate's case and the bear advocate's case, each citing ids
   • optionally, the verdict from a prior research run for comparison
+
+THE HOLDING PERIOD: the user plans to hold for about {horizon}. Frame the
+entire verdict for that window. For short holds (weeks), momentum, news flow,
+typical swings, and near-term catalysts outweigh long-term valuation. For a
+1-year hold, fundamentals and valuation dominate. A stock can be a short-term
+Sell and a long-term Buy — judge ONLY the user's window.
 
 Weigh both cases against the evidence and issue the verdict.
 
@@ -96,7 +114,9 @@ Return ONLY a JSON object (no markdown fences):
   "financial_health": "1-2 sentences citing the actual metrics",
   "key_risks": ["concrete risk 1", "concrete risk 2"],
   "news_summary": "1-2 sentences or null",
-  "delta_summary": "if a prior run is provided: 1-2 sentences on what changed since it, else null"{needs_evidence_field}
+  "delta_summary": "if a prior run is provided: 1-2 sentences on what changed since it, else null",
+  "horizon_outlook": "2-3 sentences: what could realistically move the price within the user's {horizon} window, referencing the typical swing evidence",
+  "simple_summary": "2-3 sentences a person who knows NOTHING about the stock market fully understands. No jargon at all — no P/E, no margins, no valuation. Plain words: what this company/coin does, why the verdict is {horizon}-Buy/Hold/Sell, and the main thing that could go wrong."{needs_evidence_field}
 }}
 """
 
@@ -133,6 +153,166 @@ def _pending(ticker: str, justification: str) -> dict:
         ),
         "followup_question": None,
     }
+
+
+def _pct(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return f"{value:+.1f}%"
+
+
+def _money(value: float | None) -> str:
+    if value is None:
+        return "unknown"
+    return f"${value:,.2f}"
+
+
+def _fallback_recommendation(state: ResearchState) -> tuple[str, int, list[str]]:
+    score = 0
+    reasons: list[str] = []
+
+    metrics = state.get("metrics")
+    recent = getattr(metrics, "recent_return_pct", None) if metrics else None
+    swing = getattr(metrics, "typical_swing_pct", None) if metrics else None
+    pe = getattr(metrics, "pe_ratio", None) if metrics else None
+    margin = getattr(metrics, "profit_margin", None) if metrics else None
+    price = getattr(metrics, "current_price", None) if metrics else None
+    high = getattr(metrics, "week_52_high", None) if metrics else None
+    low = getattr(metrics, "week_52_low", None) if metrics else None
+
+    if recent is not None:
+        if recent >= 3:
+            score += 2
+            reasons.append(f"recent move is positive ({_pct(recent)})")
+        elif recent >= 1:
+            score += 1
+            reasons.append(f"recent move is slightly positive ({_pct(recent)})")
+        elif recent <= -3:
+            score -= 2
+            reasons.append(f"recent move is negative ({_pct(recent)})")
+        elif recent <= -1:
+            score -= 1
+            reasons.append(f"recent move is slightly negative ({_pct(recent)})")
+
+    if price and high and high > 0 and price >= high * 0.95:
+        score -= 1
+        reasons.append("price is near its 52-week high")
+    elif price and low and low > 0 and price <= low * 1.15:
+        score += 1
+        reasons.append("price is close to its 52-week low")
+
+    if pe is not None:
+        if pe > 50:
+            score -= 1
+            reasons.append(f"valuation looks stretched (P/E {pe:.1f})")
+        elif 0 < pe < 20:
+            score += 1
+            reasons.append(f"valuation looks less stretched (P/E {pe:.1f})")
+
+    if margin is not None:
+        if margin >= 0.2:
+            score += 1
+            reasons.append(f"profit margin is strong ({margin * 100:.1f}%)")
+        elif margin < 0.05:
+            score -= 1
+            reasons.append(f"profit margin is thin ({margin * 100:.1f}%)")
+
+    news = state.get("news")
+    sentiment = getattr(news, "sentiment_score", None) if news else None
+    if sentiment is not None:
+        if sentiment >= 0.25:
+            score += 1
+            reasons.append(f"news tone is positive ({sentiment:+.2f})")
+        elif sentiment <= -0.25:
+            score -= 1
+            reasons.append(f"news tone is negative ({sentiment:+.2f})")
+
+    insider = state.get("insider")
+    buys = getattr(insider, "buy_count", 0) if insider else 0
+    sells = getattr(insider, "sell_count", 0) if insider else 0
+    if sells > buys:
+        score -= 1
+        reasons.append("recent insider selling is heavier than buying")
+    elif buys > sells:
+        score += 1
+        reasons.append("recent insider buying is heavier than selling")
+
+    if score >= 2:
+        return "Buy", min(68, 50 + score * 4), reasons
+    if score <= -2:
+        return "Sell", min(68, 50 + abs(score) * 4), reasons
+    if not reasons and swing is not None:
+        reasons.append(f"typical move for this window is about ±{swing:.1f}%")
+    return "Hold", 50 if reasons else 40, reasons
+
+
+def _fallback_report(state: ResearchState, reason: str) -> dict:
+    ticker = state["ticker"]
+    horizon_days = state.get("horizon_days") or 14
+    recommendation, confidence, reasons = _fallback_recommendation(state)
+    metrics = state.get("metrics")
+    news = state.get("news")
+    sec = state.get("sec")
+
+    reason_text = "; ".join(reasons[:4]) if reasons else "the available signals are mixed"
+    recent = getattr(metrics, "recent_return_pct", None) if metrics else None
+    swing = getattr(metrics, "typical_swing_pct", None) if metrics else None
+    price = getattr(metrics, "current_price", None) if metrics else None
+    pe = getattr(metrics, "pe_ratio", None) if metrics else None
+    margin = getattr(metrics, "profit_margin", None) if metrics else None
+    sentiment = getattr(news, "sentiment_score", None) if news else None
+
+    sec_findings = getattr(sec, "findings", None) or []
+    company_overview = sec_findings[1].answer if len(sec_findings) > 1 else ""
+    risk_answers = [f.answer for f in sec_findings if "risk" in f.question.lower()]
+    key_risks = risk_answers[:2] or ["Re-run when the AI provider is available for a fuller risk review."]
+
+    report = ResearchReport(
+        ticker=ticker,
+        recommendation=recommendation,
+        confidence=confidence,
+        justification=(
+            f"The AI judge was unavailable ({reason}), so this is a conservative "
+            f"fallback verdict from the data already collected. For a "
+            f"{_horizon_label(horizon_days)} hold, the main signals were: {reason_text}."
+        ),
+        dissent=(
+            "This fallback is less nuanced than the normal debate judge, so treat it as a "
+            "temporary read and rerun once provider limits reset."
+        ),
+        falsifiers=[
+            "Provider limits reset and the full AI judge returns a different verdict.",
+            "Fresh news changes the short-term setup.",
+            "The price breaks outside the recent/typical swing range.",
+        ],
+        scores=DimensionScores(
+            valuation=3 if pe and pe > 50 else 6 if pe else None,
+            growth=None,
+            profitability=8 if margin and margin >= 0.2 else 4 if margin is not None else None,
+            balance_sheet=None,
+            sentiment=7 if sentiment and sentiment > 0.25 else 3 if sentiment and sentiment < -0.25 else 5 if sentiment is not None else None,
+        ),
+        citations=[],
+        company_overview=company_overview,
+        financial_health=(
+            f"Current price is {_money(price)}. "
+            f"Recent move for the selected window is {_pct(recent)}; "
+            f"typical swing is {_pct(swing)}."
+        ),
+        key_risks=key_risks,
+        news_summary=getattr(news, "summary", None) if news else None,
+        horizon_days=horizon_days,
+        horizon_outlook=(
+            f"For {_horizon_label(horizon_days)}, use the typical swing "
+            f"({_pct(swing)}) as the rough risk band; this is not a precise forecast."
+        ),
+        simple_summary=(
+            f"The full AI judge hit a provider limit, so Verdict used the numbers it "
+            f"already had. The fallback call is {recommendation} for "
+            f"{_horizon_label(horizon_days)} because {reason_text}."
+        ),
+    )
+    return {"report": report, "followup_question": None}
 
 
 def _ledger_lines(evidence: list[EvidenceItem]) -> str:
@@ -218,8 +398,10 @@ async def judge(state: ResearchState) -> dict:
     may_reflect = reflections < MAX_REFLECTIONS and (
         state.get("sec") is not None and state["sec"].status == "ok"
     )
+    horizon_days = state.get("horizon_days") or 14
     system = _SYSTEM.format(
         ticker=ticker,
+        horizon=_horizon_label(horizon_days),
         followup_clause=_NEEDS_EVIDENCE_CLAUSE if may_reflect else "",
         needs_evidence_field=_NEEDS_EVIDENCE_FIELD if may_reflect else "",
     )
@@ -237,11 +419,7 @@ async def judge(state: ResearchState) -> dict:
         )
     except OpenAIError as e:
         log.exception("judge_llm_failed", extra={"error_type": type(e).__name__})
-        return _pending(
-            ticker,
-            f"Judge LLM call failed ({type(e).__name__}). "
-            "Check LLM_API_KEY / OPENAI_API_KEY and provider rate limits.",
-        )
+        return _fallback_report(state, type(e).__name__)
     record_chat(model, resp)
 
     try:
@@ -274,6 +452,9 @@ async def judge(state: ResearchState) -> dict:
             dissent=data.get("dissent"),
             citations=_coerce_citations(data.get("citations"), known_ids),
             delta_summary=data.get("delta_summary") if state.get("prior_run") else None,
+            horizon_days=horizon_days,
+            horizon_outlook=data.get("horizon_outlook"),
+            simple_summary=data.get("simple_summary"),
         )
     except ValidationError as e:
         log.warning("judge_report_invalid", extra={"error": str(e)})

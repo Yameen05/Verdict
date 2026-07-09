@@ -7,18 +7,18 @@ interface Step {
 const STEPS: Step[] = [
   {
     label: "01",
-    title: "Gather the evidence",
-    body: "Four agents work in parallel: SEC filings (RAG), news sentiment, live financials, and insider Form 4 activity — every fact lands in a citable evidence ledger.",
+    title: "Pick and click",
+    body: "Choose a stock or coin, say how long you'd hold it (a week? a year?), and hit Analyze. That's it — official reports, news, prices, and insider trades are gathered for you automatically.",
   },
   {
     label: "02",
-    title: "Hold the trial",
-    body: "A bull advocate and a bear advocate each argue their strongest case from the same ledger. A judge weighs both, issues the verdict with a confidence score, and states what would change its mind.",
+    title: "Watch the argument",
+    body: "One AI argues FOR buying, another argues AGAINST — using only real evidence. A judge weighs both sides and gives you Buy, Hold, or Sell for YOUR time window, plus what would change its mind.",
   },
   {
     label: "03",
-    title: "Check the record",
-    body: "Ask follow-up questions grounded in the report (the analyst can search the filing live), and watch the scoreboard grade every past verdict against what the stock actually did.",
+    title: "Keep it honest",
+    body: "Ask follow-up questions in plain English, hit “Explain it simply” if anything sounds like finance-speak, and check the scoreboard — it tracks whether past verdicts were actually right.",
   },
 ];
 
@@ -36,10 +36,10 @@ export function WelcomeHero() {
             <span className="block text-indigo-300">Bull vs. bear. One verdict.</span>
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
-            Verdict collects the evidence — SEC filings, news, financials, insider
-            trades — then makes a bull and a bear advocate argue over it. A judge
-            issues the call with a confidence score, cited evidence, and the
-            conditions that would flip it. The scoreboard tracks whether it was right.
+            Thinking about a stock or a coin? Pick it, pick how long you'd hold it,
+            and press one button. Verdict gathers the real evidence, makes two AIs
+            argue both sides, and hands you a clear Buy / Hold / Sell — with a plain-
+            English explanation and an honest track record. No finance degree needed.
           </p>
         </div>
 

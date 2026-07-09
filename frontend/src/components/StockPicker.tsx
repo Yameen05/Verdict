@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { FilingForm } from "../api/client";
 
 export interface StockOption {
   ticker: string;
@@ -11,31 +10,46 @@ export const POPULAR_STOCKS: StockOption[] = [
   { ticker: "AAPL", name: "Apple", sector: "Technology" },
   { ticker: "MSFT", name: "Microsoft", sector: "Technology" },
   { ticker: "NVDA", name: "NVIDIA", sector: "Semiconductors" },
+  { ticker: "AMD", name: "AMD", sector: "Semiconductors" },
   { ticker: "GOOGL", name: "Alphabet", sector: "Communication" },
   { ticker: "AMZN", name: "Amazon", sector: "Consumer" },
   { ticker: "META", name: "Meta Platforms", sector: "Communication" },
   { ticker: "TSLA", name: "Tesla", sector: "Auto" },
+  { ticker: "F", name: "Ford", sector: "Auto" },
+  { ticker: "NFLX", name: "Netflix", sector: "Communication" },
+  { ticker: "DIS", name: "Disney", sector: "Communication" },
+  { ticker: "PLTR", name: "Palantir", sector: "Technology" },
+  { ticker: "COIN", name: "Coinbase", sector: "Financials" },
   { ticker: "JPM", name: "JPMorgan Chase", sector: "Financials" },
   { ticker: "V", name: "Visa", sector: "Financials" },
+  { ticker: "BAC", name: "Bank of America", sector: "Financials" },
   { ticker: "WMT", name: "Walmart", sector: "Consumer" },
   { ticker: "COST", name: "Costco", sector: "Consumer" },
+  { ticker: "NKE", name: "Nike", sector: "Consumer" },
+  { ticker: "SBUX", name: "Starbucks", sector: "Consumer" },
+  { ticker: "KO", name: "Coca-Cola", sector: "Consumer" },
+  { ticker: "MCD", name: "McDonald's", sector: "Consumer" },
   { ticker: "JNJ", name: "Johnson & Johnson", sector: "Healthcare" },
   { ticker: "UNH", name: "UnitedHealth", sector: "Healthcare" },
+  { ticker: "PFE", name: "Pfizer", sector: "Healthcare" },
   { ticker: "XOM", name: "ExxonMobil", sector: "Energy" },
-  { ticker: "DIS", name: "Disney", sector: "Communication" },
-  { ticker: "BAC", name: "Bank of America", sector: "Financials" },
+  { ticker: "CVX", name: "Chevron", sector: "Energy" },
+  { ticker: "BA", name: "Boeing", sector: "Industrials" },
+  // Crypto trades 24/7; SEC-filing and insider evidence don't apply to coins.
+  { ticker: "BTC-USD", name: "Bitcoin", sector: "Crypto" },
+  { ticker: "ETH-USD", name: "Ethereum", sector: "Crypto" },
+  { ticker: "SOL-USD", name: "Solana", sector: "Crypto" },
+  { ticker: "XRP-USD", name: "XRP", sector: "Crypto" },
+  { ticker: "DOGE-USD", name: "Dogecoin", sector: "Crypto" },
+  { ticker: "ADA-USD", name: "Cardano", sector: "Crypto" },
 ];
 
 interface Props {
   ticker: string;
   setTicker: (t: string) => void;
-  form: FilingForm;
-  setForm: (f: FilingForm) => void;
-  onIngest: () => void;
-  disabled?: boolean;
 }
 
-export function StockPicker({ ticker, setTicker, form, setForm, onIngest, disabled }: Props) {
+export function StockPicker({ ticker, setTicker }: Props) {
   const [custom, setCustom] = useState("");
   const [filter, setFilter] = useState("");
 
@@ -61,42 +75,21 @@ export function StockPicker({ ticker, setTicker, form, setForm, onIngest, disabl
       <div className="flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[200px]">
           <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
-            Filter
+            Search
           </label>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Search by ticker, name, or sector"
+            placeholder="Type a name — Apple, Bitcoin, Nike…"
             className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
-            Filing
-          </label>
-          <select
-            value={form}
-            onChange={(e) => setForm(e.target.value as FilingForm)}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            <option value="10-K">10-K (annual)</option>
-            <option value="10-Q">10-Q (quarterly)</option>
-          </select>
-        </div>
-        <button
-          onClick={onIngest}
-          disabled={disabled || !ticker}
-          className="rounded-md bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
-          title="Download the latest filing and index its text for semantic search"
-        >
-          Ingest filing
-        </button>
       </div>
 
       <div>
         <div className="mb-2 flex items-center justify-between text-xs">
           <span className="font-medium uppercase tracking-wider text-slate-400">
-            Pick a stock
+            Pick a stock or coin
           </span>
           <span className="text-slate-500">
             Selected:{" "}

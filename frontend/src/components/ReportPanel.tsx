@@ -127,8 +127,20 @@ export function ReportPanel({ result }: Props) {
           )}
           {metrics.week_52_low !== null && metrics.week_52_high !== null && (
             <Metric
-              label="52-week range"
+              label="Year range (52 weeks)"
               value={`$${metrics.week_52_low.toFixed(2)} – $${metrics.week_52_high.toFixed(2)}`}
+            />
+          )}
+          {metrics.recent_return_pct !== null && (
+            <Metric
+              label="Recent move (your window)"
+              value={`${metrics.recent_return_pct > 0 ? "+" : ""}${metrics.recent_return_pct.toFixed(1)}%`}
+            />
+          )}
+          {metrics.typical_swing_pct !== null && (
+            <Metric
+              label="Typical swing (your window)"
+              value={`±${metrics.typical_swing_pct.toFixed(1)}%`}
             />
           )}
         </AgentCard>

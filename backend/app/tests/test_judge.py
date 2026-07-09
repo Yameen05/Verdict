@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from openai import OpenAIError
 
 from app.agents.nodes import judge as judge_mod
 from app.schemas.research import (
@@ -26,6 +27,17 @@ def _fake_openai_returning(content: str):
             return SimpleNamespace(
                 choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
             )
+
+    class _Chat:
+        completions = _C()
+
+    return SimpleNamespace(chat=_Chat())
+
+
+def _fake_openai_raising(exc: Exception):
+    class _C:
+        async def create(self, **_kw):
+            raise exc
 
     class _Chat:
         completions = _C()
@@ -55,7 +67,13 @@ def _state() -> dict:
             findings=[SECFinding(question="risks?", answer="Supply chain.", source_chunks=3)],
         ),
         "news": NewsFindings(status="ok", sentiment_score=0.4, article_count=5),
-        "metrics": MetricsFindings(status="ok", profit_margin=0.25),
+        "metrics": MetricsFindings(
+            status="ok",
+            profit_margin=0.25,
+            current_price=200.0,
+            recent_return_pct=2.5,
+            typical_swing_pct=4.0,
+        ),
         "evidence": evidence,
         "bull": DebateCase(
             stance="bull", thesis="Compounding machine.",
@@ -120,6 +138,25 @@ async def test_judge_handles_invalid_json(monkeypatch):
     out = await judge_mod.judge(_state())
     assert out["report"].recommendation == "Pending"
     assert "parse" in out["report"].justification
+
+
+async def test_judge_llm_failure_returns_fallback_verdict(monkeypatch):
+    monkeypatch.setattr(
+        judge_mod,
+        "_client",
+        lambda: _fake_openai_raising(OpenAIError("rate limited")),
+    )
+    out = await judge_mod.judge(_state())
+    report: ResearchReport = out["report"]
+    assert report.recommendation in {"Buy", "Hold", "Sell"}
+    assert report.recommendation != "Pending"
+    assert report.confidence is not None
+    assert report.horizon_days == 14
+    assert report.horizon_outlook
+    assert report.simple_summary
+    assert "AI judge was unavailable" in report.justification
+    assert "OpenAIError" in report.justification
+    assert out["followup_question"] is None
 
 
 async def test_judge_requests_followup_once(monkeypatch):

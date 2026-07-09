@@ -42,6 +42,11 @@ export interface MetricsFindings {
   week_52_low: number | null;
   week_52_high: number | null;
   current_price: number | null;
+  horizon_days: number | null;
+  recent_return_pct: number | null;
+  typical_swing_pct: number | null;
+  best_window_pct: number | null;
+  worst_window_pct: number | null;
   error: string | null;
 }
 
@@ -106,6 +111,9 @@ export interface ResearchReport {
   dissent: string | null;
   citations: Argument[];
   delta_summary: string | null;
+  horizon_days: number | null;
+  horizon_outlook: string | null;
+  simple_summary: string | null;
 }
 
 export interface ResearchResponse {

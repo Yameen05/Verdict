@@ -361,6 +361,10 @@ export type StreamEvent =
     }
   | { event: "debate"; data: DebateStreamEvent }
   | {
+      event: "ingest";
+      data: { phase: "started" | "done" | "failed"; detail: string };
+    }
+  | {
       event: "completed";
       data: {
         request_id: string;
@@ -384,9 +388,12 @@ export async function streamResearch(
   onEvent: (e: StreamEvent) => void,
   signal?: AbortSignal,
   fresh = false,
+  horizonDays = 14,
 ): Promise<void> {
+  const params = new URLSearchParams({ horizon: String(horizonDays) });
+  if (fresh) params.set("fresh", "true");
   const res = await fetch(
-    `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream${fresh ? "?fresh=true" : ""}`,
+    `${BASE_URL}/research/${encodeURIComponent(ticker)}/stream?${params}`,
     {
       headers: requestHeaders({ Accept: "text/event-stream" }),
       credentials: "include",

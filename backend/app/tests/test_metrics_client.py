@@ -80,3 +80,61 @@ def test_fetch_metrics_nan_dropped(patched_yf):
 def test_fetch_metrics_empty_ticker():
     with pytest.raises(metrics_client.MetricsClientError, match="Empty"):
         metrics_client.fetch_metrics("")
+
+
+class TestHorizonStats:
+    def test_stats_from_synthetic_history(self, monkeypatch):
+        import app.services.metrics_client as mc
+
+        # Steady 0.5%/day climb for a year → predictable window returns.
+        closes = [100.0 * (1.005**i) for i in range(252)]
+
+        class _FakeHist:
+            def __init__(self):
+                self._closes = closes
+
+            def __getitem__(self, key):
+                assert key == "Close"
+                return self
+
+            def tolist(self):
+                return self._closes
+
+        class _FakeTicker:
+            def __init__(self, _t):
+                pass
+
+            def history(self, period, auto_adjust):
+                return _FakeHist()
+
+        monkeypatch.setattr(mc.yf, "Ticker", _FakeTicker)
+        stats = mc.fetch_horizon_stats("AAPL", 14)  # 14 calendar → 10 trading days
+        expected = (1.005**10 - 1) * 100
+        assert stats.horizon_days == 14
+        assert abs(stats.recent_return_pct - round(expected, 2)) < 0.05
+        # A perfectly steady climb has (near) zero swing.
+        assert stats.typical_swing_pct < 0.01
+        assert abs(stats.best_window_pct - stats.worst_window_pct) < 0.05
+
+    def test_insufficient_history_raises(self, monkeypatch):
+        import app.services.metrics_client as mc
+
+        class _FakeHist:
+            def __getitem__(self, key):
+                return self
+
+            def tolist(self):
+                return [100.0, 101.0]
+
+        class _FakeTicker:
+            def __init__(self, _t):
+                pass
+
+            def history(self, period, auto_adjust):
+                return _FakeHist()
+
+        monkeypatch.setattr(mc.yf, "Ticker", _FakeTicker)
+        import pytest as _pytest
+
+        with _pytest.raises(mc.MetricsClientError):
+            mc.fetch_horizon_stats("AAPL", 30)

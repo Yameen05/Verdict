@@ -45,6 +45,12 @@ class MetricsFindings(BaseModel):
     week_52_low: float | None = None
     week_52_high: float | None = None
     current_price: float | None = None
+    # --- holding-period stats from one year of daily closes ---
+    horizon_days: int | None = None
+    recent_return_pct: float | None = None  # move over the most recent window
+    typical_swing_pct: float | None = None  # ±1 std-dev of rolling window returns
+    best_window_pct: float | None = None
+    worst_window_pct: float | None = None
     error: str | None = None
 
 
@@ -114,6 +120,10 @@ class ResearchReport(BaseModel):
     dissent: str | None = None  # strongest opposing argument the judge overruled
     citations: list[Argument] = Field(default_factory=list)
     delta_summary: str | None = None  # what changed vs the prior stored run
+    # --- casual-friendly extensions ---
+    horizon_days: int | None = None  # holding period this verdict was framed for
+    horizon_outlook: str | None = None  # what could move the price in that window
+    simple_summary: str | None = None  # jargon-free 2-3 sentence version
 
 
 class ResearchResponse(BaseModel):

@@ -10,11 +10,31 @@ type ThreadEntry =
   | { kind: "turn"; turn: ChatTurn }
   | { kind: "error"; message: string };
 
-const SUGGESTED_PROMPTS = [
-  "If I invest $1,000 today, what could that look like?",
-  "Summarize the bull case in one paragraph.",
-  "What are the biggest risks I should worry about?",
-  "How does this compare to a typical S&P 500 holding?",
+const SUGGESTED_PROMPT_GROUPS = [
+  {
+    label: "Money",
+    prompts: [
+      "If I put $200 in today, what could it be worth in 1 week and 2 weeks?",
+      "I bought $100 last week. Am I up or down right now?",
+      "If I hold another 2 weeks, what return range should I expect?",
+    ],
+  },
+  {
+    label: "Buy / sell",
+    prompts: [
+      "Should I buy now, wait, or avoid it for a 2-week hold?",
+      "If I already own it, should I sell today or keep holding?",
+      "What price move would make you change the call?",
+    ],
+  },
+  {
+    label: "Understand it",
+    prompts: [
+      "Explain the verdict like I am new to stocks.",
+      "What is the strongest reason it could go up?",
+      "What is the biggest risk that could make it drop?",
+    ],
+  },
 ];
 
 function friendlyError(raw: string): string {
@@ -27,7 +47,7 @@ function friendlyError(raw: string): string {
     r.includes("quota") ||
     r.includes("billing")
   ) {
-    return "The AI provider account is out of quota/credits, so every request is rejected — retrying won't help. Add credits, or use a free Google Gemini key (set LLM_API_KEY + LLM_BASE_URL in the backend .env and restart).";
+    return "The AI provider quota is used up. Free Gemini API keys still have request limits, so retrying right away may fail again. Wait for the quota window to reset, enable billing for higher limits, or switch to another key/provider.";
   }
   if (r.includes("apiconnectionerror") || r.includes("connection")) {
     return "The backend couldn't reach the AI provider. Usually the API key is missing/invalid, or the server has no internet access.";
@@ -131,7 +151,7 @@ export function ChatPanel({ ticker, research }: Props) {
           </h2>
           <p className="mt-1 text-xs text-slate-400">
             Conversational follow-up grounded in the {ticker} report you just generated.
-            Hypotheticals like “if I invest $1,000” are welcome.
+            Ask in plain dollars, like “if I invest $200” or “I invested $100 last week.”
           </p>
         </div>
         {thread.length > 0 && (
@@ -158,16 +178,25 @@ export function ChatPanel({ ticker, research }: Props) {
           >
             {thread.length === 0 && (
               <div className="space-y-3 rounded-md border border-slate-800 bg-slate-950/40 p-4">
-                <p className="text-xs text-slate-400">Try one of these:</p>
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_PROMPTS.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => send(p)}
-                      className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 transition hover:border-indigo-500 hover:bg-indigo-500/10 hover:text-indigo-200"
-                    >
-                      {p}
-                    </button>
+                <p className="text-xs font-medium text-slate-300">Common questions</p>
+                <div className="space-y-3">
+                  {SUGGESTED_PROMPT_GROUPS.map((group) => (
+                    <div key={group.label} className="space-y-1.5">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        {group.label}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {group.prompts.map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => send(p)}
+                            className="max-w-full rounded-full border border-slate-700 bg-slate-900 px-3 py-1.5 text-left text-xs leading-snug text-slate-200 transition hover:border-indigo-500 hover:bg-indigo-500/10 hover:text-indigo-200"
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
