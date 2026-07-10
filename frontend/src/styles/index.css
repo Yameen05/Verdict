@@ -12,17 +12,17 @@ html,
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-slate-50: 248 252 249;
-  --color-slate-100: 239 247 241;
-  --color-slate-200: 220 235 224;
-  --color-slate-300: 190 211 198;
-  --color-slate-400: 150 174 160;
-  --color-slate-500: 107 137 119;
-  --color-slate-600: 70 101 82;
-  --color-slate-700: 44 76 58;
-  --color-slate-800: 24 49 36;
-  --color-slate-900: 13 29 20;
-  --color-slate-950: 7 17 12;
+  --color-slate-50: 248 250 252;
+  --color-slate-100: 226 232 240;
+  --color-slate-200: 203 213 225;
+  --color-slate-300: 148 163 184;
+  --color-slate-400: 100 116 139;
+  --color-slate-500: 71 85 105;
+  --color-slate-600: 51 65 85;
+  --color-slate-700: 30 41 59;
+  --color-slate-800: 15 23 42;
+  --color-slate-900: 8 13 24;
+  --color-slate-950: 2 6 12;
 
   --color-indigo-50: 236 253 245;
   --color-indigo-100: 209 250 229;
@@ -108,12 +108,12 @@ html[data-theme="dark"] {
   --color-sky-900: 12 74 110;
   --color-sky-950: 8 47 73;
 
-  --chart-panel: #07110c;
-  --chart-grid: #183124;
-  --chart-text: #96aea0;
-  --chart-axis: #2c4c3a;
-  --chart-crosshair: #6b8977;
-  --chart-crosshair-label: #0d1d14;
+  --chart-panel: #02060c;
+  --chart-grid: #162033;
+  --chart-text: #94a3b8;
+  --chart-axis: #253247;
+  --chart-crosshair: #64748b;
+  --chart-crosshair-label: #111827;
   --chart-up: #22c55e;
   --chart-down: #f43f5e;
   --chart-area-line: #14b8a6;
