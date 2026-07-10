@@ -73,7 +73,7 @@ export const VERDICT_STYLES: Record<
     badge: "bg-slate-700/40 text-slate-300 border-slate-600",
     ring: "ring-slate-600/40",
     text: "text-slate-300",
-    gauge: "#94a3b8",
+    gauge: "#a8a091",
   },
 };
 
@@ -86,7 +86,7 @@ function ConfidenceGauge({ value, color }: { value: number; color: string }) {
       <path
         d="M 11 55 A 44 44 0 0 1 99 55"
         fill="none"
-        stroke="#1e293b"
+        className="stroke-slate-800"
         strokeWidth="9"
         strokeLinecap="round"
       />
@@ -122,7 +122,7 @@ export function VerdictCard({ result, meta, onExport }: Props) {
 
   return (
     <section
-      className={`rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 ring-1 ${style.ring}`}
+      className={`rounded-3xl border border-slate-800 bg-slate-900/60 p-6 shadow-xl shadow-slate-950/40 ring-1 sm:p-7 ${style.ring}`}
     >
       <div className="flex flex-col gap-6 lg:flex-row">
         {/* Verdict + gauge */}
@@ -131,7 +131,7 @@ export function VerdictCard({ result, meta, onExport }: Props) {
             {report.ticker}
           </span>
           <span
-            className={`rounded-xl border px-6 py-2 text-3xl font-bold tracking-tight ${style.badge}`}
+            className={`rounded-2xl border px-6 py-2 font-display text-4xl font-medium italic tracking-tight ${style.badge}`}
           >
             {report.recommendation}
           </span>

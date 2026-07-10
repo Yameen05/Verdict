@@ -34,14 +34,16 @@ export function ScoreRadar({ scores, color }: { scores: DimensionScores; color: 
           key={f}
           points={AXES.map((_, i) => point(i, R * f).join(",")).join(" ")}
           fill="none"
-          stroke="#1e293b"
+          className="stroke-slate-800"
           strokeWidth="1"
         />
       ))}
       {/* spokes */}
       {AXES.map((_, i) => {
         const [x, y] = point(i, R);
-        return <line key={i} x1={CX} y1={CY} x2={x} y2={y} stroke="#1e293b" strokeWidth="1" />;
+        return (
+          <line key={i} x1={CX} y1={CY} x2={x} y2={y} className="stroke-slate-800" strokeWidth="1" />
+        );
       })}
       {/* the shape */}
       <polygon points={polygon} fill={color} fillOpacity="0.18" stroke={color} strokeWidth="1.5" />

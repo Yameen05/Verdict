@@ -22,6 +22,7 @@ import { SourceQualityPanel } from "./components/SourceQualityPanel";
 import { DisagreementPanel } from "./components/DisagreementPanel";
 import { ApiStatusPanel } from "./components/ApiStatusPanel";
 import { SmartAlertsPanel } from "./components/SmartAlertsPanel";
+import { DayTradePage } from "./components/daytrade/DayTradePage";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
 import { migrateLocalStateOnce } from "./lib/migrateLocalState";
 import {
@@ -40,6 +41,15 @@ import {
 
 type AgentStates = Record<AgentKey, AgentState>;
 type ThemeMode = "dark" | "light";
+type Tab = "research" | "daytrade" | "analyst" | "history" | "scoreboard";
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: "research", label: "Research" },
+  { id: "daytrade", label: "Day trading" },
+  { id: "analyst", label: "Analyst" },
+  { id: "history", label: "History" },
+  { id: "scoreboard", label: "Scoreboard" },
+];
 
 const THEME_STORAGE_KEY = "verdict-theme-v2";
 
@@ -56,6 +66,36 @@ const INITIAL_AGENT_STATES: AgentStates = {
 
 function companyName(ticker: string): string {
   return POPULAR_STOCKS.find((s) => s.ticker === ticker)?.name ?? ticker;
+}
+
+function HistoryTickerInput({ onApply }: { onApply: (t: string) => void }) {
+  const [value, setValue] = useState("");
+  function apply() {
+    const t = value.trim().toUpperCase();
+    if (t) {
+      onApply(t);
+      setValue("");
+    }
+  }
+  return (
+    <div className="flex gap-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value.toUpperCase())}
+        onKeyDown={(e) => e.key === "Enter" && apply()}
+        placeholder="Any ticker…"
+        className="w-36 rounded-full border border-slate-700 bg-slate-950 px-3.5 py-1.5 font-mono text-xs uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={apply}
+        disabled={!value.trim()}
+        className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-500 hover:text-slate-100 disabled:opacity-50"
+      >
+        Load
+      </button>
+    </div>
+  );
 }
 
 function initialTheme(): ThemeMode {
@@ -92,7 +132,7 @@ export default function App({
   userRole: "owner" | "member";
   onLogout: () => Promise<void>;
 }) {
-  const [tab, setTab] = useState<"research" | "scoreboard">("research");
+  const [tab, setTab] = useState<Tab>("research");
   const [ticker, setTicker] = useState("AAPL");
   const [horizonDays, setHorizonDays] = useState(14);
   const [form, setForm] = useState<FilingForm>("10-K");
@@ -372,10 +412,10 @@ export default function App({
           color: "text-amber-400",
           text:
             "degraded: " +
-            Object.entries(readiness.checks)
+            (Object.entries(readiness.checks ?? {})
               .filter(([, c]) => !c.ok)
               .map(([k]) => k)
-              .join(", "),
+              .join(", ") || "unknown"),
         };
 
   const showDebate = busy || research !== null;
@@ -385,25 +425,27 @@ export default function App({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <nav className="sticky top-0 z-10 border-b border-slate-900 bg-slate-950/80 backdrop-blur">
+      <nav className="sticky top-0 z-10 border-b border-slate-800/60 bg-slate-950/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-gradient-to-br from-indigo-500 to-cyan-500 text-xs font-bold text-white">
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 place-items-center rounded-full border border-indigo-400/50 bg-indigo-500/10 pb-0.5 font-display text-base italic leading-none text-indigo-300">
                 V
               </span>
-              <span className="font-semibold tracking-tight">Verdict</span>
+              <span className="font-display text-lg tracking-tight text-slate-50">Verdict</span>
             </div>
-            <div className="flex rounded-lg border border-slate-800 bg-slate-900/60 p-0.5 text-xs">
-              {(["research", "scoreboard"] as const).map((t) => (
+            <div className="flex rounded-full border border-slate-800 bg-slate-900/60 p-1 text-xs">
+              {TABS.map((t) => (
                 <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`rounded-md px-3 py-1.5 font-medium capitalize transition ${
-                    tab === t ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`rounded-full px-3 py-1.5 font-medium transition sm:px-3.5 ${
+                    tab === t.id
+                      ? "bg-slate-100 text-slate-950"
+                      : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  {t}
+                  {t.label}
                 </button>
               ))}
             </div>
@@ -416,10 +458,10 @@ export default function App({
               <button
                 type="button"
                 onClick={() => setShowInvites((v) => !v)}
-                className={`rounded-md border px-2.5 py-1.5 ${
+                className={`rounded-full border px-3 py-1.5 transition ${
                   showInvites
-                    ? "border-indigo-500 text-indigo-300"
-                    : "border-slate-800 text-slate-300 hover:bg-slate-900"
+                    ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
+                    : "border-slate-800 text-slate-300 hover:border-slate-600 hover:text-slate-100"
                 }`}
               >
                 Invites
@@ -429,7 +471,7 @@ export default function App({
             <button
               type="button"
               onClick={() => void onLogout()}
-              className="rounded-md border border-slate-800 px-2.5 py-1.5 text-slate-300 hover:bg-slate-900"
+              className="rounded-full border border-slate-800 px-3 py-1.5 text-slate-300 transition hover:border-slate-600 hover:text-slate-100"
             >
               Sign out
             </button>
@@ -457,19 +499,72 @@ export default function App({
       </nav>
 
       <main className="mx-auto max-w-6xl px-6 py-8">
-        {tab === "scoreboard" ? (
+        {tab === "scoreboard" && (
           <>
             <ScoreboardPanel refreshKey={historyRefresh} />
             <BacktestPanel refreshKey={historyRefresh} />
           </>
-        ) : (
+        )}
+
+        {tab === "daytrade" && <DayTradePage />}
+
+        {tab === "analyst" && (
+          <div className="mx-auto max-w-4xl">
+            <section className="text-center">
+              <span className="inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-300">
+                <span className="h-px w-8 bg-indigo-400/60" />
+                Grounded chatbot
+                <span className="h-px w-8 bg-indigo-400/60" />
+              </span>
+              <h1 className="mt-2 font-display text-3xl font-medium tracking-tight text-slate-50">
+                The analyst
+              </h1>
+              <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-400">
+                A conversational analyst grounded in your latest research run
+                {research ? (
+                  <>
+                    {" "}
+                    for <span className="font-mono text-indigo-300">{research.report.ticker}</span>
+                  </>
+                ) : (
+                  " — run a report on the Research page first"
+                )}
+                . It answers in plain dollars and never invents numbers it wasn't given.
+              </p>
+            </section>
+            <ChatPanel ticker={ticker} research={research} />
+          </div>
+        )}
+
+        {tab === "history" && (
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 className="font-display text-3xl font-medium tracking-tight text-slate-50">
+                  Verdict history
+                </h1>
+                <p className="mt-1 text-xs text-slate-400">
+                  Every past verdict for{" "}
+                  <span className="font-mono text-indigo-300">{ticker}</span>{" "}
+                  <span className="text-slate-500">({companyName(ticker)})</span>, plotted against
+                  the price at the time of each call.
+                </p>
+              </div>
+              <HistoryTickerInput onApply={setTicker} />
+            </div>
+            <WatchlistBar ticker={ticker} onSelect={setTicker} />
+            <HistoryPanel ticker={ticker} refreshKey={historyRefresh} />
+          </div>
+        )}
+
+        {tab === "research" && (
           <>
             {showInvites && <InvitesPanel onClose={() => setShowInvites(false)} />}
             {!research && !busy && <WelcomeHero />}
 
             <WatchlistBar ticker={ticker} onSelect={setTicker} />
 
-            <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+            <section className="space-y-6 rounded-3xl border border-slate-800/80 bg-slate-900/50 p-6 shadow-xl shadow-slate-950/40 sm:p-7">
               <StockPicker ticker={ticker} setTicker={setTicker} />
 
               <StockChartPanel
@@ -529,14 +624,14 @@ export default function App({
                   <button
                     onClick={() => void onResearchStream()}
                     disabled={busy}
-                    className="rounded-md bg-gradient-to-r from-indigo-600 to-cyan-600 px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-900/30 transition hover:from-indigo-500 hover:to-cyan-500 disabled:opacity-50"
+                    className="rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-950/60 transition hover:bg-indigo-500 disabled:opacity-50"
                   >
                     Analyze {ticker} →
                   </button>
                   {busy && (
                     <button
                       onClick={onCancel}
-                      className="rounded-md border border-rose-700 px-4 py-2 text-sm font-medium text-rose-300 hover:bg-rose-900/30"
+                      className="rounded-full border border-rose-700 px-4 py-2 text-sm font-medium text-rose-300 transition hover:bg-rose-900/30"
                     >
                       Cancel
                     </button>
@@ -656,22 +751,11 @@ export default function App({
             <ReportPanel result={research} />
             <EvidencePanel evidence={research?.evidence ?? []} />
 
-            <ChatPanel ticker={ticker} research={research} />
-
             <QueryResultPanel result={queryResult} />
-
-            <section className="mt-8">
-              <h2 className="mb-2 text-sm font-semibold text-slate-200">
-                Verdict history for{" "}
-                <span className="font-mono text-indigo-300">{ticker}</span>{" "}
-                <span className="font-normal text-slate-500">({companyName(ticker)})</span>
-              </h2>
-              <HistoryPanel ticker={ticker} refreshKey={historyRefresh} />
-            </section>
           </>
         )}
 
-        <footer className="mt-12 border-t border-slate-900 pt-6 text-center text-[11px] text-slate-600">
+        <footer className="mt-12 border-t border-slate-800/60 pt-6 text-center text-[11px] text-slate-500">
           Verdict is for informational purposes only. Not investment advice. Data from
           SEC EDGAR, NewsAPI, and Yahoo Finance via yfinance.
         </footer>

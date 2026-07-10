@@ -29,6 +29,11 @@ export default {
         fuchsia: scale("fuchsia"),
         sky: scale("sky"),
       },
+      fontFamily: {
+        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", "sans-serif"],
+        display: ["Fraunces", "Georgia", "Times New Roman", "serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
     },
   },
   plugins: [],

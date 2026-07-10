@@ -457,3 +457,56 @@ export interface ConfigStatus {
     daily_runs_global: number;
   };
 }
+
+// ----- Day-trade desk -----
+
+export type DayTradeAction = "long" | "short" | "stand_aside";
+export type DayTradeVote = "long" | "short" | "neutral";
+
+export interface DayTradeAgentView {
+  name: string;
+  vote: DayTradeVote;
+  score: number;
+  reasons: string[];
+}
+
+export interface DayTradeSignal {
+  ticker: string;
+  action: DayTradeAction;
+  action_label: string;
+  confidence: number;
+  session: string;
+  session_note: string;
+  summary: string;
+  entry: number | null;
+  stop: number | null;
+  target: number | null;
+  risk_per_share: number | null;
+  risk_reward: number | null;
+  rationale: string[];
+  risks: string[];
+  plan: string[];
+  agents: DayTradeAgentView[];
+  technicals: Record<string, unknown>;
+  headlines: string[];
+  as_of: string;
+  source: "llm" | "rules";
+  disclaimer: string;
+}
+
+export interface DayTradeScanRow {
+  ticker: string;
+  action: DayTradeAction;
+  action_label: string;
+  confidence: number;
+  close: number;
+  score: number;
+  note: string;
+}
+
+export interface DayTradeScanResponse {
+  rows: DayTradeScanRow[];
+  skipped: string[];
+  as_of: string;
+  note: string;
+}

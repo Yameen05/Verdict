@@ -24,18 +24,28 @@ const STEPS: Step[] = [
 
 export function WelcomeHero() {
   return (
-    <section className="mb-8 overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-indigo-950/40 via-slate-900 to-slate-950 p-6 sm:p-8">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+    <section className="relative mb-8 overflow-hidden rounded-3xl border border-slate-800/80 bg-slate-900/40 p-6 sm:p-10">
+      {/* Oversized serif watermark — pure decoration */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -right-6 -top-16 select-none font-display text-[16rem] italic leading-none text-indigo-500/[0.07]"
+      >
+        V
+      </span>
+
+      <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
-          <span className="inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-indigo-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+          <span className="inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-300">
+            <span className="h-px w-8 bg-indigo-400/60" />
             Multi-agent stock research
           </span>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
+          <h1 className="mt-4 font-display text-4xl font-medium tracking-tight text-slate-50 sm:text-5xl">
             Every stock gets a trial.
-            <span className="block text-indigo-300">Bull vs. bear. One verdict.</span>
+            <span className="block italic text-indigo-300">
+              Bull v. Bear. One verdict.
+            </span>
           </h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-slate-300">
             Thinking about a stock or a coin? Pick it, pick how long you'd hold it,
             and press one button. Verdict gathers the real evidence, makes two AIs
             argue both sides, and hands you a clear Buy / Hold / Sell — with a plain-
@@ -43,20 +53,19 @@ export function WelcomeHero() {
           </p>
         </div>
 
-        <ul className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-2xl">
+        <ol className="grid w-full gap-5 sm:grid-cols-3 lg:max-w-2xl">
           {STEPS.map((s) => (
-            <li
-              key={s.label}
-              className="rounded-xl border border-slate-800 bg-slate-950/60 p-4"
-            >
-              <div className="mb-2 font-mono text-[10px] tracking-widest text-indigo-300">
-                {s.label}
+            <li key={s.label} className="border-t border-slate-700/70 pt-3">
+              <div className="flex items-baseline gap-2">
+                <span className="font-display text-lg italic text-indigo-400">
+                  {s.label}
+                </span>
+                <span className="text-sm font-semibold text-slate-100">{s.title}</span>
               </div>
-              <div className="text-sm font-medium text-slate-100">{s.title}</div>
-              <p className="mt-1 text-xs leading-relaxed text-slate-400">{s.body}</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{s.body}</p>
             </li>
           ))}
-        </ul>
+        </ol>
       </div>
     </section>
   );

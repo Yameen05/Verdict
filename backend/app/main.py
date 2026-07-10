@@ -24,6 +24,7 @@ from app.persistence.db import init_db
 from app.routers import (
     ask,
     auth,
+    daytrade,
     filings,
     health,
     invites,
@@ -182,6 +183,12 @@ def create_app() -> FastAPI:
         market.router,
         prefix="/market",
         tags=["market"],
+        dependencies=protected,
+    )
+    app.include_router(
+        daytrade.router,
+        prefix="/daytrade",
+        tags=["daytrade"],
         dependencies=protected,
     )
     app.include_router(

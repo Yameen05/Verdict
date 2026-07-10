@@ -5,6 +5,8 @@ import type {
   BacktestResponse,
   ConfigStatus,
   CostBreakdown,
+  DayTradeScanResponse,
+  DayTradeSignal,
   DebateCase,
   HistoryResponse,
   LatestPriceResponse,
@@ -166,7 +168,13 @@ export const api = {
       headers: requestHeaders(),
       credentials: "include",
     });
-    return { status: res.status, body: (await res.json()) as ReadinessBody };
+    const body = (await res.json()) as ReadinessBody;
+    // A 401/proxy error body is not a readiness report; treat it as unavailable
+    // rather than letting `{detail: …}` crash every panel that reads `checks`.
+    if (!body || typeof body !== "object" || !("checks" in body)) {
+      throw new Error(`readiness unavailable (HTTP ${res.status})`);
+    }
+    return { status: res.status, body };
   },
 
   configStatus: async (): Promise<ConfigStatus> => {
@@ -194,6 +202,11 @@ export const api = {
 
   capabilities: async (ticker: string): Promise<AssetCapabilities> =>
     getJson<AssetCapabilities>(`/market/${encodeURIComponent(ticker)}/capabilities`),
+
+  daytradeSignal: (ticker: string) =>
+    getJson<DayTradeSignal>(`/daytrade/${encodeURIComponent(ticker)}/signal`),
+
+  daytradeScan: () => getJson<DayTradeScanResponse>("/daytrade/scan"),
 };
 
 /** Per-user workspace state persisted on the backend (was localStorage). */

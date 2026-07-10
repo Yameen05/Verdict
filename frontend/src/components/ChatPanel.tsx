@@ -141,10 +141,10 @@ export function ChatPanel({ ticker, research }: Props) {
   const disabled = !research;
 
   return (
-    <section className="mt-8 rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
+    <section className="mt-8 rounded-3xl border border-slate-800 bg-slate-900/50 p-6 shadow-xl shadow-slate-950/40">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-100">
+          <h2 className="flex items-center gap-2 font-display text-xl text-slate-100">
             <span className="grid h-7 w-7 place-items-center rounded-full bg-indigo-500/20 text-indigo-300">
               ✦
             </span>

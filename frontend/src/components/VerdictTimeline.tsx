@@ -46,13 +46,13 @@ export function VerdictTimeline({ runs }: { runs: HistoryEntry[] }) {
         {/* y axis ticks */}
         {[min, (min + max) / 2, max].map((p, i) => (
           <g key={i}>
-            <line x1={PAD.left} x2={W - PAD.right} y1={y(p)} y2={y(p)} stroke="#1e293b" strokeWidth="1" />
+            <line x1={PAD.left} x2={W - PAD.right} y1={y(p)} y2={y(p)} className="stroke-slate-800" strokeWidth="1" />
             <text x={PAD.left - 6} y={y(p) + 3} textAnchor="end" fontSize="9" className="fill-slate-500">
               ${p >= 100 ? p.toFixed(0) : p.toFixed(1)}
             </text>
           </g>
         ))}
-        <path d={path} fill="none" stroke="#475569" strokeWidth="1.5" />
+        <path d={path} fill="none" className="stroke-slate-600" strokeWidth="1.5" />
         {points.map((r, i) => (
           <g key={r.id}>
             <circle cx={x(i)} cy={y(r.price_at_run as number)} r="5" fill={DOT[r.recommendation] ?? DOT.Pending}>

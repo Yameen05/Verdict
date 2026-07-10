@@ -228,7 +228,7 @@ export function AuthGate({ children }: Props) {
           <button
             type="button"
             onClick={() => setView("ready")}
-            className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold hover:bg-indigo-500"
+            className="flex-1 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
           >
             I saved them securely
           </button>
@@ -374,17 +374,25 @@ function AuthShell({
 }) {
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12 text-slate-100">
-      <section className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-7 shadow-2xl shadow-indigo-950/30">
-        <div className="mb-6 flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-cyan-500 font-bold">
+      <section className="w-full max-w-md">
+        <div className="mb-6 flex items-center justify-center gap-2.5">
+          <span className="grid h-9 w-9 place-items-center rounded-full border border-indigo-400/50 bg-indigo-500/10 pb-0.5 font-display text-lg italic leading-none text-indigo-300">
             V
           </span>
-          <div>
-            <h1 className="text-xl font-semibold">{title}</h1>
-            <p className="mt-1 text-xs leading-relaxed text-slate-400">{subtitle}</p>
-          </div>
+          <span className="font-display text-2xl tracking-tight text-slate-50">Verdict</span>
         </div>
-        {children}
+        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-7 shadow-2xl shadow-slate-950/60">
+          <div className="mb-6">
+            <h1 className="font-display text-2xl font-medium tracking-tight text-slate-50">
+              {title}
+            </h1>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{subtitle}</p>
+          </div>
+          {children}
+        </div>
+        <p className="mt-5 text-center text-[11px] italic text-slate-500">
+          Every stock gets a trial.
+        </p>
       </section>
     </main>
   );
@@ -432,7 +440,7 @@ function SubmitButton({ busy, label }: { busy: boolean; label: string }) {
   return (
     <button
       disabled={busy}
-      className="w-full rounded-lg bg-gradient-to-r from-indigo-600 to-cyan-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+      className="w-full rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-950/50 transition hover:bg-indigo-500 disabled:opacity-50"
       type="submit"
     >
       {busy ? "Please wait…" : label}
