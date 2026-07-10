@@ -29,7 +29,6 @@ from app.observability.logging import get_logger
 from app.services.daytrade_intraday import (
     IntradaySnapshot,
     compute_intraday_snapshot,
-    is_crypto,
 )
 from app.services.llm import llm_key_configured, make_llm_client
 from app.services.metrics_client import MetricsClientError, fetch_price_history

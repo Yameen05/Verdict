@@ -9,12 +9,12 @@ desk agents and the LLM head trader.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from app.services.metrics_client import PriceBar
-from app.services.technicals import _ema, _rsi, _macd_hist
+from app.services.technicals import _ema, _macd_hist, _rsi
 
 ET = ZoneInfo("America/New_York")
 
@@ -40,14 +40,14 @@ def parse_bar_time(iso: str) -> datetime:
     """Bar times are ISO strings; treat naive stamps as UTC."""
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
 def session_phase(ticker: str, now: datetime | None = None) -> str:
     if is_crypto(ticker):
         return "open_24_7"
-    now = (now or datetime.now(timezone.utc)).astimezone(ET)
+    now = (now or datetime.now(UTC)).astimezone(ET)
     if now.weekday() >= 5:
         return "closed"
     minutes = now.hour * 60 + now.minute
@@ -223,7 +223,7 @@ def compute_intraday_snapshot(
         snap.atr_pct = round(snap.atr_5m / close * 100, 2)
     snap.rel_volume = relative_volume(days)
 
-    reference = now or datetime.now(timezone.utc)
+    reference = now or datetime.now(UTC)
     snap.data_age_minutes = round(
         max(0.0, (reference - parse_bar_time(last.time)).total_seconds() / 60), 1
     )
