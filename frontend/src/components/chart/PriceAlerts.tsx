@@ -1,36 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { userStateApi, type ServerAlert } from "../../api/client";
 
 type Direction = "above" | "below";
 
-interface Alert {
-  id: string;
-  ticker: string;
-  direction: Direction;
-  price: number;
-  createdAt: string;
-  triggered: boolean;
-}
-
-const STORAGE_KEY = "verdict.alerts";
-
-function loadAlerts(): Alert[] {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Alert[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveAlerts(alerts: Alert[]): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(alerts));
-  } catch {
-    // localStorage unavailable — alerts persist for this session only.
-  }
-}
-
-function notify(alert: Alert, price: number): void {
+function notify(alert: ServerAlert, price: number): void {
   const body = `${alert.ticker} is ${alert.direction} $${alert.price.toLocaleString()} (now $${price.toFixed(2)})`;
   if (typeof Notification !== "undefined" && Notification.permission === "granted") {
     new Notification("Verdict price alert", { body });
@@ -38,42 +11,59 @@ function notify(alert: Alert, price: number): void {
 }
 
 /**
- * Client-side price alerts (#4). Watches the live price coming from the chart's
- * existing poll and fires a browser notification when a threshold is crossed —
- * no backend/push infrastructure needed while the tab is open.
+ * Price alerts, stored server-side (see routers/user_state.py). A background
+ * worker evaluates them even when no tab is open; this component additionally
+ * watches the chart's live price so an alert crossing you're looking at fires
+ * a browser notification instantly instead of on the next worker cycle.
  */
 export function PriceAlerts({ ticker, price }: { ticker: string; price: number | null }) {
-  const [alerts, setAlerts] = useState<Alert[]>(loadAlerts);
+  const [alerts, setAlerts] = useState<ServerAlert[]>([]);
   const [draftPrice, setDraftPrice] = useState("");
   const [direction, setDirection] = useState<Direction>("above");
-  const [justTriggered, setJustTriggered] = useState<string[]>([]);
+  const [justTriggered, setJustTriggered] = useState<number[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const alertsRef = useRef(alerts);
   alertsRef.current = alerts;
 
-  useEffect(() => {
-    saveAlerts(alerts);
-  }, [alerts]);
+  const refresh = useCallback(() => {
+    userStateApi
+      .alerts()
+      .then((res) => {
+        setAlerts(res.alerts);
+        setError(null);
+      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Alerts unavailable"),
+      );
+  }, []);
 
-  // Evaluate on every price tick; mark crossed alerts triggered exactly once.
+  useEffect(() => {
+    refresh();
+    window.addEventListener("verdict-alerts-updated", refresh);
+    return () => window.removeEventListener("verdict-alerts-updated", refresh);
+  }, [refresh]);
+
+  // Instant client-side check on every live price tick. The server worker is
+  // the source of truth; this just makes the visible tab feel immediate.
   useEffect(() => {
     if (price === null) return;
-    const fired: string[] = [];
-    const next = alertsRef.current.map((a) => {
-      if (a.triggered || a.ticker !== ticker) return a;
-      const crossed = a.direction === "above" ? price >= a.price : price <= a.price;
-      if (crossed) {
-        notify(a, price);
-        fired.push(a.id);
-        return { ...a, triggered: true };
-      }
-      return a;
-    });
-    if (fired.length) {
-      setAlerts(next);
-      setJustTriggered(fired);
-      window.setTimeout(() => setJustTriggered([]), 6000);
+    for (const alert of alertsRef.current) {
+      if (alert.triggered || alert.ticker !== ticker) continue;
+      const crossed =
+        alert.direction === "above" ? price >= alert.price : price <= alert.price;
+      if (!crossed) continue;
+      notify(alert, price);
+      setJustTriggered((prev) => [...prev, alert.id]);
+      window.setTimeout(
+        () => setJustTriggered((prev) => prev.filter((id) => id !== alert.id)),
+        6000,
+      );
+      userStateApi
+        .triggerAlert(alert.id)
+        .then(() => refresh())
+        .catch(() => refresh());
     }
-  }, [price, ticker]);
+  }, [price, refresh, ticker]);
 
   const addAlert = useCallback(async () => {
     const value = Number(draftPrice);
@@ -81,23 +71,26 @@ export function PriceAlerts({ ticker, price }: { ticker: string; price: number |
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
       await Notification.requestPermission();
     }
-    setAlerts((prev) => [
-      ...prev,
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        ticker,
-        direction,
-        price: Number(value.toFixed(2)),
-        createdAt: new Date().toISOString(),
-        triggered: false,
-      },
-    ]);
-    setDraftPrice("");
-  }, [draftPrice, direction, ticker]);
+    try {
+      await userStateApi.createAlert(ticker, direction, Number(value.toFixed(2)));
+      setDraftPrice("");
+      refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save alert");
+    }
+  }, [draftPrice, direction, refresh, ticker]);
 
-  const removeAlert = useCallback((id: string) => {
-    setAlerts((prev) => prev.filter((a) => a.id !== id));
-  }, []);
+  const removeAlert = useCallback(
+    (id: number) => {
+      userStateApi
+        .deleteAlert(id)
+        .then(() => refresh())
+        .catch((e: unknown) =>
+          setError(e instanceof Error ? e.message : "Could not remove alert"),
+        );
+    },
+    [refresh],
+  );
 
   const forTicker = alerts.filter((a) => a.ticker === ticker);
 
@@ -140,6 +133,10 @@ export function PriceAlerts({ ticker, price }: { ticker: string; price: number |
         >
           Set alert
         </button>
+        <span className="text-[10px] text-slate-600">
+          checked in the background, even with the app closed
+        </span>
+        {error && <span className="text-xs text-rose-300">{error}</span>}
       </div>
 
       {forTicker.length > 0 && (

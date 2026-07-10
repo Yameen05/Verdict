@@ -93,3 +93,48 @@ async def ready(
     if not all_ok:
         response.status_code = 503
     return {"status": "ready" if all_ok else "degraded", "checks": checks}
+
+
+@router.get("/health/config")
+async def config_status(
+    _auth: AuthContext = Depends(require_authenticated),
+) -> dict:
+    """Authenticated runtime configuration summary with no secret values."""
+    settings = get_settings()
+    signal_keys = {
+        "finnhub": bool(settings.finnhub_api_key.strip()),
+        "alphavantage": bool(settings.alphavantage_api_key.strip()),
+        "polygon": bool(settings.polygon_api_key.strip()),
+        "tiingo": bool(settings.tiingo_api_key.strip()),
+        "fred": bool(settings.fred_api_key.strip()),
+        "stocktwits": settings.stocktwits_enabled,
+        "reddit": settings.reddit_enabled,
+    }
+    provider = "openai"
+    if settings.llm_base_url.strip():
+        provider = settings.llm_base_url.strip().split("//")[-1].split("/")[0]
+    vectorstore = "pinecone" if settings.pinecone_api_key.strip() else "local"
+    return {
+        "environment": settings.environment,
+        "llm": {
+            "provider": provider,
+            "model": settings.llm_model,
+            "configured": bool(settings.resolved_llm_key),
+            "rate_limit": settings.rate_limit_research,
+        },
+        "embeddings": {
+            "model": settings.embedding_model,
+            "configured": bool(settings.resolved_embedding_key),
+        },
+        "sources": {
+            "newsapi": bool(settings.news_api_key.strip()),
+            "vectorstore": vectorstore,
+            "signals": signal_keys,
+            "signals_cache_seconds": settings.signals_cache_seconds,
+        },
+        "quotas": {
+            "research_cache_minutes": settings.research_cache_minutes,
+            "daily_runs_per_user": settings.daily_runs_per_user,
+            "daily_runs_global": settings.daily_runs_global,
+        },
+    }

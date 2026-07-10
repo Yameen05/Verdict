@@ -31,8 +31,9 @@ const SUGGESTED_PROMPT_GROUPS = [
     label: "Understand it",
     prompts: [
       "Explain the verdict like I am new to stocks.",
-      "What is the strongest reason it could go up?",
+      "Why this call and not the opposite? What's the other side?",
       "What is the biggest risk that could make it drop?",
+      "What would have to happen for you to change the call?",
     ],
   },
 ];
@@ -105,7 +106,7 @@ export function ChatPanel({ ticker, research }: Props) {
         history: historyForApi,
       });
       const answer = res.searched_filing
-        ? `${res.answer}\n\n_(searched the indexed filing to answer this)_`
+        ? `${res.answer}\n\n(searched the indexed filing to answer this)`
         : res.answer;
       setThread((t) => [
         ...t,
@@ -257,19 +258,64 @@ export function ChatPanel({ ticker, research }: Props) {
   );
 }
 
+/**
+ * Minimal formatting for assistant text: **bold** segments, "- " bullets as
+ * proper bullets, and parenthetical footnotes muted. The prompt asks the model
+ * for plain text, but models leak markdown — render it instead of showing
+ * literal asterisks.
+ */
+function FormattedAnswer({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <>
+      {lines.map((line, i) => {
+        const bullet = /^\s*[-•]\s+/.test(line);
+        const footnote = /^\(.*\)$/.test(line.trim());
+        const cleaned = bullet ? line.replace(/^\s*[-•]\s+/, "") : line;
+        const parts = cleaned.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+          part.startsWith("**") && part.endsWith("**") ? (
+            <strong key={j} className="font-semibold">
+              {part.slice(2, -2)}
+            </strong>
+          ) : (
+            <span key={j}>{part}</span>
+          ),
+        );
+        if (bullet) {
+          return (
+            <div key={i} className="flex gap-1.5">
+              <span className="text-indigo-300">•</span>
+              <span>{parts}</span>
+            </div>
+          );
+        }
+        if (footnote) {
+          return (
+            <div key={i} className="text-xs italic text-slate-500">
+              {parts}
+            </div>
+          );
+        }
+        // Preserve blank lines as paragraph spacing.
+        return line.trim() === "" ? <div key={i} className="h-2" /> : <div key={i}>{parts}</div>;
+      })}
+    </>
+  );
+}
+
 function Bubble({ turn }: { turn: ChatTurn }) {
   const isUser = turn.role === "user";
   return (
     <div className={`flex gap-2 ${isUser ? "justify-end" : ""}`}>
       {!isUser && <Avatar role="assistant" />}
       <div
-        className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+        className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
-            ? "rounded-tr-sm bg-indigo-600 text-white"
+            ? "whitespace-pre-wrap rounded-tr-sm bg-indigo-600 text-white"
             : "rounded-tl-sm bg-slate-900 text-slate-100"
         }`}
       >
-        {turn.content}
+        {isUser ? turn.content : <FormattedAnswer text={turn.content} />}
       </div>
       {isUser && <Avatar role="user" />}
     </div>

@@ -162,6 +162,7 @@ async def _persist(
         duration_ms=duration_ms,
         cost_usd=cost_usd,
         request_id=request_id,
+        llm_model=get_settings().llm_model,
     )
 
 

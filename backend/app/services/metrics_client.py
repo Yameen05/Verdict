@@ -165,22 +165,31 @@ def _trading_days(calendar_days: int) -> int:
     return max(1, round(calendar_days * 5 / 7))
 
 
-def fetch_horizon_stats(ticker: str, horizon_days: int) -> HorizonStats:
-    """Rolling-window return stats for the user's holding period.
+def fetch_daily_closes(ticker: str) -> list[float]:
+    """Daily adjusted closes, oldest first.
 
+    Goes through fetch_price_history (5Y/1D) so it inherits the full provider
+    fallback chain (Yahoo → Polygon → Tiingo → Stooq) instead of dying with
+    Yahoo. horizon_stats_from_closes trims to the window it needs.
+    """
+    bars, _ = fetch_price_history(ticker, "5Y", "1D")
+    return [bar.close for bar in bars]
+
+
+def horizon_stats_from_closes(closes: list[float], horizon_days: int) -> HorizonStats:
+    """Rolling-window return stats computed from a series of daily closes.
+
+    Uses roughly the most recent year of windows; longer holding periods reach
+    further back so a 1-year hold still has samples to roll over.
     Raises MetricsClientError when there isn't enough history to say anything.
     """
-    ticker = ticker.strip().upper()
-    try:
-        history = yf.Ticker(ticker).history(period="1y", auto_adjust=True)
-        closes = [float(c) for c in history["Close"].tolist() if c == c]  # drop NaN
-    except Exception as e:  # noqa: BLE001 - yfinance has unstable internals
-        raise MetricsClientError(f"yfinance history failed for {ticker}: {e}") from e
-
     window = _trading_days(horizon_days)
+    # A window needs `window` trading days of runway; keep ~1 year of window
+    # starts beyond that so short horizons aren't skewed by ancient history.
+    closes = closes[-(252 + window):]
     if len(closes) < window + 2:
         raise MetricsClientError(
-            f"Not enough price history for {ticker} to analyze a {horizon_days}-day hold"
+            f"Not enough price history to analyze a {horizon_days}-day hold"
         )
 
     rolling = [
@@ -196,6 +205,14 @@ def fetch_horizon_stats(ticker: str, horizon_days: int) -> HorizonStats:
         best_window_pct=round(max(rolling) * 100, 2),
         worst_window_pct=round(min(rolling) * 100, 2),
     )
+
+
+def fetch_horizon_stats(ticker: str, horizon_days: int) -> HorizonStats:
+    """Rolling-window return stats for the user's holding period.
+
+    Raises MetricsClientError when there isn't enough history to say anything.
+    """
+    return horizon_stats_from_closes(fetch_daily_closes(ticker), horizon_days)
 
 
 def _timestamp_iso(ts: Any) -> str:

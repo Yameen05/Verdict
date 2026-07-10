@@ -7,9 +7,7 @@ detail the report doesn't carry. Mounted under the /research prefix.
 
 # NOTE: no `from __future__ import annotations` — see routers/research.py.
 
-import asyncio
 import json
-import re
 from functools import lru_cache
 from typing import Any
 
@@ -23,12 +21,11 @@ from app.observability.cost import record_chat, start_tracking
 from app.observability.logging import get_logger, get_request_id
 from app.routers.research import _validate_ticker
 from app.schemas.research import ResearchResponse
+from app.services.investment_answer import investment_answer
 from app.services.llm import llm_key_configured, make_llm_client
-from app.services.metrics_client import HorizonStats, fetch_horizon_stats
 
 router = APIRouter()
 log = get_logger(__name__)
-
 
 
 class ChatTurn(BaseModel):
@@ -50,423 +47,124 @@ class AskResponse(BaseModel):
     searched_filing: bool = False
 
 
-_DEFAULT_HORIZONS = (7, 14, 30, 90, 365)
-_NUMBER_WORDS = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-    "eleven": 11,
-    "twelve": 12,
-}
-_MONEY_WORDS = re.compile(
-    r"\b(invest|invested|investing|bought|buy|put|worth|value|return|gain|"
-    r"gaining|lose|losing|loss|profit|sell|hold|holding)\b",
-    re.IGNORECASE,
-)
-_POSITION_WORDS = re.compile(
-    r"\b(sell|hold|holding|return|gain|loss|profit|worth|value)\b",
-    re.IGNORECASE,
-)
-_PAST_POSITION_WORDS = re.compile(
-    r"\b(invested|bought|put|held|holding)\b",
-    re.IGNORECASE,
-)
-_SELL_HOLD_DECISION = re.compile(
-    r"\bshould\s+i\s+(?:sell|hold)\b|\b(?:sell|hold)\s+(?:it|now|rn|right now)\b|"
-    r"\bhow\s+long\b.*\bhold\b",
-    re.IGNORECASE,
-)
 
 
-def _parse_amount(question: str) -> float | None:
-    money = re.search(r"\$\s*([0-9][0-9,]*(?:\.\d+)?)", question)
-    if money:
-        return float(money.group(1).replace(",", ""))
+_ASK_SYSTEM = """You are Verdict's analyst — a plain-English guide for a regular
+person who just ran a research report on one stock or coin. You receive a
+distilled JSON of that report's findings.
 
-    dollars = re.search(
-        r"\b([0-9][0-9,]*(?:\.\d+)?)\s*(?:dollars?|usd|bucks?)\b",
-        question,
-        re.IGNORECASE,
-    )
-    if dollars:
-        return float(dollars.group(1).replace(",", ""))
+THE ONE RULE: answer the question they actually asked, in your FIRST sentence.
+Then back it up with 1-4 short sentences using only numbers and facts from the
+JSON (or filing excerpts from the tool). Never restate the question, never
+answer a different question, never stop at "the report says X".
 
-    bare_investment = re.search(
-        r"\b(?:invested|invest|buy|bought|put)\s+([0-9][0-9,]*(?:\.\d+)?)\b"
-        r"(?!\s*(?:day|days|week|weeks|month|months|year|years)\b)",
-        question,
-        re.IGNORECASE,
-    )
-    if bare_investment:
-        return float(bare_investment.group(1).replace(",", ""))
-    return None
+How to handle the common question shapes:
+• "Do I gain or lose / what happens to my $X?" — state the lean from the
+  verdict (Buy = leans toward gaining, Sell = leans toward losing, Hold =
+  roughly a coin flip). Then the realistic dollar range from
+  stats.typical_swing_pct applied to their $X (low = X*(1-swing/100), high =
+  X*(1+swing/100)), then the past-year extremes from best/worst_window_pct.
+  End with one sentence: exact numbers are unknowable — these are normal swing
+  sizes, not promises.
+• "Why …?" / "explain …" — give the real drivers: verdict.justification, the
+  strongest opposing argument in verdict.dissent, news items, insider buy/sell
+  counts, analyst consensus. If they're challenging the call, be honest about
+  the other side — the dissent field exists exactly for that.
+• "Should I buy/sell/hold?" — translate the verdict + horizon into a lean,
+  name the single biggest risk (verdict.key_risks / falsifiers), and note this
+  is what the evidence shows, not personal advice.
+• "What would change the call?" — use verdict.falsifiers, plainly.
+• Company/filing detail the JSON doesn't carry (segments, debt terms, lawsuit
+  language) — call the search_filing tool. Never use it for money questions.
 
+Style: plain text, short sentences, real dollars when they gave an amount.
+No markdown symbols (no **, no #, no tables); a simple "- " list is fine when
+they ask for several things. 2-6 sentences unless they asked for a list.
 
-def _looks_like_money_question(question: str, amount: float | None) -> bool:
-    if amount is not None and _MONEY_WORDS.search(question):
-        return True
-    if _SELL_HOLD_DECISION.search(question):
-        return True
-    return bool(_POSITION_WORDS.search(question) and _PAST_POSITION_WORDS.search(question))
+Honesty: use only what's in the JSON or tool results — never invent a price,
+percentage, or headline. If a needed number is missing, say what's missing AND
+give the closest thing you do have. Never refuse to answer; always give your
+best grounded read. If the question names a different holding period than
+stats.horizon_days, answer with what you have and suggest re-running Analyze
+for that period.
 
-
-def _number_value(raw: str) -> int | None:
-    cleaned = raw.lower()
-    if cleaned.isdigit():
-        return int(cleaned)
-    return _NUMBER_WORDS.get(cleaned)
-
-
-def _days_from_parts(number: int, unit: str) -> int:
-    unit = unit.lower()
-    if unit.startswith("day"):
-        return number
-    if unit.startswith("week"):
-        return number * 7
-    if unit.startswith("month"):
-        return number * 30
-    if unit.startswith("year"):
-        return number * 365
-    return number
+If the report JSON is null: tell them to pick the asset, choose how long they'd
+hold it, and press Analyze. This is not personalized financial advice — you
+describe what the evidence shows, you don't know their finances."""
 
 
-def _label_days(days: int | None) -> str:
-    if not days:
-        return "the report window"
-    labels = {
-        1: "1 day",
-        7: "1 week",
-        14: "2 weeks",
-        30: "1 month",
-        90: "3 months",
-        365: "1 year",
-    }
-    if days in labels:
-        return labels[days]
-    if days % 365 == 0:
-        years = days // 365
-        return f"{years} year{'s' if years != 1 else ''}"
-    if days % 30 == 0:
-        months = days // 30
-        return f"{months} month{'s' if months != 1 else ''}"
-    if days % 7 == 0:
-        weeks = days // 7
-        return f"{weeks} week{'s' if weeks != 1 else ''}"
-    return f"{days} days"
-
-
-def _extract_past_days(question: str) -> int | None:
-    q = question.lower()
-    if re.search(r"\byesterday\b", q):
-        return 1
-    if re.search(r"\b(last|past)\s+week\b|\ba\s+week\s+ago\b", q):
-        return 7
-    if re.search(r"\b(last|past)\s+month\b|\ba\s+month\s+ago\b", q):
-        return 30
-    if re.search(r"\b(last|past)\s+year\b|\ba\s+year\s+ago\b", q):
-        return 365
-
-    match = re.search(
-        r"\b([0-9]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-        r"\s+(day|week|month|year)s?\s+ago\b",
-        q,
-    )
-    if not match:
+def _clip(text: str | None, limit: int = 400) -> str | None:
+    if not text:
         return None
-    number = _number_value(match.group(1))
-    return _days_from_parts(number, match.group(2)) if number else None
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _extract_requested_horizons(question: str, report_days: int | None) -> list[int]:
-    q = question.lower()
-    horizons: list[int] = []
+def _distill_context(context: ResearchResponse) -> dict[str, Any]:
+    """Boil the full ResearchResponse down to what the analyst needs.
 
-    for match in re.finditer(
-        r"\b([0-9]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-        r"\s+(day|week|month|year)s?\b",
-        q,
-    ):
-        # "2 weeks ago" describes when the user bought, not a future hold window.
-        tail = q[match.end() : match.end() + 8]
-        if tail.strip().startswith("ago"):
-            continue
-        number = _number_value(match.group(1))
-        if number:
-            horizons.append(_days_from_parts(number, match.group(2)))
-
-    if re.search(r"\bnext\s+week\b", q):
-        horizons.append(7)
-    if re.search(r"\bnext\s+month\b", q):
-        horizons.append(30)
-    if re.search(r"\bnext\s+year\b", q):
-        horizons.append(365)
-
-    wants_later = bool(
-        re.search(r"\b(and on|later|longer|how long|hold for|from here|what about)\b", q)
-    )
-    if wants_later:
-        horizons.extend(_DEFAULT_HORIZONS)
-
-    if not horizons:
-        horizons.append(report_days or 14)
-
-    unique: list[int] = []
-    for days in horizons:
-        if 1 <= days <= 365 and days not in unique:
-            unique.append(days)
-    return unique
-
-
-def _fmt_money(value: float) -> str:
-    value = round(value + 0.0000001, 2)
-    if value.is_integer():
-        return f"${value:,.0f}"
-    return f"${value:,.2f}"
-
-
-def _fmt_pct(value: float) -> str:
-    sign = "+" if value > 0 else ""
-    return f"{sign}{value:.2f}%"
-
-
-def _fmt_delta(value: float) -> str:
-    if abs(value) < 0.005:
-        return "$0"
-    direction = "gain" if value > 0 else "loss"
-    return f"{_fmt_money(abs(value))} {direction}"
-
-
-def _stats_from_context(context: ResearchResponse, days: int) -> HorizonStats | None:
+    The raw payload (evidence ledger, full debate cases, citation graphs) is
+    thousands of tokens of noise that measurably degrades answers — the model
+    starts summarizing the report instead of answering the question. Keep the
+    verdict, the numbers, and short readable signals.
+    """
+    report = context.report
     metrics = context.metrics
-    if metrics.horizon_days != days:
-        return None
-    if not any(
-        value is not None
-        for value in (
-            metrics.recent_return_pct,
-            metrics.typical_swing_pct,
-            metrics.best_window_pct,
-            metrics.worst_window_pct,
-        )
-    ):
-        return None
-    return HorizonStats(
-        horizon_days=days,
-        recent_return_pct=metrics.recent_return_pct,
-        typical_swing_pct=metrics.typical_swing_pct,
-        best_window_pct=metrics.best_window_pct,
-        worst_window_pct=metrics.worst_window_pct,
-    )
-
-
-async def _stats_for_horizon(
-    ticker: str, context: ResearchResponse, days: int
-) -> HorizonStats | None:
-    context_stats = _stats_from_context(context, days)
-    if context_stats is not None:
-        return context_stats
-    try:
-        return await asyncio.to_thread(fetch_horizon_stats, ticker, days)
-    except Exception as e:  # noqa: BLE001 - a missing window should not break chat
-        log.warning(
-            "ask_horizon_stats_unavailable",
-            extra={"ticker": ticker, "horizon_days": days, "reason": str(e)},
-        )
-        return None
-
-
-def _recommendation_line(recommendation: str, report_days: int | None) -> str:
-    window = _label_days(report_days)
-    if recommendation == "Buy":
-        return (
-            f"Plain answer: the report says Buy for {window}, so it leans toward "
-            "holding/gaining for that window."
-        )
-    if recommendation == "Sell":
-        return (
-            f"Plain answer: the report says Sell for {window}, so it leans toward "
-            "selling/avoiding the hold instead of waiting longer."
-        )
-    if recommendation == "Hold":
-        return (
-            f"Plain answer: the report says Hold for {window}, so there is no clear "
-            "edge; it could go either way."
-        )
-    return "Plain answer: the report does not have enough confidence to call Buy, Hold, or Sell."
-
-
-def _hold_length_line(recommendation: str, report_days: int | None) -> str:
-    window = _label_days(report_days)
-    if recommendation == "Buy":
-        return f"How long: use {window} as the checkpoint, then rerun the report."
-    if recommendation == "Sell":
-        return "How long: this report does not support holding longer; if you keep it, check again soon."
-    if recommendation == "Hold":
-        return f"How long: there is no strong signal, so reassess around {window} or sooner if news/price changes."
-    return "How long: rerun the report when there is enough data for a clear verdict."
-
-
-def _future_window_line(
-    days: int,
-    base_amount: float,
-    original_amount: float,
-    stats: HorizonStats | None,
-) -> str:
-    label = _label_days(days)
-    if stats is None:
-        return f"{label}: I do not have enough price history to calculate this window."
-
-    parts: list[str] = []
-    if stats.typical_swing_pct is not None:
-        swing = abs(stats.typical_swing_pct)
-        low = base_amount * (1 - swing / 100)
-        high = base_amount * (1 + swing / 100)
-        parts.append(f"usually about {_fmt_money(low)}-{_fmt_money(high)}")
-
-    if stats.recent_return_pct is not None:
-        repeat_value = base_amount * (1 + stats.recent_return_pct / 100)
-        parts.append(
-            f"if the latest {label} move repeated: {_fmt_money(repeat_value)} "
-            f"({_fmt_delta(repeat_value - original_amount)} vs your original amount)"
-        )
-
-    if stats.best_window_pct is not None and stats.worst_window_pct is not None:
-        worst = base_amount * (1 + stats.worst_window_pct / 100)
-        best = base_amount * (1 + stats.best_window_pct / 100)
-        parts.append(f"past-year rough extreme: {_fmt_money(worst)}-{_fmt_money(best)}")
-
-    return f"{label}: " + "; ".join(parts) + "."
-
-
-async def _investment_answer(
-    ticker: str, question: str, context: ResearchResponse | None
-) -> str | None:
-    amount = _parse_amount(question)
-    if not _looks_like_money_question(question, amount):
-        return None
-    if context is None:
-        return (
-            "I don't have a fresh report for this one yet. Pick the stock, choose "
-            "how long you'd hold it, and hit Analyze first."
-        )
-
-    report_days = context.report.horizon_days or context.metrics.horizon_days or 14
-    recommendation = context.report.recommendation
-    past_days = _extract_past_days(question)
-    horizons = _extract_requested_horizons(question, report_days) if amount is not None else []
-    stats_by_day = {
-        days: await _stats_for_horizon(ticker, context, days)
-        for days in sorted(set(horizons + ([past_days] if past_days else [])))
+    signals = context.signals
+    return {
+        "ticker": context.ticker,
+        "verdict": {
+            "recommendation": report.recommendation,
+            "confidence_0_to_100": report.confidence,
+            "horizon_days": report.horizon_days,
+            "justification": _clip(report.justification),
+            "simple_summary": _clip(report.simple_summary),
+            "horizon_outlook": _clip(report.horizon_outlook),
+            "key_risks": report.key_risks[:4],
+            "falsifiers": report.falsifiers[:3],
+            "dissent": _clip(report.dissent),
+        },
+        "stats": {
+            "current_price": metrics.current_price,
+            "week_52_low": metrics.week_52_low,
+            "week_52_high": metrics.week_52_high,
+            "pe_ratio": metrics.pe_ratio,
+            "eps": metrics.eps,
+            "revenue": metrics.revenue,
+            "profit_margin": metrics.profit_margin,
+            "debt_to_equity": metrics.debt_to_equity,
+            "horizon_days": metrics.horizon_days,
+            "typical_swing_pct": metrics.typical_swing_pct,
+            "recent_return_pct": metrics.recent_return_pct,
+            "best_window_pct": metrics.best_window_pct,
+            "worst_window_pct": metrics.worst_window_pct,
+        },
+        "news": {
+            "sentiment_minus1_to_1": context.news.sentiment_score,
+            "summary": _clip(context.news.summary),
+            "top_headlines": [
+                {"title": h.title, "sentiment": h.score}
+                for h in context.news.top_headlines[:5]
+            ],
+        },
+        "insiders": {
+            "buys": context.insider.buy_count,
+            "sells": context.insider.sell_count,
+            "summary": _clip(context.insider.summary, 200),
+        },
+        "market_signals": {
+            "analyst_consensus": signals.analyst.consensus if signals.analyst else None,
+            "analyst_target": (
+                signals.fundamentals.analyst_target if signals.fundamentals else None
+            ),
+            "retail_sentiment": signals.retail.label if signals.retail else None,
+            "macro_regime": signals.macro.regime if signals.macro else None,
+            "days_to_earnings": signals.earnings_days,
+        },
+        "sec_findings": [
+            {"question": f.question, "answer": _clip(f.answer, 300)}
+            for f in context.sec.findings[:3]
+        ],
     }
-
-    lines: list[str] = []
-    current_value = amount
-    if amount is not None:
-        if past_days:
-            stats = stats_by_day.get(past_days)
-            if stats and stats.recent_return_pct is not None:
-                current_value = amount * (1 + stats.recent_return_pct / 100)
-                lines.append(
-                    f"Assuming you invested {_fmt_money(amount)} in {ticker} "
-                    f"{_label_days(past_days)} ago, it would be about "
-                    f"{_fmt_money(current_value)} right now: "
-                    f"{_fmt_delta(current_value - amount)} ({_fmt_pct(stats.recent_return_pct)})."
-                )
-            else:
-                lines.append(
-                    f"Assuming you invested {_fmt_money(amount)} in {ticker} "
-                    f"{_label_days(past_days)} ago, I cannot calculate the current return "
-                    "from the available price history."
-                )
-        else:
-            price = context.metrics.current_price
-            share_text = ""
-            if price and price > 0:
-                share_text = (
-                    f" at about {_fmt_money(price)}/share, you would own about "
-                    f"{amount / price:.4f} shares"
-                )
-            lines.append(f"If you put {_fmt_money(amount)} into {ticker} right now{share_text}.")
-
-    lines.append(_recommendation_line(recommendation, report_days))
-    lines.append(_hold_length_line(recommendation, report_days))
-
-    if amount is not None:
-        base_for_future = current_value if past_days and current_value is not None else amount
-        heading = (
-            "If you keep holding from today's estimated value:"
-            if past_days
-            else "What the next windows could look like:"
-        )
-        lines.append(heading)
-        for days in horizons:
-            lines.append(
-                _future_window_line(
-                    days,
-                    base_for_future,
-                    amount,
-                    stats_by_day.get(days),
-                )
-            )
-    else:
-        lines.append("I need the dollar amount and when you bought to calculate your return.")
-
-    lines.append("Nobody can know the exact future number; these are past swing ranges, not promises.")
-    return "\n".join(lines)
-
-
-_ASK_SYSTEM = """You are Verdict's analyst assistant, talking to a regular
-person who may know nothing about the stock market. The user already ran a
-research report. You receive it as JSON — the important parts are:
-  • report.recommendation : Buy / Hold / Sell (the verdict)
-  • report.horizon_days   : how long the user plans to hold (e.g. 14 = 2 weeks)
-  • metrics.current_price : today's price per share
-  • metrics.typical_swing_pct : how much the price normally moves over the
-        user's window, up OR down (e.g. 7 means ±7%)
-  • metrics.recent_return_pct : how it actually moved over the most recent window
-  • metrics.best_window_pct / worst_window_pct : best and worst that window did
-        in the past year
-
-You also have a `search_filing` tool for questions about the company's official
-filing that the report doesn't already answer. Don't use it for money questions.
-
-ANSWER THE QUESTION THEY ACTUALLY ASKED. Talk in plain words and real dollars,
-not jargon. Keep it to 2-5 short sentences.
-
-THE MOST COMMON QUESTION — "if I put in $X, do I gain or lose (over my window)?"
-Answer it head-on, in this shape:
-  1. State the lean from the verdict: Buy = "leans toward gaining", Sell =
-     "leans toward losing", Hold = "roughly a coin flip / could go either way".
-  2. Give the realistic dollar range using typical_swing_pct on their $X:
-     low  = X * (1 - swing/100), high = X * (1 + swing/100).
-     e.g. $100 with a 7% typical 2-week swing → "usually between $93 and $107".
-  3. Give the rough extremes from best_window_pct / worst_window_pct if present.
-  4. One plain-English sentence on WHY (the main reason behind the verdict).
-Then always end with: "Nobody can know the exact number — this is the usual
-size of the swings, not a promise."
-
-Never say just "the report suggests a Sell" and stop — that does not answer a
-money question. Always translate the verdict into gain/lose + a dollar range.
-
-Other rules:
-  • Use ONLY numbers in the JSON (or filing excerpts). Never invent a price,
-    percentage, or headline. If a needed number is missing, say so plainly.
-  • Frame everything for report.horizon_days. If the user names a different
-    period than the report was run for, answer with what you have but tell them
-    to re-run with that period for an exact match.
-  • This is not personalized financial advice; never tell them how much to buy
-    or when. The gain/lose framing is about the odds the evidence shows, not a
-    guarantee.
-  • If the report context is missing/empty, say: "I don't have a fresh report
-    for this one yet — pick it, choose how long you'd hold it, and hit Analyze."
-"""
 
 _SEARCH_FILING_TOOL = {
     "type": "function",
@@ -538,14 +236,14 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     tracker = start_tracking()
     rid = get_request_id()
 
-    investment_answer = await _investment_answer(ticker, body.question.strip(), body.context)
-    if investment_answer is not None:
+    calculator_answer = await investment_answer(ticker, body.question.strip(), body.context)
+    if calculator_answer is not None:
         log.info(
             "ask_investment_calculator_completed",
             extra={"ticker": ticker, "cost_usd": tracker.total_usd},
         )
         return AskResponse(
-            answer=investment_answer,
+            answer=calculator_answer,
             cost_usd=tracker.total_usd,
             request_id=rid,
             searched_filing=False,
@@ -565,7 +263,9 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
         )
 
     grounding: dict[str, Any] = {"ticker": ticker}
-    grounding["report"] = body.context.model_dump() if body.context is not None else None
+    grounding["report"] = (
+        _distill_context(body.context) if body.context is not None else None
+    )
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _ASK_SYSTEM},
@@ -584,7 +284,7 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
             model=settings.llm_model,
             messages=messages,
             temperature=0.3,
-            max_tokens=500,
+            max_tokens=700,
             tools=[_SEARCH_FILING_TOOL],
         )
         record_chat(settings.llm_model, resp)
@@ -611,16 +311,40 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
                 model=settings.llm_model,
                 messages=messages,
                 temperature=0.3,
-                max_tokens=500,
+                max_tokens=700,
             )
             record_chat(settings.llm_model, resp)
             choice = resp.choices[0]
+
+        answer = (choice.message.content or "").strip()
+        if not answer:
+            # Some models return an empty message (e.g. after deciding not to
+            # call a tool). One firm nudge fixes it far more often than asking
+            # the user to rephrase.
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Answer the question above directly now, in plain "
+                        "text, using the research context."
+                    ),
+                }
+            )
+            resp = await _ask_client().chat.completions.create(
+                model=settings.llm_model,
+                messages=messages,
+                temperature=0.3,
+                max_tokens=700,
+            )
+            record_chat(settings.llm_model, resp)
+            answer = (resp.choices[0].message.content or "").strip()
     except OpenAIError as e:
         log.exception("ask_llm_failed", extra={"error_type": type(e).__name__})
         raise HTTPException(status_code=502, detail=_llm_error_detail(e)) from e
 
-    answer = (choice.message.content or "").strip() or (
-        "I couldn't generate a response. Try rephrasing your question."
+    answer = answer or (
+        "I couldn't put together an answer for that one. Try asking it a "
+        "different way, or run Analyze again for fresh context."
     )
     log.info(
         "ask_completed",

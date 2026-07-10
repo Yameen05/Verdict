@@ -63,7 +63,7 @@ export function toVolumeData(bars: PriceBar[]): HistogramData<UTCTimestamp>[] {
   return bars.map((b) => ({
     time: toTimestamp(b.time),
     value: b.volume ?? 0,
-    color: b.close >= b.open ? "rgba(34, 197, 94, 0.38)" : "rgba(239, 68, 68, 0.38)",
+    color: b.close >= b.open ? "rgba(22, 163, 74, 0.35)" : "rgba(220, 38, 38, 0.35)",
   }));
 }
 
@@ -203,9 +203,9 @@ const VERDICT_STYLE: Record<
   string,
   { color: string; shape: "arrowUp" | "arrowDown" | "circle"; position: "aboveBar" | "belowBar" }
 > = {
-  Buy: { color: "#22c55e", shape: "arrowUp", position: "belowBar" },
-  Sell: { color: "#ef4444", shape: "arrowDown", position: "aboveBar" },
-  Hold: { color: "#f59e0b", shape: "circle", position: "aboveBar" },
+  Buy: { color: "#16a34a", shape: "arrowUp", position: "belowBar" },
+  Sell: { color: "#dc2626", shape: "arrowDown", position: "aboveBar" },
+  Hold: { color: "#d97706", shape: "circle", position: "aboveBar" },
 };
 
 function parseIso(iso: string): number {

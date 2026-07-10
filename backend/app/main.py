@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
@@ -20,7 +21,17 @@ from app.middleware import (
 )
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
-from app.routers import ask, auth, filings, health, invites, market, research, scoreboard
+from app.routers import (
+    ask,
+    auth,
+    filings,
+    health,
+    invites,
+    market,
+    research,
+    scoreboard,
+    user_state,
+)
 from app.security import require_authenticated
 
 
@@ -40,7 +51,26 @@ async def lifespan(app: FastAPI):
     )
     await init_db()
     log.info("db_ready")
+
+    # Server-side alert evaluation. Disabled in tests (and via env) so the
+    # suite never spins a background loop or hits live quote providers.
+    worker_task: asyncio.Task | None = None
+    worker_stop = asyncio.Event()
+    if settings.alerts_check_seconds > 0 and settings.environment != "test":
+        from app.services.alerts_worker import run_worker
+
+        worker_task = asyncio.create_task(
+            run_worker(worker_stop, settings.alerts_check_seconds)
+        )
+
     yield
+
+    if worker_task is not None:
+        worker_stop.set()
+        try:
+            await asyncio.wait_for(worker_task, timeout=5)
+        except (TimeoutError, asyncio.CancelledError):
+            worker_task.cancel()
     log.info("shutdown")
 
 
@@ -66,7 +96,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=[
             "Content-Type",
             "X-Bootstrap-Token",
@@ -152,6 +182,12 @@ def create_app() -> FastAPI:
         market.router,
         prefix="/market",
         tags=["market"],
+        dependencies=protected,
+    )
+    app.include_router(
+        user_state.router,
+        prefix="/me",
+        tags=["user-state"],
         dependencies=protected,
     )
 

@@ -16,6 +16,7 @@ import pytest
 from app.config import get_settings
 from app.limiter import limiter
 from app.routers import ask as research_mod
+from app.services import investment_answer as invest_mod
 from app.services.metrics_client import HorizonStats
 
 
@@ -133,7 +134,7 @@ def test_investment_question_returns_simple_dollar_windows_without_llm(
     client, monkeypatch
 ):
     monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("LLM was called"))
-    monkeypatch.setattr(research_mod, "fetch_horizon_stats", _fake_horizon_stats)
+    monkeypatch.setattr(invest_mod, "fetch_horizon_stats", _fake_horizon_stats)
 
     resp = client.post(
         "/research/ask",
@@ -162,7 +163,7 @@ def test_past_investment_question_returns_current_return_and_hold_guidance(
     client, monkeypatch
 ):
     monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("LLM was called"))
-    monkeypatch.setattr(research_mod, "fetch_horizon_stats", _fake_horizon_stats)
+    monkeypatch.setattr(invest_mod, "fetch_horizon_stats", _fake_horizon_stats)
 
     resp = client.post(
         "/research/ask",
@@ -189,7 +190,7 @@ def test_sell_or_hold_question_without_amount_still_gets_plain_guidance(
 ):
     monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("LLM was called"))
     monkeypatch.setattr(
-        research_mod,
+        invest_mod,
         "fetch_horizon_stats",
         lambda *_args, **_kwargs: pytest.fail("price history was called"),
     )
@@ -237,3 +238,134 @@ def test_ask_is_rate_limited(client, monkeypatch):
 
     assert statuses[:2] == [200, 200], f"first two should pass, got {statuses}"
     assert statuses[2] == 429, f"third should be rate-limited, got {statuses}"
+
+
+def test_why_question_with_money_words_goes_to_llm(client, monkeypatch):
+    """'Why …?' must reach the LLM even when it mentions amounts/sell/hold.
+
+    The calculator's template can't answer reasoning questions; routing them
+    there made the analyst look like it refused to answer.
+    """
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        research_mod, "_ask_client", lambda: _fake_ask_client("Because the downside case won.")
+    )
+    monkeypatch.setattr(
+        invest_mod,
+        "fetch_horizon_stats",
+        lambda *_a, **_k: pytest.fail("calculator should not run for a why-question"),
+    )
+
+    resp = client.post(
+        "/research/ask",
+        json={
+            "ticker": "NVDA",
+            "question": "Why does it say sell? I invested $100 last week and wanted to hold.",
+            "context": _research_context("Sell"),
+            "history": [],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "Because the downside case won."
+
+
+def test_position_words_without_amount_go_to_llm(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(
+        research_mod, "_ask_client", lambda: _fake_ask_client("Grounded LLM answer.")
+    )
+
+    resp = client.post(
+        "/research/ask",
+        json={
+            "ticker": "NVDA",
+            "question": "Is what I bought still worth holding given the news?",
+            "context": _research_context("Hold"),
+            "history": [],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "Grounded LLM answer."
+
+
+def test_parse_amount_supports_k_and_m_suffixes():
+    from app.services.investment_answer import _parse_amount
+
+    assert _parse_amount("if I put $1k in today") == 1000.0
+    assert _parse_amount("invest 2.5k dollars") == 2500.0
+    assert _parse_amount("what if I invested $1m") == 1_000_000.0
+    assert _parse_amount("what about $250?") == 250.0
+    assert _parse_amount("hold for 2 weeks") is None
+
+
+def test_llm_grounding_is_distilled_not_full_payload(client, monkeypatch):
+    captured: dict = {}
+
+    class _Completions:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+            )
+
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: fake)
+
+    resp = client.post(
+        "/research/ask",
+        json={
+            "ticker": "NVDA",
+            "question": "Why is the outlook mixed?",
+            "context": _research_context("Hold"),
+            "history": [],
+        },
+    )
+    assert resp.status_code == 200
+    grounding = captured["messages"][1]["content"]
+    # Distilled fields present…
+    assert '"verdict"' in grounding
+    assert '"typical_swing_pct"' in grounding
+    assert '"insiders"' in grounding
+    # …raw-payload noise absent.
+    assert '"evidence"' not in grounding
+    assert '"company_overview"' not in grounding
+    assert '"arguments"' not in grounding
+    assert captured["max_tokens"] == 700
+
+
+def test_empty_llm_answer_retries_with_a_nudge(client, monkeypatch):
+    calls: list[dict] = []
+
+    class _Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            content = "" if len(calls) == 1 else "Here is the direct answer."
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+            )
+
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: fake)
+
+    resp = client.post(
+        "/research/ask",
+        json={
+            "ticker": "NVDA",
+            "question": "Explain the biggest risk here.",
+            "context": _research_context("Hold"),
+            "history": [],
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "Here is the direct answer."
+    assert len(calls) == 2
+    # The nudge is appended as the final user message of the retry.
+    assert "directly now" in calls[1]["messages"][-1]["content"]

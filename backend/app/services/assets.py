@@ -26,8 +26,32 @@ CRYPTO_SKIP_REASON = (
 
 
 def is_crypto(ticker: str) -> bool:
-    return ticker.strip().upper() in CRYPTO_NAMES
+    ticker = ticker.strip().upper()
+    # The curated list catches the majors; the -USD suffix catches the rest of
+    # Yahoo's coin universe so an unlisted coin is still treated as crypto.
+    return ticker in CRYPTO_NAMES or ticker.endswith("-USD")
 
 
 def crypto_name(ticker: str) -> str | None:
     return CRYPTO_NAMES.get(ticker.strip().upper())
+
+
+def asset_capabilities(ticker: str) -> dict:
+    """What kinds of evidence exist for this asset.
+
+    Panels use this to hide sections that *cannot* apply (a coin has no SEC
+    filings) instead of rendering them as "missing", which reads like an error.
+    """
+    ticker = ticker.strip().upper()
+    crypto = is_crypto(ticker)
+    return {
+        "ticker": ticker,
+        "asset_class": "crypto" if crypto else "equity",
+        "display_name": crypto_name(ticker),
+        "has_filings": not crypto,
+        "has_insiders": not crypto,
+        "has_earnings": not crypto,
+        "has_analyst_coverage": not crypto,
+        "trades_24_7": crypto,
+        "note": CRYPTO_SKIP_REASON if crypto else None,
+    }
