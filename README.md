@@ -11,8 +11,10 @@ Verdict is a full-stack, multi-agent stock and crypto research workspace. Pick a
 ticker, choose how long you would hold it, inspect the live chart, and get a
 plain-English Buy / Hold / Sell report that explains what could happen to a
 specific dollar amount over 1 week, 2 weeks, 1 month, 3 months, and 1 year.
-The UI ships in a light "verdant" theme — sage surfaces, deep pine text, and
-emerald/teal/amber accents.
+A separate day-trading desk runs five intraday agents plus a risk manager for
+buy / sell / stand-aside calls with an entry, stop, and target. The UI ships
+in an editorial "ink & copper" theme — warm ink surfaces, copper accents, a
+serif display face for the big moments, and a matching warm-paper light mode.
 
 > Verdict is a software demo and research workflow exploration tool. It is not
 > financial advice.
@@ -20,6 +22,9 @@ emerald/teal/amber accents.
 ![Verdict research dashboard](docs/assets/verdict-live-dashboard.png)
 
 ## Product Tour
+
+The app is organized into five pages: **Research**, **Day trading**,
+**Analyst**, **History**, and **Scoreboard**.
 
 ### Research Workspace
 
@@ -48,6 +53,23 @@ follow you across browsers and devices.
 
 ![Verdict planning panels](docs/assets/verdict-live-planning-panels.png)
 
+### Day-Trading Desk
+
+A dedicated page for intraday decisions on any searchable symbol. Five
+deterministic desk agents read the tape — trend (9/20 EMA stack, prior-day
+territory), momentum (5-minute RSI and MACD), volume/VWAP, levels
+(opening-range breakouts, high/low of day), and catalyst (gaps, news flow) —
+and a risk manager demands multi-agent confluence and at least 1.3R before it
+signs off on **Buy / Sell / Stand aside** with a structure-based entry, stop,
+target, and risk:reward. When an LLM is configured, a "head trader" prompt
+that encodes day-trading discipline (trade the VWAP side, skip the lunch
+chop, never chase extended moves) synthesizes the final call, with the
+deterministic desk as fallback and audit trail. The page adds a rules-only
+scanner that ranks liquid names by setup strength, a position-size calculator
+that works from the stop distance, 60-second auto-refresh, and a US session
+clock (opening drive, lunch, power hour; crypto is 24/7). Most of the day the
+honest answer is "stand aside" — and the desk says so.
+
 ### Alerts That Work While You Sleep
 
 Price alerts and "tell me when the verdict changes" watches are evaluated by a
@@ -66,7 +88,8 @@ scorecard dimensions, dissent, falsifiers, and citable evidence ids.
 
 ### Ask The Analyst
 
-After a report is generated, Verdict opens a contextual chat grounded in a
+The analyst lives on its own page as a grounded chatbot. After a report is
+generated, the chat is grounded in a
 distilled view of that run (verdict, dissent, risks, swing statistics, news,
 insider and analyst signals). Money questions like "what happens to my $200?"
 are answered by a deterministic calculator with exact dollar ranges — no LLM
@@ -74,6 +97,12 @@ call, no cost — while "why?" and "should I sell?" questions go to the model
 with the report's reasoning and the strongest opposing argument in hand. The
 analyst can also search the indexed filing live when a follow-up needs detail
 the report doesn't carry.
+
+### Verdict History
+
+Every past verdict for any ticker lives on its own page: the full run list
+with confidence and cost, plus a timeline that plots each call against the
+price at the moment it was made — so verdict drift is visible at a glance.
 
 ### The Scoreboard
 
@@ -87,9 +116,10 @@ own homework.
 
 ![Verdict scoreboard](docs/assets/verdict-live-scoreboard.png)
 
-Screenshots above were captured from the real React UI and local development
-backend on July 10, 2026 (`frontend/scripts/capture-screenshots.mjs` rebuilds
-them against a throwaway demo database).
+Screenshots were captured from the real React UI and local development
+backend and predate the ink & copper redesign
+(`frontend/scripts/capture-screenshots.mjs` rebuilds them against a throwaway
+demo database).
 
 ## What It Does
 
@@ -136,6 +166,12 @@ them against a throwaway demo database).
 - Timing agent: combines technicals, recent price behavior, news, optional
   market signals, and the selected horizon into simple advice such as "buy
   now", "wait for a pullback", "hold", or "avoid for this window."
+- Day-trade desk: five intraday rule agents (trend, momentum, volume/VWAP,
+  levels, catalyst) over VWAP, fast EMAs, opening ranges, prior-day levels,
+  ATR, and relative volume; a risk manager that refuses trades below 1.3R or
+  without confluence; an optional LLM head trader with deterministic fallback;
+  a rules-only market scanner; and a session clock that never issues a live
+  entry while the market is closed.
 - Fetches the latest SEC `10-K` or `10-Q` for a ticker through SEC EDGAR.
 - Chunks filing text, embeds it with the configured embedding provider, and
   stores vectors in a local SQLite vector store by default (or Pinecone when a
@@ -166,17 +202,16 @@ the whole graph — the judge rules on whatever evidence survives.
 
 ```text
 React + TypeScript + Vite
-  auth gate, watchlist, live chart, timing panel, position tracker,
-  return ranges, SSE trial progress, verdict card, debate panel,
-  evidence ledger, scorecard radar, calibration, source quality,
-  scoreboard, backtests, analyst chat
+  five pages: research (picker, live chart, timing, planner, trial),
+  day trading (desk, scanner, position sizer), analyst chat,
+  verdict history, scoreboard + backtests + calibration
         |
         | REST + Server-Sent Events
         v
 FastAPI
   auth, 2FA, CSRF, rate limits, readiness/config health, market data,
-  per-user workspace state (/me), background alert worker, JSON logs,
-  persistence
+  day-trade desk (/daytrade), per-user workspace state (/me),
+  background alert worker, JSON logs, persistence
         |
         v
 LangGraph StateGraph
@@ -207,7 +242,7 @@ LangGraph StateGraph
 
 | Layer | Tools |
 | --- | --- |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS (CSS-variable theming), Fraunces/Inter/JetBrains Mono |
 | API | FastAPI, Uvicorn, Gunicorn, SlowAPI, SSE Starlette |
 | Agents | LangGraph `StateGraph` |
 | LLM | Any OpenAI-compatible chat completion endpoint |
@@ -218,7 +253,7 @@ LangGraph StateGraph
 | Persistence | SQLAlchemy async ORM, SQLite by default |
 | Security | Argon2id, encrypted TOTP seed, one-time recovery codes, CSRF |
 | Ops | Docker, Docker Compose, nginx SPA proxy, structured JSON logs |
-| Tests | pytest (168 backend), Vitest (33 frontend), pytest-asyncio, pytest-httpx, ruff, TypeScript build |
+| Tests | pytest (179 backend), Vitest (33 frontend), pytest-asyncio, pytest-httpx, ruff, TypeScript build |
 
 ## Repository Layout
 
@@ -229,9 +264,9 @@ Verdict/
 │   │   ├── agents/              # LangGraph state and agent nodes
 │   │   ├── observability/       # JSON logging and token/cost tracking
 │   │   ├── persistence/         # async SQLAlchemy history store
-│   │   ├── routers/             # auth, health, filings, research
+│   │   ├── routers/             # auth, health, filings, research, market, daytrade, /me
 │   │   ├── schemas/             # Pydantic request/response models
-│   │   ├── services/            # SEC, LLM, embeddings, news, metrics, market signals
+│   │   ├── services/            # SEC, LLM, embeddings, news, metrics, market signals, day-trade desk
 │   │   └── tests/               # mocked backend test suite
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
@@ -239,7 +274,7 @@ Verdict/
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 # typed REST/SSE client split: http, auth, types, user state
-│   │   ├── components/          # auth, picker, chart (chart/ hooks + controls), report, planner, chat
+│   │   ├── components/          # auth, picker, chart (chart/ hooks + controls), daytrade/, report, planner, chat
 │   │   ├── lib/                 # pure logic: position math, disagreements, migration
 │   │   └── App.tsx
 │   ├── scripts/                 # README screenshot capture (puppeteer-core)
@@ -388,6 +423,8 @@ tracking variables.
 | `GET` | `/market/{ticker}/ranges` | Return ranges for a custom dollar amount |
 | `GET` | `/market/{ticker}/capabilities` | Which evidence exists for this asset (equity vs crypto) |
 | `GET` | `/market/backtest` | Horizon-aware hit-rate and return backtests |
+| `GET` | `/daytrade/{ticker}/signal` | Multi-agent intraday buy/sell/stand-aside signal with entry, stop, target |
+| `GET` | `/daytrade/scan` | Rules-only sweep of liquid day-trading names, strongest setups first |
 | `POST` | `/research/{ticker}` | Run the full adversarial research graph; supports `horizon` and `fresh` query params |
 | `GET` | `/research/{ticker}/stream` | Stream node + debate progress and final result over SSE; supports `horizon` and `fresh` query params |
 | `POST` | `/research/ask` | Contextual follow-up; can search the filing via tool use |
@@ -440,7 +477,9 @@ npm run build
 Current local verification (July 10, 2026):
 
 - Backend lint: `ruff check app` passed.
-- Backend tests: `pytest` passed with `168 passed, 9 warnings`.
+- Backend tests: `pytest` passed with `179 passed, 9 warnings` (includes the
+  day-trade desk suite: intraday math, agent votes, risk-plan coherence,
+  session clock).
 - Frontend tests: `vitest` passed with `33 passed` (chart math, position math,
   disagreement logic).
 - Frontend production build: `npm run build` passed.
