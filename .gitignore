@@ -45,11 +45,3 @@ yarn-error.log*
 *.db
 backend/data/
 data/
-
-# Claude / agent tooling
-.claude/
-.claude-flow/
-.roo/
-.roomodes
-.mcp.json
-CLAUDE.md
