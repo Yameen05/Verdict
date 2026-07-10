@@ -1,16 +1,5 @@
 import { useEffect, useState } from "react";
-
-const STORAGE_KEY = "verdict.watchlist";
-
-function load(): string[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
-  } catch {
-    return [];
-  }
-}
+import { userStateApi } from "../api/client";
 
 interface Props {
   ticker: string;
@@ -18,16 +7,41 @@ interface Props {
 }
 
 export function WatchlistBar({ ticker, onSelect }: Props) {
-  const [list, setList] = useState<string[]>(load);
+  const [list, setList] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-  }, [list]);
+    let cancelled = false;
+    userStateApi
+      .watchlist()
+      .then((res) => {
+        if (!cancelled) setList(res.tickers);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Watchlist unavailable");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const watching = list.includes(ticker);
 
+  function apply(promise: Promise<{ tickers: string[] }>) {
+    promise
+      .then((res) => {
+        setList(res.tickers);
+        setError(null);
+      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "Watchlist update failed"),
+      );
+  }
+
   function toggle() {
-    setList((l) => (watching ? l.filter((t) => t !== ticker) : [...l, ticker].slice(0, 12)));
+    apply(
+      watching ? userStateApi.removeWatchlist(ticker) : userStateApi.addWatchlist(ticker),
+    );
   }
 
   if (list.length === 0 && !ticker) return null;
@@ -50,7 +64,7 @@ export function WatchlistBar({ ticker, onSelect }: Props) {
             {t}
           </button>
           <button
-            onClick={() => setList((l) => l.filter((x) => x !== t))}
+            onClick={() => apply(userStateApi.removeWatchlist(t))}
             className="pr-2 text-slate-500 hover:text-rose-400"
             title={`Remove ${t} from watchlist`}
             aria-label={`Remove ${t} from watchlist`}
@@ -69,6 +83,7 @@ export function WatchlistBar({ ticker, onSelect }: Props) {
       >
         {watching ? `★ ${ticker} watched` : `☆ Watch ${ticker}`}
       </button>
+      {error && <span className="text-[10px] text-rose-400">{error}</span>}
     </div>
   );
 }

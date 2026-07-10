@@ -44,6 +44,8 @@ class BacktestEntry(BaseModel):
     ticker: str
     recommendation: str
     confidence: int | None = None
+    # Model that issued the verdict; keeps hit rates comparable across swaps.
+    model: str | None = None
     horizon_days: int
     created_at: datetime
     evaluated_at: str | None = None
@@ -61,6 +63,16 @@ class HorizonStat(BaseModel):
     avg_return_pct: float | None = None
 
 
+class ConfidenceBucket(BaseModel):
+    """Calibration check: did high-confidence calls actually hit more often?"""
+
+    label: str  # e.g. "70-79"
+    scored: int = 0
+    hits: int = 0
+    hit_rate: float | None = None
+    avg_confidence: float | None = None
+
+
 class BacktestSummary(BaseModel):
     total_runs: int = 0
     scored: int = 0
@@ -69,6 +81,10 @@ class BacktestSummary(BaseModel):
     hit_rate: float | None = None
     avg_return_pct: float | None = None
     by_horizon: list[HorizonStat] = Field(default_factory=list)
+    by_confidence: list[ConfidenceBucket] = Field(default_factory=list)
+    # Mean squared gap between stated confidence and the 0/1 outcome across
+    # matured calls. 0 is perfect; 0.25 is what always saying 50% would score.
+    brier_score: float | None = None
     rule: str = (
         f"Each verdict is graded at its own horizon: Buy hits if price rose, "
         f"Sell if it fell, Hold within ±{HOLD_BAND_PCT:.0f}%. Verdicts whose "
@@ -79,6 +95,40 @@ class BacktestSummary(BaseModel):
 class BacktestResponse(BaseModel):
     entries: list[BacktestEntry] = Field(default_factory=list)
     summary: BacktestSummary
+
+
+_CONFIDENCE_BUCKETS: tuple[tuple[str, int, int], ...] = (
+    ("<50", 0, 49),
+    ("50-59", 50, 59),
+    ("60-69", 60, 69),
+    ("70-79", 70, 79),
+    ("80-100", 80, 100),
+)
+
+
+def _confidence_calibration(
+    scored_calls: list[tuple[int, bool]],
+) -> tuple[list[ConfidenceBucket], float | None]:
+    """Bucketed hit rates + Brier score from (confidence, hit) pairs."""
+    if not scored_calls:
+        return [], None
+    buckets: list[ConfidenceBucket] = []
+    for label, low, high in _CONFIDENCE_BUCKETS:
+        members = [(c, hit) for c, hit in scored_calls if low <= c <= high]
+        if not members:
+            continue
+        hits = sum(hit for _, hit in members)
+        buckets.append(
+            ConfidenceBucket(
+                label=label,
+                scored=len(members),
+                hits=hits,
+                hit_rate=round(hits / len(members), 4),
+                avg_confidence=round(sum(c for c, _ in members) / len(members), 1),
+            )
+        )
+    brier = sum((c / 100.0 - float(hit)) ** 2 for c, hit in scored_calls) / len(scored_calls)
+    return buckets, round(brier, 4)
 
 
 def _outcome(recommendation: str, return_pct: float) -> Literal["hit", "miss"]:
@@ -118,6 +168,7 @@ def compute_backtest(
     hits = 0
     immature = 0
     all_returns: list[float] = []
+    scored_confidence: list[tuple[int, bool]] = []
 
     for run in runs:
         horizon = run.horizon_days or default_horizon_days
@@ -126,6 +177,8 @@ def compute_backtest(
             ticker=run.ticker,
             recommendation=run.recommendation,
             confidence=run.confidence,
+            # getattr: legacy RunLike fakes in tests may not carry the field.
+            model=getattr(run, "llm_model", None),
             horizon_days=horizon,
             created_at=run.created_at,
             price_at_run=run.price_at_run,
@@ -151,6 +204,10 @@ def compute_backtest(
                     scored += 1
                     hits += entry.outcome == "hit"
                     all_returns.append(ret)
+                    if run.confidence is not None:
+                        scored_confidence.append(
+                            (run.confidence, entry.outcome == "hit")
+                        )
                     horizon_buckets.setdefault(horizon, []).append(ret)
                     horizon_hits[horizon] = horizon_hits.get(horizon, 0) + (
                         entry.outcome == "hit"
@@ -170,6 +227,7 @@ def compute_backtest(
         for h, rets in sorted(horizon_buckets.items())
     ]
 
+    by_confidence, brier = _confidence_calibration(scored_confidence)
     summary = BacktestSummary(
         total_runs=len(runs),
         scored=scored,
@@ -178,5 +236,7 @@ def compute_backtest(
         hit_rate=round(hits / scored, 4) if scored else None,
         avg_return_pct=round(sum(all_returns) / len(all_returns), 2) if all_returns else None,
         by_horizon=by_horizon,
+        by_confidence=by_confidence,
+        brier_score=brier,
     )
     return BacktestResponse(entries=entries, summary=summary)

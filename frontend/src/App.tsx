@@ -15,19 +15,33 @@ import { WatchlistBar } from "./components/WatchlistBar";
 import { InvitesPanel } from "./components/InvitesPanel";
 import { StockChartPanel } from "./components/StockChartPanel";
 import { TimingPanel } from "./components/chart/TimingPanel";
+import { ReturnRangePanel } from "./components/ReturnRangePanel";
+import { PositionTracker } from "./components/PositionTracker";
+import { CalibrationPanel } from "./components/CalibrationPanel";
+import { SourceQualityPanel } from "./components/SourceQualityPanel";
+import { DisagreementPanel } from "./components/DisagreementPanel";
+import { ApiStatusPanel } from "./components/ApiStatusPanel";
+import { SmartAlertsPanel } from "./components/SmartAlertsPanel";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
+import { migrateLocalStateOnce } from "./lib/migrateLocalState";
 import {
   api,
   streamResearch,
+  type AssetCapabilities,
+  type ConfigStatus,
   type DebateCase,
   type EvidenceItem,
   type FilingForm,
   type QueryResponse,
   type ResearchResponse,
   type ReadinessBody,
+  type TimingAssessment,
 } from "./api/client";
 
 type AgentStates = Record<AgentKey, AgentState>;
+type ThemeMode = "dark" | "light";
+
+const THEME_STORAGE_KEY = "verdict-theme-v2";
 
 const INITIAL_AGENT_STATES: AgentStates = {
   sec_agent: { status: "idle" },
@@ -42,6 +56,10 @@ const INITIAL_AGENT_STATES: AgentStates = {
 
 function companyName(ticker: string): string {
   return POPULAR_STOCKS.find((s) => s.ticker === ticker)?.name ?? ticker;
+}
+
+function initialTheme(): ThemeMode {
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
 }
 
 // Holding periods the backend accepts; labels avoid jargon on purpose.
@@ -86,9 +104,16 @@ export default function App({
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [readiness, setReadiness] = useState<ReadinessBody | null>(null);
+  const [configStatus, setConfigStatus] = useState<ConfigStatus | null>(null);
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const [showInvites, setShowInvites] = useState(false);
+  const [theme, setTheme] = useState<ThemeMode>(initialTheme);
   const [cacheInfo, setCacheInfo] = useState<{ ageMinutes: number } | null>(null);
+  const [timingAssessment, setTimingAssessment] = useState<TimingAssessment | null>(null);
+  const [capabilities, setCapabilities] = useState<AssetCapabilities | null>(null);
+  // Freshest price known for the current ticker, reported up by the chart's
+  // live poll; panels prefer it over prices frozen in the last research run.
+  const [livePrice, setLivePrice] = useState<number | null>(null);
   // Live debate state — filled progressively over the SSE custom stream.
   const [liveBull, setLiveBull] = useState<DebateCase | null>(null);
   const [liveBear, setLiveBear] = useState<DebateCase | null>(null);
@@ -96,11 +121,40 @@ export default function App({
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
     api
       .ready()
       .then(({ body }) => setReadiness(body))
       .catch(() => setReadiness(null));
+    api
+      .configStatus()
+      .then(setConfigStatus)
+      .catch(() => setConfigStatus(null));
+    // Push any pre-account localStorage state (watchlist, alerts, positions,
+    // levels) to the server once, then it lives with the account.
+    void migrateLocalStateOnce();
   }, []);
+
+  useEffect(() => {
+    setTimingAssessment(null);
+    setLivePrice(null);
+    let cancelled = false;
+    api
+      .capabilities(ticker)
+      .then((res) => {
+        if (!cancelled) setCapabilities(res);
+      })
+      .catch(() => {
+        if (!cancelled) setCapabilities(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ticker]);
 
   function setAgent(key: AgentKey, state: AgentState) {
     setAgents((s) => ({ ...s, [key]: state }));
@@ -379,6 +433,25 @@ export default function App({
             >
               Sign out
             </button>
+            <button
+              type="button"
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              aria-pressed={theme === "dark"}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              className="flex h-8 items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-2 text-slate-300 transition hover:border-indigo-500/60 hover:text-slate-100"
+            >
+              <span className="relative h-4 w-8 rounded-full border border-slate-700 bg-slate-950">
+                <span
+                  className={`absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-indigo-300 shadow-sm shadow-indigo-900/40 transition ${
+                    theme === "dark" ? "left-[17px]" : "left-1"
+                  }`}
+                />
+              </span>
+              <span className="hidden text-[11px] font-medium sm:inline">
+                {theme === "dark" ? "Dark" : "Light"}
+              </span>
+            </button>
           </div>
         </div>
       </nav>
@@ -399,9 +472,29 @@ export default function App({
             <section className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
               <StockPicker ticker={ticker} setTicker={setTicker} />
 
-              <StockChartPanel ticker={ticker} />
+              <StockChartPanel
+                ticker={ticker}
+                research={research}
+                timing={timingAssessment}
+                onPrice={setLivePrice}
+              />
 
-              <TimingPanel ticker={ticker} />
+              {/* key resets the panel's result when the ticker changes, so a
+                  stale assessment never shows against the new symbol. */}
+              <TimingPanel key={ticker} ticker={ticker} onAssessment={setTimingAssessment} />
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <PositionTracker ticker={ticker} research={research} timing={timingAssessment} />
+                <ReturnRangePanel ticker={ticker} />
+              </div>
+
+              <SmartAlertsPanel
+                ticker={ticker}
+                research={research}
+                timing={timingAssessment}
+                livePrice={livePrice}
+                capabilities={capabilities}
+              />
 
               <div className="border-t border-slate-800 pt-5">
                 <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-400">
@@ -530,6 +623,26 @@ export default function App({
                 />
               </div>
             )}
+
+            <div className="mt-6 grid gap-4 xl:grid-cols-2">
+              <CalibrationPanel report={research} refreshKey={historyRefresh} />
+              <ApiStatusPanel
+                config={configStatus}
+                readiness={readiness}
+                lastStatus={status}
+                cachedAgeMinutes={cacheInfo?.ageMinutes ?? null}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <SourceQualityPanel
+                research={research}
+                readiness={readiness}
+                config={configStatus}
+                capabilities={capabilities}
+              />
+              <DisagreementPanel research={research} timing={timingAssessment} />
+            </div>
 
             {showDebate && (
               <DebatePanel

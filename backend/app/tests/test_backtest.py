@@ -119,3 +119,35 @@ async def test_backtest_endpoint(client, monkeypatch):
     assert body["summary"]["scored"] == 1
     assert body["summary"]["hits"] == 1
     assert body["entries"][0]["outcome"] == "hit"
+
+
+def test_confidence_calibration_and_brier():
+    created = NOW - timedelta(days=30)
+    history = _daily(created, [100.0 + i for i in range(31)])  # rising → Buy hits
+    falling = _daily(created, [100.0 - i for i in range(31)])  # falling → Buy misses
+    runs = [
+        FakeRun(1, "AAPL", "Buy", 14, 100.0, created, confidence=80),   # hit
+        FakeRun(2, "MSFT", "Buy", 14, 100.0, created, confidence=80),   # miss
+        FakeRun(3, "NVDA", "Buy", 14, 100.0, created, confidence=60),   # hit
+        FakeRun(4, "TSLA", "Buy", 14, 100.0, created, confidence=None), # excluded
+    ]
+    res = compute_backtest(
+        runs,
+        {"AAPL": history, "MSFT": falling, "NVDA": history, "TSLA": history},
+        now=NOW,
+    )
+
+    buckets = {b.label: b for b in res.summary.by_confidence}
+    assert buckets["80-100"].scored == 2
+    assert buckets["80-100"].hits == 1
+    assert buckets["80-100"].hit_rate == pytest.approx(0.5)
+    assert buckets["60-69"].scored == 1
+    assert buckets["60-69"].hit_rate == pytest.approx(1.0)
+    # Brier: mean of (0.8-1)^2, (0.8-0)^2, (0.6-1)^2 = (0.04+0.64+0.16)/3
+    assert res.summary.brier_score == pytest.approx(0.28, abs=1e-4)
+
+
+def test_calibration_empty_when_nothing_scored():
+    res = compute_backtest([], {}, now=NOW)
+    assert res.summary.by_confidence == []
+    assert res.summary.brier_score is None

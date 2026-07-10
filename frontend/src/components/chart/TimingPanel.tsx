@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, type TimingAction, type TimingAssessment } from "../../api/client";
+import { InfoTip } from "../InfoTip";
 
 const ACTION_STYLE: Record<TimingAction, string> = {
   buy_now: "border-emerald-500/50 bg-emerald-500/10 text-emerald-300",
@@ -39,10 +40,13 @@ const HORIZONS: { days: number; label: string }[] = [
   { days: 90, label: "3 months" },
 ];
 
-function Tech({ label, value }: { label: string; value: string }) {
+function Tech({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+        {hint && <InfoTip label={label}>{hint}</InfoTip>}
+      </div>
       <div className="mt-0.5 text-sm font-medium text-slate-200">{value}</div>
     </div>
   );
@@ -65,7 +69,7 @@ function ActionHelpIcon({ action }: { action: TimingAction }) {
       >
         i
       </span>
-      <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 max-w-[calc(100vw-3rem)] rounded-md border border-slate-700 bg-slate-950 p-3 text-left shadow-xl shadow-black/40 group-hover:block group-focus-within:block">
+      <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 max-w-[calc(100vw-3rem)] rounded-md border border-slate-700 bg-slate-950 p-3 text-left shadow-xl shadow-black/10 group-hover:block group-focus-within:block">
         <span className="block text-xs font-semibold text-slate-100">{help.title}</span>
         <span className="mt-1 block text-[11px] leading-relaxed text-slate-400">
           {help.body}
@@ -75,7 +79,13 @@ function ActionHelpIcon({ action }: { action: TimingAction }) {
   );
 }
 
-export function TimingPanel({ ticker }: { ticker: string }) {
+export function TimingPanel({
+  ticker,
+  onAssessment,
+}: {
+  ticker: string;
+  onAssessment?: (assessment: TimingAssessment | null) => void;
+}) {
   const [horizon, setHorizon] = useState(14);
   const [data, setData] = useState<TimingAssessment | null>(null);
   const [loading, setLoading] = useState(false);
@@ -87,9 +97,15 @@ export function TimingPanel({ ticker }: { ticker: string }) {
     setError(null);
     api
       .timing(ticker, days)
-      .then(setData)
+      .then((assessment) => {
+        setData(assessment);
+        onAssessment?.(assessment);
+      })
       .catch((e: unknown) =>
-        setError(e instanceof Error ? e.message : "Timing assessment failed"),
+        {
+          onAssessment?.(null);
+          setError(e instanceof Error ? e.message : "Timing assessment failed");
+        },
       )
       .finally(() => setLoading(false));
   }
@@ -184,12 +200,29 @@ export function TimingPanel({ ticker }: { ticker: string }) {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            <Tech label="Trend" value={String(t.trend ?? "—")} />
-            <Tech label="RSI (14)" value={fmtNum(t.rsi14)} />
-            <Tech label="20d move" value={fmtNum(t.momentum_20d_pct, "%")} />
-            <Tech label="Volatility" value={fmtNum(t.volatility_pct, "%/day")} />
+            <Tech
+              label="Trend"
+              value={String(t.trend ?? "—")}
+              hint="Whether recent price action is generally moving up, down, or sideways."
+            />
+            <Tech
+              label="RSI (14)"
+              value={fmtNum(t.rsi14)}
+              hint="Momentum gauge from 0 to 100. Around 70 can mean stretched; around 30 can mean oversold."
+            />
+            <Tech
+              label="20d move"
+              value={fmtNum(t.momentum_20d_pct, "%")}
+              hint="How much the stock moved over roughly the last trading month."
+            />
+            <Tech
+              label="Volatility"
+              value={fmtNum(t.volatility_pct, "%/day")}
+              hint="Typical day-to-day movement. Higher volatility means bigger swings and smaller position sizes."
+            />
             <Tech
               label="Entry zone"
+              hint="A rough price area where the timing setup looks more reasonable. It is not a guaranteed bottom."
               value={
                 data.entry_zone_low != null && data.entry_zone_high != null
                   ? `$${data.entry_zone_low.toFixed(2)}–$${data.entry_zone_high.toFixed(2)}`

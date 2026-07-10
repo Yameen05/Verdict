@@ -1,6 +1,37 @@
-import type { DebateCase, ResearchResponse } from "./types";
+import type {
+  AskRequest,
+  AskResponse,
+  AssetCapabilities,
+  BacktestResponse,
+  ConfigStatus,
+  CostBreakdown,
+  DebateCase,
+  HistoryResponse,
+  LatestPriceResponse,
+  PriceInterval,
+  PriceRange,
+  PriceHistoryResponse,
+  ReadinessBody,
+  ResearchEnvelope,
+  ResearchResponse,
+  ReturnRangeResponse,
+  ScoreboardResponse,
+  ServerAlert,
+  ServerPosition,
+  TimingAssessment,
+} from "./types";
+import {
+  BASE_URL,
+  deleteJson,
+  errorFromResponse,
+  getJson,
+  postJson,
+  requestHeaders,
+} from "./http";
 
 export * from "./types";
+export * from "./auth";
+export { setCsrfToken } from "./http";
 
 export type FilingForm = "10-K" | "10-Q";
 
@@ -27,218 +58,7 @@ export interface QueryResponse {
   matches: QueryMatch[];
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
 const SSE_MESSAGE_BOUNDARY = /\r?\n\r?\n/;
-let csrfToken = "";
-
-function requestHeaders(extra: Record<string, string> = {}): HeadersInit {
-  return csrfToken ? { ...extra, "X-CSRF-Token": csrfToken } : extra;
-}
-
-export function setCsrfToken(token: string): void {
-  csrfToken = token;
-}
-
-async function errorFromResponse(res: Response): Promise<Error> {
-  const text = await res.text();
-  let detail = text;
-  try {
-    const parsed = JSON.parse(text) as { detail?: unknown; request_id?: unknown };
-    if (typeof parsed.detail === "string") {
-      detail = parsed.request_id
-        ? `${parsed.detail} (request ${String(parsed.request_id)})`
-        : parsed.detail;
-    }
-  } catch {
-    // Keep the original response text when it is not JSON.
-  }
-  return new Error(`${res.status} ${res.statusText}: ${detail}`);
-}
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: requestHeaders({ "Content-Type": "application/json" }),
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    throw await errorFromResponse(res);
-  }
-  return (await res.json()) as T;
-}
-
-export interface AuthUser {
-  id: number;
-  email: string;
-  role: "owner" | "member";
-  two_factor_enabled: boolean;
-}
-
-export interface InviteEntry {
-  id: number;
-  note: string;
-  status: "pending" | "used" | "expired";
-  created_at: string;
-  expires_at: string;
-  used_by_email: string | null;
-  used_at: string | null;
-}
-
-export interface InviteCreated {
-  id: number;
-  code: string; // shown exactly once
-  note: string;
-  expires_at: string;
-}
-
-export interface AuthSession {
-  user: AuthUser;
-  csrf_token: string;
-  requires_2fa_setup: boolean;
-}
-
-export interface LoginChallenge {
-  requires_2fa: true;
-  challenge_token: string;
-}
-
-export interface TwoFactorSetup {
-  secret: string;
-  provisioning_uri: string;
-  qr_code_data_uri: string;
-}
-
-export interface TwoFactorEnabled extends AuthSession {
-  recovery_codes: string[];
-}
-
-async function authJson<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    credentials: "include",
-    headers: requestHeaders((init.headers as Record<string, string> | undefined) ?? {}),
-  });
-  if (!res.ok) throw await errorFromResponse(res);
-  return (await res.json()) as T;
-}
-
-export const authApi = {
-  status: () => authJson<{ bootstrap_required: boolean }>("/auth/status"),
-  me: () => authJson<AuthSession>("/auth/me"),
-  bootstrap: (
-    email: string,
-    password: string,
-    bootstrapToken: string,
-  ) =>
-    authJson<AuthSession>("/auth/bootstrap", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Bootstrap-Token": bootstrapToken,
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-  login: (email: string, password: string) =>
-    authJson<AuthSession | LoginChallenge>("/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    }),
-  register: (inviteCode: string, email: string, password: string) =>
-    authJson<AuthSession>("/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invite_code: inviteCode, email, password }),
-    }),
-  createInvite: (note: string) =>
-    authJson<InviteCreated>("/auth/invites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note }),
-    }),
-  listInvites: () => authJson<{ invites: InviteEntry[] }>("/auth/invites"),
-  revokeInvite: async (id: number) => {
-    const res = await fetch(`${BASE_URL}/auth/invites/${id}`, {
-      method: "DELETE",
-      credentials: "include",
-      headers: requestHeaders(),
-    });
-    if (!res.ok) throw await errorFromResponse(res);
-  },
-  verifyTwoFactor: (challengeToken: string, code: string) =>
-    authJson<AuthSession>("/auth/2fa/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challenge_token: challengeToken, code }),
-    }),
-  setupTwoFactor: () =>
-    authJson<TwoFactorSetup>("/auth/2fa/setup", { method: "POST" }),
-  enableTwoFactor: (code: string) =>
-    authJson<TwoFactorEnabled>("/auth/2fa/enable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    }),
-  logout: async () => {
-    const res = await fetch(`${BASE_URL}/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-      headers: requestHeaders(),
-    });
-    if (!res.ok && res.status !== 401) throw await errorFromResponse(res);
-    csrfToken = "";
-  },
-};
-
-export interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface AskRequest {
-  ticker: string;
-  question: string;
-  context: ResearchResponse | null;
-  history: ChatTurn[];
-}
-
-export interface AskResponse {
-  answer: string;
-  cost_usd: number;
-  request_id: string;
-  searched_filing: boolean;
-}
-
-export type PriceRange = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y";
-export type PriceInterval = "1M" | "5M" | "15M" | "1H" | "1D" | "1W";
-
-export interface PriceBar {
-  time: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number | null;
-}
-
-export interface PriceHistoryResponse {
-  ticker: string;
-  range: PriceRange;
-  interval: PriceInterval;
-  requested_interval: PriceInterval;
-  bars: PriceBar[];
-}
-
-export interface LatestPriceResponse {
-  ticker: string;
-  interval: PriceInterval;
-  requested_interval: PriceInterval;
-  bar: PriceBar;
-}
 
 export const api = {
   health: async () => {
@@ -348,144 +168,77 @@ export const api = {
     });
     return { status: res.status, body: (await res.json()) as ReadinessBody };
   },
+
+  configStatus: async (): Promise<ConfigStatus> => {
+    const res = await fetch(`${BASE_URL}/health/config`, {
+      headers: requestHeaders(),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as ConfigStatus;
+  },
+
+  returnRanges: async (ticker: string, amount = 200): Promise<ReturnRangeResponse> => {
+    const params = new URLSearchParams({ amount: String(amount) });
+    const res = await fetch(
+      `${BASE_URL}/market/${encodeURIComponent(ticker)}/ranges?${params}`,
+      { headers: requestHeaders(), credentials: "include" },
+    );
+    if (!res.ok) {
+      throw await errorFromResponse(res);
+    }
+    return (await res.json()) as ReturnRangeResponse;
+  },
+
+  capabilities: async (ticker: string): Promise<AssetCapabilities> =>
+    getJson<AssetCapabilities>(`/market/${encodeURIComponent(ticker)}/capabilities`),
 };
 
-export interface CostBreakdown {
-  prompt_tokens: number;
-  completion_tokens: number;
-  embedding_tokens: number;
-  total_usd: number;
-}
+/** Per-user workspace state persisted on the backend (was localStorage). */
+export const userStateApi = {
+  watchlist: () => getJson<{ tickers: string[] }>("/me/watchlist"),
+  addWatchlist: (ticker: string) =>
+    postJson<{ tickers: string[] }>("/me/watchlist", { ticker }),
+  removeWatchlist: (ticker: string) =>
+    deleteJson<{ tickers: string[] }>(`/me/watchlist/${encodeURIComponent(ticker)}`),
 
-export interface ResearchEnvelope {
-  request_id: string;
-  duration_ms: number;
-  cost: CostBreakdown;
-  persisted_id: number | null;
-  cached: boolean;
-  cache_age_minutes: number | null;
-  result: ResearchResponse;
-}
+  position: (ticker: string) =>
+    getJson<{ position: ServerPosition | null }>(
+      `/me/positions/${encodeURIComponent(ticker)}`,
+    ),
+  savePosition: (position: ServerPosition) =>
+    postJson<{ position: ServerPosition }>("/me/positions", position),
+  deletePosition: (ticker: string) =>
+    deleteJson<{ position: null }>(`/me/positions/${encodeURIComponent(ticker)}`),
 
-export interface HistoryEntry {
-  id: number;
-  ticker: string;
-  recommendation: "Buy" | "Hold" | "Sell" | "Pending";
-  justification: string;
-  sentiment_score: number | null;
-  confidence: number | null;
-  price_at_run: number | null;
-  duration_ms: number | null;
-  cost_usd: number | null;
-  created_at: string;
-}
+  alerts: (ticker?: string) =>
+    getJson<{ alerts: ServerAlert[] }>(
+      ticker ? `/me/alerts?ticker=${encodeURIComponent(ticker)}` : "/me/alerts",
+    ),
+  createAlert: (ticker: string, direction: "above" | "below", price: number) =>
+    postJson<{ alert: ServerAlert }>("/me/alerts", { ticker, direction, price }),
+  triggerAlert: (id: number) => postJson<{ alert: ServerAlert }>(`/me/alerts/${id}/trigger`, {}),
+  deleteAlert: (id: number) => deleteJson<{ ok: boolean }>(`/me/alerts/${id}`),
 
-export interface ScoreboardEntry {
-  id: number;
-  ticker: string;
-  recommendation: string;
-  confidence: number | null;
-  created_at: string;
-  price_at_run: number | null;
-  current_price: number | null;
-  return_pct: number | null;
-  outcome: "hit" | "miss" | "unscored";
-}
+  levels: (ticker: string) =>
+    getJson<{ prices: number[] }>(`/me/levels/${encodeURIComponent(ticker)}`),
+  addLevel: (ticker: string, price: number) =>
+    postJson<{ prices: number[] }>("/me/levels", { ticker, price }),
+  clearLevels: (ticker: string, price?: number) =>
+    deleteJson<{ prices: number[] }>(
+      `/me/levels/${encodeURIComponent(ticker)}${price !== undefined ? `?price=${price}` : ""}`,
+    ),
 
-export interface ScoreboardSummary {
-  total_runs: number;
-  scored: number;
-  hits: number;
-  hit_rate: number | null;
-  avg_return_buy_pct: number | null;
-  rule: string;
-}
+  verdictWatch: (ticker: string) =>
+    getJson<{ recommendation: string | null }>(
+      `/me/verdict-watch/${encodeURIComponent(ticker)}`,
+    ),
+  setVerdictWatch: (ticker: string, recommendation: string) =>
+    postJson<{ recommendation: string }>("/me/verdict-watch", { ticker, recommendation }),
+};
 
-export interface ScoreboardResponse {
-  entries: ScoreboardEntry[];
-  summary: ScoreboardSummary;
-}
-
-export type BacktestOutcome = "hit" | "miss" | "immature" | "unscored";
-
-export interface BacktestEntry {
-  id: number;
-  ticker: string;
-  recommendation: string;
-  confidence: number | null;
-  horizon_days: number;
-  created_at: string;
-  evaluated_at: string | null;
-  price_at_run: number | null;
-  price_at_horizon: number | null;
-  return_pct: number | null;
-  outcome: BacktestOutcome;
-}
-
-export interface BacktestHorizonStat {
-  horizon_days: number;
-  scored: number;
-  hits: number;
-  hit_rate: number | null;
-  avg_return_pct: number | null;
-}
-
-export interface BacktestSummary {
-  total_runs: number;
-  scored: number;
-  hits: number;
-  immature: number;
-  hit_rate: number | null;
-  avg_return_pct: number | null;
-  by_horizon: BacktestHorizonStat[];
-  rule: string;
-}
-
-export interface BacktestResponse {
-  entries: BacktestEntry[];
-  summary: BacktestSummary;
-}
-
-export type TimingAction =
-  | "buy_now"
-  | "accumulate"
-  | "wait_pullback"
-  | "wait_watch"
-  | "avoid";
-
-export interface TimingAssessment {
-  ticker: string;
-  horizon_days: number;
-  action: TimingAction;
-  action_label: string;
-  confidence: number;
-  summary: string;
-  rationale: string[];
-  risks: string[];
-  entry_zone_low: number | null;
-  entry_zone_high: number | null;
-  technicals: Record<string, unknown>;
-  market_signals: Record<string, unknown>;
-  headlines: string[];
-  as_of: string;
-  source: "llm" | "rules";
-  disclaimer: string;
-}
-
-export interface HistoryResponse {
-  ticker: string;
-  runs: HistoryEntry[];
-}
-
-export interface ReadinessCheck {
-  ok: boolean;
-  detail: string;
-}
-
-export interface ReadinessBody {
-  status: "ready" | "degraded";
-  checks: Record<string, ReadinessCheck>;
-}
 
 // ----- SSE streaming -----
 

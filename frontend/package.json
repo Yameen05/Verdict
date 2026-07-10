@@ -7,7 +7,8 @@
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 5173",
-    "lint": "tsc -b --noEmit"
+    "lint": "tsc -b --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "lightweight-charts": "^5.2.0",
@@ -20,8 +21,10 @@
     "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
+    "puppeteer-core": "^25.3.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^4.1.10"
   }
 }

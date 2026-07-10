@@ -176,6 +176,9 @@ class ResearchRun(Base):
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Which model issued this verdict — keeps scoreboard hit rates comparable
+    # across model/prompt changes. Null on legacy rows.
+    llm_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
@@ -221,6 +224,10 @@ def get_engine():
 
 
 async def init_db() -> None:
+    # Imported for its side effect: registers the user-state tables on
+    # Base.metadata so create_all() below builds them.
+    from app.persistence import user_state  # noqa: F401
+
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -280,12 +287,24 @@ def _migrate_legacy_schema(connection) -> None:
         connection.execute(
             text("ALTER TABLE research_runs ADD COLUMN horizon_days INTEGER")
         )
+    if "llm_model" not in columns:
+        connection.execute(
+            text("ALTER TABLE research_runs ADD COLUMN llm_model VARCHAR(64)")
+        )
     connection.execute(
         text(
             "CREATE INDEX IF NOT EXISTS ix_research_runs_user_id "
             "ON research_runs (user_id)"
         )
     )
+
+
+def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
+    """Session factory for non-request contexts (background workers)."""
+    get_engine()
+    if _sessionmaker is None:
+        raise RuntimeError("Database session factory was not initialized")
+    return _sessionmaker
 
 
 async def session_scope() -> AsyncIterator[AsyncSession]:
@@ -312,6 +331,7 @@ async def save_run(
     confidence: int | None = None,
     price_at_run: float | None = None,
     horizon_days: int | None = None,
+    llm_model: str | None = None,
 ) -> ResearchRun:
     row = ResearchRun(
         user_id=user_id,
@@ -326,6 +346,7 @@ async def save_run(
         duration_ms=duration_ms,
         cost_usd=cost_usd,
         request_id=request_id,
+        llm_model=llm_model,
     )
     session.add(row)
     await session.commit()

@@ -129,6 +129,19 @@ class Settings(BaseSettings):
     daily_runs_per_user: int = Field(default=10, ge=1)
     daily_runs_global: int = Field(default=40, ge=1)
 
+    # --- Server-side alert evaluation ---
+    # How often the background worker checks price alerts. 0 disables it
+    # (alerts then only trigger while someone has the app open).
+    alerts_check_seconds: int = Field(default=60, ge=0, le=3600)
+    # Optional SMTP for alert emails. Blank host = alerts trigger silently and
+    # show up in the UI only.
+    smtp_host: str = Field(default="")
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str = Field(default="")
+    smtp_password: str = Field(default="")
+    smtp_from: str = Field(default="")
+    smtp_starttls: bool = Field(default=True)
+
     # Per-IP rate limits (slowapi syntax: "<count>/<window>")
     rate_limit_research: str = Field(default="30/minute")
     rate_limit_filings: str = Field(default="60/minute")

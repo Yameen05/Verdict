@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.db import list_recent_runs, session_scope
+from app.services.assets import asset_capabilities
 from app.services.backtest import BacktestResponse, compute_backtest
 from app.services.cache import TTLCache
 from app.services.metrics_client import (
@@ -19,6 +20,7 @@ from app.services.metrics_client import (
     PriceBar,
     fetch_latest_price_bar,
     fetch_price_history,
+    horizon_stats_from_closes,
 )
 from app.services.timing import TimingAssessment, TimingError, assess_timing
 
@@ -29,7 +31,7 @@ PriceInterval = Literal["1M", "5M", "15M", "1H", "1D", "1W"]
 MAX_BACKTEST_TICKERS = 25
 _history_cache: TTLCache[tuple[list[PriceBar], str]] = TTLCache(60)
 _quote_cache: TTLCache[tuple[PriceBar, str]] = TTLCache(10)
-_daily_cache: TTLCache[list[PriceBar]] = TTLCache(600)  # 10 min, for backtest
+_daily_cache: TTLCache[list[PriceBar]] = TTLCache(600)  # 10 min; backtest + /ranges
 _timing_cache: TTLCache[TimingAssessment] = TTLCache(120)  # 2 min
 
 
@@ -55,6 +57,40 @@ class LatestPriceResponse(BaseModel):
     interval: PriceInterval
     requested_interval: PriceInterval
     bar: PriceBarResponse
+
+
+class ReturnRangeRow(BaseModel):
+    horizon_days: int
+    label: str
+    amount: float
+    likely_low: float | None = None
+    likely_high: float | None = None
+    normal_move_pct: float | None = None
+    recent_return_pct: float | None = None
+    best_case: float | None = None
+    best_case_pct: float | None = None
+    worst_case: float | None = None
+    worst_case_pct: float | None = None
+
+
+class ReturnRangeResponse(BaseModel):
+    ticker: str
+    amount: float
+    rows: list[ReturnRangeRow]
+    note: str = (
+        "Ranges use this asset's rolling historical moves over roughly the past "
+        "year (longer holds reach further back). They show normal swing size, "
+        "not a guaranteed forecast."
+    )
+
+
+RANGE_HORIZONS: tuple[tuple[int, str], ...] = (
+    (7, "1 week"),
+    (14, "2 weeks"),
+    (30, "1 month"),
+    (90, "3 months"),
+    (365, "1 year"),
+)
 
 
 def _validate_ticker(raw: str) -> str:
@@ -125,6 +161,24 @@ def _reset_cache() -> None:
     _timing_cache.clear()
 
 
+class AssetCapabilities(BaseModel):
+    ticker: str
+    asset_class: str
+    display_name: str | None
+    has_filings: bool
+    has_insiders: bool
+    has_earnings: bool
+    has_analyst_coverage: bool
+    trades_24_7: bool
+    note: str | None
+
+
+@router.get("/{ticker}/capabilities", response_model=AssetCapabilities)
+async def capabilities(ticker: str) -> AssetCapabilities:
+    """Which evidence types exist for this asset (crypto has no SEC filings)."""
+    return AssetCapabilities(**asset_capabilities(_validate_ticker(ticker)))
+
+
 @router.get("/{ticker}/history", response_model=PriceHistoryResponse)
 async def price_history(
     ticker: str,
@@ -176,6 +230,50 @@ async def timing(ticker: str, horizon: int = 14) -> TimingAssessment:
         return await _timing_cache.get_or_set(f"{ticker}:{horizon}", factory)
     except TimingError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+@router.get("/{ticker}/ranges", response_model=ReturnRangeResponse)
+async def return_ranges(ticker: str, amount: float = 200.0) -> ReturnRangeResponse:
+    """Dollar return ranges for common holding windows."""
+    ticker = _validate_ticker(ticker)
+    amount = min(max(float(amount), 1.0), 1_000_000.0)
+
+    closes = [bar.close for bar in await _daily_history(ticker)]
+    if not closes:
+        raise HTTPException(
+            status_code=502, detail=f"No price history available for {ticker}"
+        )
+
+    def row(days: int, label: str) -> ReturnRangeRow:
+        try:
+            stats = horizon_stats_from_closes(closes, days)
+        except MetricsClientError:
+            return ReturnRangeRow(horizon_days=days, label=label, amount=round(amount, 2))
+        swing = stats.typical_swing_pct
+        return ReturnRangeRow(
+            horizon_days=days,
+            label=label,
+            amount=round(amount, 2),
+            likely_low=round(amount * (1 - swing / 100), 2)
+            if swing is not None
+            else None,
+            likely_high=round(amount * (1 + swing / 100), 2)
+            if swing is not None
+            else None,
+            normal_move_pct=swing,
+            recent_return_pct=stats.recent_return_pct,
+            best_case=round(amount * (1 + stats.best_window_pct / 100), 2)
+            if stats.best_window_pct is not None
+            else None,
+            best_case_pct=stats.best_window_pct,
+            worst_case=round(amount * (1 + stats.worst_window_pct / 100), 2)
+            if stats.worst_window_pct is not None
+            else None,
+            worst_case_pct=stats.worst_window_pct,
+        )
+
+    rows = [row(days, label) for days, label in RANGE_HORIZONS]
+    return ReturnRangeResponse(ticker=ticker, amount=round(amount, 2), rows=rows)
 
 
 @router.get("/backtest", response_model=BacktestResponse)

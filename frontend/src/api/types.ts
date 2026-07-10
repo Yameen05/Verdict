@@ -186,3 +186,274 @@ export interface ResearchResponse {
   evidence: EvidenceItem[];
   report: ResearchReport;
 }
+
+// ----- API payload types (moved from client.ts) -----
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AskRequest {
+  ticker: string;
+  question: string;
+  context: ResearchResponse | null;
+  history: ChatTurn[];
+}
+
+export interface AskResponse {
+  answer: string;
+  cost_usd: number;
+  request_id: string;
+  searched_filing: boolean;
+}
+
+export type PriceRange = "1D" | "5D" | "1M" | "3M" | "6M" | "1Y" | "5Y";
+export type PriceInterval = "1M" | "5M" | "15M" | "1H" | "1D" | "1W";
+
+export interface PriceBar {
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
+}
+
+export interface PriceHistoryResponse {
+  ticker: string;
+  range: PriceRange;
+  interval: PriceInterval;
+  requested_interval: PriceInterval;
+  bars: PriceBar[];
+}
+
+export interface LatestPriceResponse {
+  ticker: string;
+  interval: PriceInterval;
+  requested_interval: PriceInterval;
+  bar: PriceBar;
+}
+
+export interface ServerPosition {
+  ticker: string;
+  amount_usd: number;
+  buy_date: string;
+  buy_price: number | null;
+}
+
+export interface ServerAlert {
+  id: number;
+  ticker: string;
+  direction: "above" | "below";
+  price: number;
+  triggered: boolean;
+  triggered_at: string | null;
+  triggered_price: number | null;
+  created_at: string;
+}
+
+export interface AssetCapabilities {
+  ticker: string;
+  asset_class: "equity" | "crypto";
+  display_name: string | null;
+  has_filings: boolean;
+  has_insiders: boolean;
+  has_earnings: boolean;
+  has_analyst_coverage: boolean;
+  trades_24_7: boolean;
+  note: string | null;
+}
+
+export interface CostBreakdown {
+  prompt_tokens: number;
+  completion_tokens: number;
+  embedding_tokens: number;
+  total_usd: number;
+}
+
+export interface ResearchEnvelope {
+  request_id: string;
+  duration_ms: number;
+  cost: CostBreakdown;
+  persisted_id: number | null;
+  cached: boolean;
+  cache_age_minutes: number | null;
+  result: ResearchResponse;
+}
+
+export interface HistoryEntry {
+  id: number;
+  ticker: string;
+  recommendation: "Buy" | "Hold" | "Sell" | "Pending";
+  justification: string;
+  sentiment_score: number | null;
+  confidence: number | null;
+  price_at_run: number | null;
+  duration_ms: number | null;
+  cost_usd: number | null;
+  created_at: string;
+}
+
+export interface ScoreboardEntry {
+  id: number;
+  ticker: string;
+  recommendation: string;
+  confidence: number | null;
+  created_at: string;
+  price_at_run: number | null;
+  current_price: number | null;
+  return_pct: number | null;
+  outcome: "hit" | "miss" | "unscored";
+}
+
+export interface ScoreboardSummary {
+  total_runs: number;
+  scored: number;
+  hits: number;
+  hit_rate: number | null;
+  avg_return_buy_pct: number | null;
+  rule: string;
+}
+
+export interface ScoreboardResponse {
+  entries: ScoreboardEntry[];
+  summary: ScoreboardSummary;
+}
+
+export type BacktestOutcome = "hit" | "miss" | "immature" | "unscored";
+
+export interface BacktestEntry {
+  id: number;
+  ticker: string;
+  recommendation: string;
+  confidence: number | null;
+  horizon_days: number;
+  created_at: string;
+  evaluated_at: string | null;
+  price_at_run: number | null;
+  price_at_horizon: number | null;
+  return_pct: number | null;
+  outcome: BacktestOutcome;
+}
+
+export interface BacktestHorizonStat {
+  horizon_days: number;
+  scored: number;
+  hits: number;
+  hit_rate: number | null;
+  avg_return_pct: number | null;
+}
+
+export interface ConfidenceBucket {
+  label: string;
+  scored: number;
+  hits: number;
+  hit_rate: number | null;
+  avg_confidence: number | null;
+}
+
+export interface BacktestSummary {
+  total_runs: number;
+  scored: number;
+  hits: number;
+  immature: number;
+  hit_rate: number | null;
+  avg_return_pct: number | null;
+  by_horizon: BacktestHorizonStat[];
+  by_confidence: ConfidenceBucket[];
+  brier_score: number | null;
+  rule: string;
+}
+
+export interface BacktestResponse {
+  entries: BacktestEntry[];
+  summary: BacktestSummary;
+}
+
+export interface ReturnRangeRow {
+  horizon_days: number;
+  label: string;
+  amount: number;
+  likely_low: number | null;
+  likely_high: number | null;
+  normal_move_pct: number | null;
+  recent_return_pct: number | null;
+  best_case: number | null;
+  best_case_pct: number | null;
+  worst_case: number | null;
+  worst_case_pct: number | null;
+}
+
+export interface ReturnRangeResponse {
+  ticker: string;
+  amount: number;
+  rows: ReturnRangeRow[];
+  note: string;
+}
+
+export type TimingAction =
+  | "buy_now"
+  | "accumulate"
+  | "wait_pullback"
+  | "wait_watch"
+  | "avoid";
+
+export interface TimingAssessment {
+  ticker: string;
+  horizon_days: number;
+  action: TimingAction;
+  action_label: string;
+  confidence: number;
+  summary: string;
+  rationale: string[];
+  risks: string[];
+  entry_zone_low: number | null;
+  entry_zone_high: number | null;
+  technicals: Record<string, unknown>;
+  market_signals: Record<string, unknown>;
+  headlines: string[];
+  as_of: string;
+  source: "llm" | "rules";
+  disclaimer: string;
+}
+
+export interface HistoryResponse {
+  ticker: string;
+  runs: HistoryEntry[];
+}
+
+export interface ReadinessCheck {
+  ok: boolean;
+  detail: string;
+}
+
+export interface ReadinessBody {
+  status: "ready" | "degraded";
+  checks: Record<string, ReadinessCheck>;
+}
+
+export interface ConfigStatus {
+  environment: string;
+  llm: {
+    provider: string;
+    model: string;
+    configured: boolean;
+    rate_limit: string;
+  };
+  embeddings: {
+    model: string;
+    configured: boolean;
+  };
+  sources: {
+    newsapi: boolean;
+    vectorstore: string;
+    signals: Record<string, boolean>;
+    signals_cache_seconds: number;
+  };
+  quotas: {
+    research_cache_minutes: number;
+    daily_runs_per_user: number;
+    daily_runs_global: number;
+  };
+}

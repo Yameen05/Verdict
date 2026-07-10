@@ -83,32 +83,12 @@ def test_fetch_metrics_empty_ticker():
 
 
 class TestHorizonStats:
-    def test_stats_from_synthetic_history(self, monkeypatch):
+    def test_stats_from_synthetic_closes(self):
         import app.services.metrics_client as mc
 
         # Steady 0.5%/day climb for a year → predictable window returns.
         closes = [100.0 * (1.005**i) for i in range(252)]
-
-        class _FakeHist:
-            def __init__(self):
-                self._closes = closes
-
-            def __getitem__(self, key):
-                assert key == "Close"
-                return self
-
-            def tolist(self):
-                return self._closes
-
-        class _FakeTicker:
-            def __init__(self, _t):
-                pass
-
-            def history(self, period, auto_adjust):
-                return _FakeHist()
-
-        monkeypatch.setattr(mc.yf, "Ticker", _FakeTicker)
-        stats = mc.fetch_horizon_stats("AAPL", 14)  # 14 calendar → 10 trading days
+        stats = mc.horizon_stats_from_closes(closes, 14)  # 14 calendar → 10 trading days
         expected = (1.005**10 - 1) * 100
         assert stats.horizon_days == 14
         assert abs(stats.recent_return_pct - round(expected, 2)) < 0.05
@@ -116,28 +96,40 @@ class TestHorizonStats:
         assert stats.typical_swing_pct < 0.01
         assert abs(stats.best_window_pct - stats.worst_window_pct) < 0.05
 
-    def test_insufficient_history_raises(self, monkeypatch):
+    def test_long_horizon_uses_older_closes(self):
+        """A 1-year hold needs >1y of closes; ~2y must be enough."""
         import app.services.metrics_client as mc
 
-        class _FakeHist:
-            def __getitem__(self, key):
-                return self
+        closes = [100.0 * (1.0005**i) for i in range(504)]
+        stats = mc.horizon_stats_from_closes(closes, 365)
+        assert stats.typical_swing_pct is not None
+        assert stats.best_window_pct is not None
 
-            def tolist(self):
-                return [100.0, 101.0]
-
-        class _FakeTicker:
-            def __init__(self, _t):
-                pass
-
-            def history(self, period, auto_adjust):
-                return _FakeHist()
-
-        monkeypatch.setattr(mc.yf, "Ticker", _FakeTicker)
+    def test_insufficient_history_raises(self):
         import pytest as _pytest
 
+        import app.services.metrics_client as mc
+
         with _pytest.raises(mc.MetricsClientError):
-            mc.fetch_horizon_stats("AAPL", 30)
+            mc.horizon_stats_from_closes([100.0, 101.0], 30)
+
+    def test_fetch_horizon_stats_uses_fallback_chain(self, monkeypatch):
+        """fetch_horizon_stats must go through fetch_price_history (fallbacks)."""
+        import app.services.metrics_client as mc
+
+        closes = [100.0 + 0.1 * i for i in range(300)]
+        bars = [
+            mc.PriceBar(time="2025-01-01T00:00:00Z", open=c, high=c, low=c, close=c)
+            for c in closes
+        ]
+
+        def fake_history(ticker, range_key="1M", interval_key="1D"):
+            assert (range_key, interval_key) == ("5Y", "1D")
+            return bars, "1D"
+
+        monkeypatch.setattr(mc, "fetch_price_history", fake_history)
+        stats = mc.fetch_horizon_stats("AAPL", 14)
+        assert stats.recent_return_pct is not None
 
 
 class TestPriceHistory:

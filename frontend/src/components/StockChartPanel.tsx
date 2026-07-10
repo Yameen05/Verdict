@@ -1,35 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AreaSeries,
-  CandlestickSeries,
-  ColorType,
-  CrosshairMode,
-  HistogramSeries,
-  LineSeries,
-  LineStyle,
-  PriceScaleMode,
-  createChart,
-  createSeriesMarkers,
-  type IChartApi,
-  type IPaneApi,
-  type IPriceLine,
-  type ISeriesApi,
-  type ISeriesMarkersPluginApi,
-  type Time,
-} from "lightweight-charts";
+import { LineStyle, PriceScaleMode } from "lightweight-charts";
 import {
   api,
-  type HistoryEntry,
+  userStateApi,
   type PriceBar,
   type PriceInterval,
   type PriceRange,
+  type ResearchResponse,
+  type TimingAssessment,
 } from "../api/client";
 import {
   bollingerBands,
   fmtClock,
   fmtMoney,
-  fmtSigned,
-  fmtSignedPct,
   fmtVolume,
   latestOf,
   mergeLiveBar,
@@ -37,66 +20,35 @@ import {
   toCandles,
   toLineData,
   toPercentSeries,
-  toTimestamp,
   toVolumeData,
-  verdictMarkers,
   macdSeries,
   rsiSeries,
 } from "./chart/chartMath";
+import {
+  ChartHeaderInfo,
+  INTERVAL_OPTIONS,
+  RANGE_OPTIONS,
+  Readout,
+  Segmented,
+} from "./chart/ChartControls";
+import { ChartToolbar, type ChartStyle, type ToggleKey } from "./chart/ChartToolbar";
+import { CompareForm } from "./chart/CompareForm";
 import { PriceAlerts } from "./chart/PriceAlerts";
+import { useChartMarkers, useDecisionLines } from "./chart/useChartOverlays";
+import { useChartSetup } from "./chart/useChartSetup";
+import { useIndicatorPanes } from "./chart/useIndicatorPanes";
 
 interface Props {
   ticker: string;
+  research?: ResearchResponse | null;
+  timing?: TimingAssessment | null;
+  /** Reports the freshest known price upward (live poll included). */
+  onPrice?: (price: number | null) => void;
 }
 
-type ChartStyle = "candles" | "area" | "line";
-
-const RANGES: { value: PriceRange; label: string }[] = [
-  { value: "1D", label: "1D" },
-  { value: "5D", label: "5D" },
-  { value: "1M", label: "1M" },
-  { value: "3M", label: "3M" },
-  { value: "6M", label: "6M" },
-  { value: "1Y", label: "1Y" },
-  { value: "5Y", label: "5Y" },
-];
-
-const INTERVALS: { value: PriceInterval; label: string }[] = [
-  { value: "1M", label: "1m" },
-  { value: "5M", label: "5m" },
-  { value: "15M", label: "15m" },
-  { value: "1H", label: "1h" },
-  { value: "1D", label: "1D" },
-  { value: "1W", label: "1W" },
-];
-
-const UP = "#22c55e";
-const DOWN = "#ef4444";
-const GRID = "#1e293b";
-const PANEL = "#020617";
-const COMPARE_COLOR = "#e879f9";
-
-export function StockChartPanel({ ticker }: Props) {
+export function StockChartPanel({ ticker, research, timing, onPrice }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const areaRef = useRef<ISeriesApi<"Area"> | null>(null);
-  const lineRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const ma20Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const ma50Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const bollBasisRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const bollUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const bollLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const compareRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const priceLineHandlesRef = useRef<IPriceLine[]>([]);
-  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-  const rsiPaneRef = useRef<IPaneApi<Time> | null>(null);
-  const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const macdPaneRef = useRef<IPaneApi<Time> | null>(null);
-  const macdLineRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const barsRef = useRef<PriceBar[]>([]);
   const fitOnNextDataRef = useRef(false);
 
   const [range, setRange] = useState<PriceRange>("1D");
@@ -120,8 +72,44 @@ export function StockChartPanel({ ticker }: Props) {
   const [compareInput, setCompareInput] = useState("");
   const [compareError, setCompareError] = useState<string | null>(null);
   const [priceLevels, setPriceLevels] = useState<number[]>([]);
-  const [verdicts, setVerdicts] = useState<HistoryEntry[]>([]);
   const [showVerdicts, setShowVerdicts] = useState(true);
+  const [showEvents, setShowEvents] = useState(true);
+  const [showDecisionLines, setShowDecisionLines] = useState(true);
+
+  const {
+    chartRef,
+    candleRef,
+    areaRef,
+    lineRef,
+    volumeRef,
+    ma20Ref,
+    ma50Ref,
+    bollBasisRef,
+    bollUpperRef,
+    bollLowerRef,
+    compareRef,
+    priceLineHandlesRef,
+    overlayLineHandlesRef,
+    markersRef,
+  } = useChartSetup(containerRef, barsRef, setHoverBar);
+  const { rsiSeriesRef, macdLineRef, macdSignalRef, macdHistRef } = useIndicatorPanes(
+    chartRef,
+    barsRef,
+    showRsi,
+    showMacd,
+  );
+  useChartMarkers(
+    { candleRef, markersRef },
+    { ticker, bars, research, showVerdicts, showEvents },
+  );
+  useDecisionLines(
+    { candleRef, overlayLineHandlesRef },
+    { bars, research, timing, show: showDecisionLines },
+  );
+
+  useEffect(() => {
+    barsRef.current = bars;
+  }, [bars]);
 
   const stats = useMemo(() => {
     const first = bars[0] ?? null;
@@ -143,209 +131,10 @@ export function StockChartPanel({ ticker }: Props) {
   const displayedInterval = actualInterval ?? interval;
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return undefined;
+    onPrice?.(latestOf(bars)?.close ?? null);
+  }, [bars, onPrice]);
 
-    const chart = createChart(container, {
-      width: container.clientWidth,
-      height: 520,
-      layout: {
-        background: { type: ColorType.Solid, color: PANEL },
-        textColor: "#94a3b8",
-        fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-      },
-      grid: {
-        vertLines: { color: GRID },
-        horzLines: { color: GRID },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: { color: "#64748b", labelBackgroundColor: "#1e293b" },
-        horzLine: { color: "#64748b", labelBackgroundColor: "#1e293b" },
-      },
-      rightPriceScale: {
-        borderColor: "#334155",
-        scaleMargins: { top: 0.08, bottom: 0.24 },
-      },
-      timeScale: {
-        borderColor: "#334155",
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 8,
-        barSpacing: 8,
-        minBarSpacing: 1,
-      },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: false,
-      },
-      handleScale: {
-        mouseWheel: true,
-        pinch: true,
-        axisPressedMouseMove: true,
-        axisDoubleClickReset: true,
-      },
-    });
-
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: UP,
-      downColor: DOWN,
-      borderUpColor: UP,
-      borderDownColor: DOWN,
-      wickUpColor: UP,
-      wickDownColor: DOWN,
-      lastValueVisible: true,
-      priceLineVisible: true,
-    });
-    const area = chart.addSeries(AreaSeries, {
-      visible: false,
-      lineColor: "#38bdf8",
-      topColor: "rgba(56, 189, 248, 0.34)",
-      bottomColor: "rgba(56, 189, 248, 0.02)",
-      lineWidth: 2,
-    });
-    const line = chart.addSeries(LineSeries, {
-      visible: false,
-      color: "#38bdf8",
-      lineWidth: 2,
-    });
-    const volume = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" },
-      priceScaleId: "",
-      lastValueVisible: false,
-      priceLineVisible: false,
-    });
-    const ma20 = chart.addSeries(LineSeries, {
-      color: "#f59e0b",
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    const ma50 = chart.addSeries(LineSeries, {
-      color: "#a78bfa",
-      lineWidth: 1,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-
-    const bollBasis = chart.addSeries(LineSeries, {
-      color: "#38bdf8",
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    const bollUpper = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.55)",
-      lineWidth: 1,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-    const bollLower = chart.addSeries(LineSeries, {
-      color: "rgba(56, 189, 248, 0.55)",
-      lineWidth: 1,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: false,
-      crosshairMarkerVisible: false,
-    });
-
-    // Compare series lives on its own overlay scale (percent change), so a
-    // second ticker can be judged by shape/relative move against the main one.
-    const compare = chart.addSeries(LineSeries, {
-      priceScaleId: "compare",
-      color: COMPARE_COLOR,
-      lineWidth: 2,
-      visible: false,
-      priceLineVisible: false,
-      lastValueVisible: true,
-      priceFormat: { type: "custom", formatter: (v: number) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}%` },
-    });
-    chart.priceScale("compare").applyOptions({
-      scaleMargins: { top: 0.08, bottom: 0.24 },
-    });
-
-    chart.priceScale("").applyOptions({
-      scaleMargins: { top: 0.78, bottom: 0 },
-    });
-
-    const crosshairHandler = (param: Parameters<typeof chart.subscribeCrosshairMove>[0] extends (p: infer P) => void ? P : never) => {
-      const data = param.seriesData.get(candles);
-      if (data && "open" in data && "close" in data && param.time !== undefined) {
-        const time = Number(param.time);
-        const matched = barsRef.current.find((bar) => toTimestamp(bar.time) === time);
-        setHoverBar(
-          matched ?? {
-            time: new Date(time * 1000).toISOString(),
-            open: Number(data.open),
-            high: Number(data.high),
-            low: Number(data.low),
-            close: Number(data.close),
-            volume: null,
-          },
-        );
-      } else {
-        setHoverBar(null);
-      }
-    };
-
-    chart.subscribeCrosshairMove(crosshairHandler);
-
-    const resizeObserver = new ResizeObserver(([entry]) => {
-      chart.resize(Math.floor(entry.contentRect.width), 520);
-    });
-    resizeObserver.observe(container);
-
-    chartRef.current = chart;
-    candleRef.current = candles;
-    areaRef.current = area;
-    lineRef.current = line;
-    volumeRef.current = volume;
-    ma20Ref.current = ma20;
-    ma50Ref.current = ma50;
-    bollBasisRef.current = bollBasis;
-    bollUpperRef.current = bollUpper;
-    bollLowerRef.current = bollLower;
-    compareRef.current = compare;
-
-    return () => {
-      resizeObserver.disconnect();
-      chart.unsubscribeCrosshairMove(crosshairHandler);
-      chart.remove();
-      chartRef.current = null;
-      candleRef.current = null;
-      areaRef.current = null;
-      lineRef.current = null;
-      volumeRef.current = null;
-      ma20Ref.current = null;
-      ma50Ref.current = null;
-      bollBasisRef.current = null;
-      bollUpperRef.current = null;
-      bollLowerRef.current = null;
-      compareRef.current = null;
-      priceLineHandlesRef.current = [];
-      markersRef.current = null;
-      rsiSeriesRef.current = null;
-      rsiPaneRef.current = null;
-      macdHistRef.current = null;
-      macdLineRef.current = null;
-      macdSignalRef.current = null;
-      macdPaneRef.current = null;
-    };
-  }, []);
-
-  const barsRef = useRef<PriceBar[]>([]);
-  useEffect(() => {
-    barsRef.current = bars;
-  }, [bars]);
-
+  // ----- history load -----
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -373,6 +162,7 @@ export function StockChartPanel({ ticker }: Props) {
     };
   }, [ticker, range, interval]);
 
+  // ----- push data into every series -----
   useEffect(() => {
     const candles = toCandles(bars);
     const closes = toLineData(bars);
@@ -397,107 +187,59 @@ export function StockChartPanel({ ticker }: Props) {
       chartRef.current?.timeScale().fitContent();
       fitOnNextDataRef.current = false;
     }
+    // Refs are stable; only bars drive updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bars]);
 
+  // ----- toggles -----
   useEffect(() => {
     candleRef.current?.applyOptions({ visible: chartStyle === "candles" });
     areaRef.current?.applyOptions({ visible: chartStyle === "area" });
     lineRef.current?.applyOptions({ visible: chartStyle === "line" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartStyle]);
 
   useEffect(() => {
     volumeRef.current?.applyOptions({ visible: showVolume });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showVolume]);
 
   useEffect(() => {
     ma20Ref.current?.applyOptions({ visible: showMa20 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMa20]);
 
   useEffect(() => {
     ma50Ref.current?.applyOptions({ visible: showMa50 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMa50]);
 
   useEffect(() => {
     bollBasisRef.current?.applyOptions({ visible: showBoll });
     bollUpperRef.current?.applyOptions({ visible: showBoll });
     bollLowerRef.current?.applyOptions({ visible: showBoll });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBoll]);
-
-  // --- RSI sub-pane (#2): its own pane, created/destroyed on toggle ---
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    if (showRsi && !rsiSeriesRef.current) {
-      const pane = chart.addPane();
-      const s = chart.addSeries(
-        LineSeries,
-        {
-          color: "#c084fc",
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: true,
-          priceFormat: { type: "custom", minMove: 0.01, formatter: (v: number) => v.toFixed(0) },
-        },
-        pane.paneIndex(),
-      );
-      s.setData(rsiSeries(barsRef.current));
-      s.createPriceLine({ price: 70, color: "rgba(239,68,68,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "70" });
-      s.createPriceLine({ price: 30, color: "rgba(34,197,94,0.4)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "30" });
-      pane.setStretchFactor(0.32);
-      rsiPaneRef.current = pane;
-      rsiSeriesRef.current = s;
-    } else if (!showRsi && rsiSeriesRef.current) {
-      chart.removeSeries(rsiSeriesRef.current);
-      rsiSeriesRef.current = null;
-      rsiPaneRef.current = null;
-    }
-  }, [showRsi]);
-
-  // --- MACD sub-pane (#2): line + signal + histogram in its own pane ---
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart) return;
-    if (showMacd && !macdLineRef.current) {
-      const pane = chart.addPane();
-      const idx = pane.paneIndex();
-      const hist = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, idx);
-      const line = chart.addSeries(LineSeries, { color: "#38bdf8", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, idx);
-      const signal = chart.addSeries(LineSeries, { color: "#f59e0b", lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, idx);
-      const m = macdSeries(barsRef.current);
-      hist.setData(m.histogram);
-      line.setData(m.macd);
-      signal.setData(m.signal);
-      pane.setStretchFactor(0.32);
-      macdPaneRef.current = pane;
-      macdHistRef.current = hist;
-      macdLineRef.current = line;
-      macdSignalRef.current = signal;
-    } else if (!showMacd && macdLineRef.current) {
-      if (macdHistRef.current) chart.removeSeries(macdHistRef.current);
-      if (macdLineRef.current) chart.removeSeries(macdLineRef.current);
-      if (macdSignalRef.current) chart.removeSeries(macdSignalRef.current);
-      macdHistRef.current = null;
-      macdLineRef.current = null;
-      macdSignalRef.current = null;
-      macdPaneRef.current = null;
-    }
-  }, [showMacd]);
 
   useEffect(() => {
     // Daily/weekly bars read cleaner as dates only, like TradingView.
     const intraday = !["1D", "1W"].includes(displayedInterval);
     chartRef.current?.timeScale().applyOptions({ timeVisible: intraday });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [displayedInterval]);
 
   useEffect(() => {
     chartRef.current?.priceScale("right").applyOptions({
       mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logScale]);
 
+  // ----- live polling (reads bars via ref so new bars don't reset the timer) -----
   useEffect(() => {
-    if (!live || bars.length === 0) return undefined;
+    if (!live) return undefined;
     const pollInterval = window.setInterval(() => {
+      if (barsRef.current.length === 0) return;
       const quoteInterval = displayedInterval === "1W" ? "1D" : displayedInterval;
       api
         .latestPrice(ticker, quoteInterval)
@@ -511,9 +253,9 @@ export function StockChartPanel({ ticker }: Props) {
         });
     }, 15_000);
     return () => window.clearInterval(pollInterval);
-  }, [bars.length, displayedInterval, live, ticker]);
+  }, [displayedInterval, live, ticker]);
 
-  // --- Compare mode (#3): overlay a second ticker as % change ---
+  // ----- compare overlay -----
   useEffect(() => {
     if (!compareTicker) {
       compareRef.current?.setData([]);
@@ -537,43 +279,23 @@ export function StockChartPanel({ ticker }: Props) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareTicker, range, interval]);
 
-  // --- Verdict overlay (#1): fetch this ticker's past verdicts ---
+  // ----- user price levels, stored server-side per account -----
   useEffect(() => {
     let cancelled = false;
-    api
-      .history(ticker, 50)
+    userStateApi
+      .levels(ticker)
       .then((res) => {
-        if (!cancelled) setVerdicts(res.runs);
+        if (!cancelled) setPriceLevels(res.prices);
       })
       .catch(() => {
-        if (!cancelled) setVerdicts([]);
+        if (!cancelled) setPriceLevels([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [ticker]);
-
-  useEffect(() => {
-    const series = candleRef.current;
-    if (!series) return;
-    const markers = showVerdicts ? verdictMarkers(verdicts, bars) : [];
-    if (markersRef.current) {
-      markersRef.current.setMarkers(markers);
-    } else {
-      markersRef.current = createSeriesMarkers(series, markers);
-    }
-  }, [verdicts, bars, showVerdicts]);
-
-  // --- Drawing tools (#5): horizontal price levels, persisted per ticker ---
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(`verdict.levels.${ticker}`);
-      setPriceLevels(raw ? (JSON.parse(raw) as number[]) : []);
-    } catch {
-      setPriceLevels([]);
-    }
   }, [ticker]);
 
   useEffect(() => {
@@ -585,29 +307,34 @@ export function StockChartPanel({ ticker }: Props) {
     priceLineHandlesRef.current = priceLevels.map((price) =>
       series.createPriceLine({
         price,
-        color: "#eab308",
+        color: "#ca8a04",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
         title: fmtMoney(price),
       }),
     );
-    try {
-      window.localStorage.setItem(`verdict.levels.${ticker}`, JSON.stringify(priceLevels));
-    } catch {
-      // localStorage unavailable (private mode) — lines still render this session.
-    }
-  }, [priceLevels, ticker, bars.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceLevels, bars.length]);
 
   function addLevel() {
     const price = activeBar?.close;
     if (price === undefined) return;
-    const rounded = Number(price.toFixed(2));
-    setPriceLevels((prev) => (prev.includes(rounded) ? prev : [...prev, rounded]));
+    userStateApi
+      .addLevel(ticker, Number(price.toFixed(2)))
+      .then((res) => setPriceLevels(res.prices))
+      .catch(() => {
+        // Keep current lines; the next reload will resync.
+      });
   }
 
   function clearLevels() {
-    setPriceLevels([]);
+    userStateApi
+      .clearLevels(ticker)
+      .then((res) => setPriceLevels(res.prices))
+      .catch(() => {
+        // Keep current lines; the next reload will resync.
+      });
   }
 
   function submitCompare(raw: string) {
@@ -628,164 +355,80 @@ export function StockChartPanel({ ticker }: Props) {
     chartRef.current?.timeScale().fitContent();
   }
 
-  const changeClass =
-    stats && stats.change >= 0 ? "text-emerald-300" : "text-rose-300";
+  const toolbarFlags: Record<ToggleKey, boolean> = {
+    volume: showVolume,
+    ma20: showMa20,
+    ma50: showMa50,
+    boll: showBoll,
+    rsi: showRsi,
+    macd: showMacd,
+    log: logScale,
+    live,
+    verdicts: showVerdicts,
+    events: showEvents,
+    decisionLines: showDecisionLines,
+  };
+  const toggleSetters: Record<ToggleKey, () => void> = {
+    volume: () => setShowVolume((v) => !v),
+    ma20: () => setShowMa20((v) => !v),
+    ma50: () => setShowMa50((v) => !v),
+    boll: () => setShowBoll((v) => !v),
+    rsi: () => setShowRsi((v) => !v),
+    macd: () => setShowMacd((v) => !v),
+    log: () => setLogScale((v) => !v),
+    live: () => setLive((v) => !v),
+    verdicts: () => setShowVerdicts((v) => !v),
+    events: () => setShowEvents((v) => !v),
+    decisionLines: () => setShowDecisionLines((v) => !v),
+  };
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
       <header className="border-b border-slate-800 bg-slate-950 px-4 py-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-baseline gap-3">
-              <h2 className="font-mono text-2xl font-semibold text-slate-100">{ticker}</h2>
-              {stats && (
-                <>
-                  <span className="text-2xl font-semibold text-slate-100">
-                    {fmtMoney(stats.last.close)}
-                  </span>
-                  <span className={`text-sm font-semibold ${changeClass}`}>
-                    {fmtSigned(stats.change)} ({fmtSignedPct(stats.changePct)})
-                  </span>
-                </>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-              <span>Yahoo Finance</span>
-              <span>·</span>
-              <span>{displayedInterval.toLowerCase()} bars</span>
-              {displayedInterval !== interval && (
-                <>
-                  <span>·</span>
-                  <span>using {displayedInterval.toLowerCase()}</span>
-                </>
-              )}
-              {lastUpdated && (
-                <>
-                  <span>·</span>
-                  <span>updated {new Date(lastUpdated).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
-                </>
-              )}
-            </div>
-          </div>
+          <ChartHeaderInfo
+            ticker={ticker}
+            lastClose={stats?.last.close ?? null}
+            change={stats?.change ?? null}
+            changePct={stats?.changePct ?? null}
+            displayedInterval={displayedInterval}
+            requestedInterval={interval}
+            lastUpdated={lastUpdated}
+          />
 
           <div className="flex flex-wrap gap-2">
+            <Segmented options={RANGE_OPTIONS} value={range} onChange={(value) => setRange(value)} />
             <Segmented
-              options={RANGES}
-              value={range}
-              onChange={(value) => setRange(value)}
-            />
-            <Segmented
-              options={INTERVALS}
+              options={INTERVAL_OPTIONS}
               value={interval}
               onChange={(value) => setInterval(value)}
             />
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <ToolbarButton active={chartStyle === "candles"} onClick={() => setChartStyle("candles")}>
-            Candles
-          </ToolbarButton>
-          <ToolbarButton active={chartStyle === "area"} onClick={() => setChartStyle("area")}>
-            Area
-          </ToolbarButton>
-          <ToolbarButton active={chartStyle === "line"} onClick={() => setChartStyle("line")}>
-            Line
-          </ToolbarButton>
-          <ToolbarButton active={showVolume} onClick={() => setShowVolume((v) => !v)}>
-            Volume
-          </ToolbarButton>
-          <ToolbarButton active={showMa20} onClick={() => setShowMa20((v) => !v)}>
-            SMA 20
-          </ToolbarButton>
-          <ToolbarButton active={showMa50} onClick={() => setShowMa50((v) => !v)}>
-            SMA 50
-          </ToolbarButton>
-          <ToolbarButton active={showBoll} onClick={() => setShowBoll((v) => !v)}>
-            Boll
-          </ToolbarButton>
-          <ToolbarButton active={showRsi} onClick={() => setShowRsi((v) => !v)}>
-            RSI
-          </ToolbarButton>
-          <ToolbarButton active={showMacd} onClick={() => setShowMacd((v) => !v)}>
-            MACD
-          </ToolbarButton>
-          <ToolbarButton active={logScale} onClick={() => setLogScale((v) => !v)}>
-            Log
-          </ToolbarButton>
-          <ToolbarButton active={live} onClick={() => setLive((v) => !v)}>
-            Live
-          </ToolbarButton>
-          <ToolbarButton active={showVerdicts} onClick={() => setShowVerdicts((v) => !v)}>
-            Verdicts
-          </ToolbarButton>
-          <button
-            type="button"
-            onClick={addLevel}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:bg-slate-900"
-          >
-            + Level
-          </button>
-          {priceLevels.length > 0 && (
-            <button
-              type="button"
-              onClick={clearLevels}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-amber-300 hover:border-amber-500/60 hover:bg-slate-900"
-            >
-              Clear {priceLevels.length} line{priceLevels.length > 1 ? "s" : ""}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={resetView}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-500 hover:bg-slate-900"
-          >
-            Reset
-          </button>
-        </div>
+        <ChartToolbar
+          chartStyle={chartStyle}
+          onChartStyle={setChartStyle}
+          flags={toolbarFlags}
+          onToggle={(key) => toggleSetters[key]()}
+          levelCount={priceLevels.length}
+          onAddLevel={addLevel}
+          onClearLevels={clearLevels}
+          onResetView={resetView}
+        />
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              submitCompare(compareInput);
+          <CompareForm
+            input={compareInput}
+            onInput={setCompareInput}
+            activeTicker={compareTicker}
+            error={compareError}
+            onSubmit={submitCompare}
+            onClear={() => {
+              setCompareTicker(null);
+              setCompareInput("");
             }}
-            className="flex items-center gap-1.5"
-          >
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Compare
-            </span>
-            <input
-              value={compareInput}
-              onChange={(e) => setCompareInput(e.target.value)}
-              placeholder="e.g. SPY"
-              className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium uppercase text-slate-100 placeholder:text-slate-600 focus:border-fuchsia-500/60 focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="rounded-md border border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-300 hover:border-slate-500 hover:bg-slate-900"
-            >
-              Add
-            </button>
-            {compareTicker && (
-              <span className="flex items-center gap-1.5 rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-1 text-xs font-semibold text-fuchsia-300">
-                <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: COMPARE_COLOR }} />
-                {compareTicker} · %
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompareTicker(null);
-                    setCompareInput("");
-                  }}
-                  className="text-fuchsia-300/70 hover:text-fuchsia-100"
-                  aria-label="Remove comparison"
-                >
-                  ×
-                </button>
-              </span>
-            )}
-            {compareError && <span className="text-xs text-rose-300">{compareError}</span>}
-          </form>
+          />
         </div>
       </header>
 
@@ -841,77 +484,5 @@ export function StockChartPanel({ ticker }: Props) {
 
       <PriceAlerts ticker={ticker} price={stats?.last.close ?? null} />
     </section>
-  );
-}
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
-}) {
-  return (
-    <div className="flex rounded-md border border-slate-800 bg-slate-900 p-0.5">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          onClick={() => onChange(option.value)}
-          className={`rounded px-2.5 py-1.5 text-xs font-semibold transition ${
-            value === option.value
-              ? "bg-slate-100 text-slate-950"
-              : "text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-          }`}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ToolbarButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
-        active
-          ? "border-cyan-500/60 bg-cyan-500/10 text-cyan-200"
-          : "border-slate-700 text-slate-400 hover:border-slate-500 hover:bg-slate-900 hover:text-slate-100"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Readout({
-  label,
-  value,
-  valueClass = "text-slate-200",
-}: {
-  label: string;
-  value: string;
-  valueClass?: string;
-}) {
-  return (
-    <div className="border-r border-slate-800 px-3 py-2 last:border-r-0">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-        {label}
-      </div>
-      <div className={`mt-0.5 truncate font-medium ${valueClass}`}>{value}</div>
-    </div>
   );
 }
