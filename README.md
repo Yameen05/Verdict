@@ -17,8 +17,8 @@
 </p>
 
 [![Python](https://img.shields.io/badge/Python-3.13-blue)](https://www.python.org/)
-[![Node](https://img.shields.io/badge/Node-22-43853D)](https://nodejs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.138-009688)](https://fastapi.tiangolo.com/)
+[![Node](https://img.shields.io/badge/Node-26-43853D)](https://nodejs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688)](https://fastapi.tiangolo.com/)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.2-7E57C2)](https://langchain-ai.github.io/langgraph/)
 [![React](https://img.shields.io/badge/React-18-61DAFB)](https://react.dev/)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
