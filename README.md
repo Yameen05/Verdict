@@ -1,4 +1,20 @@
-# Verdict
+<p align="center">
+  <img src="frontend/public/verdict.svg" alt="Verdict logo" width="88" />
+</p>
+
+<h1 align="center">Verdict</h1>
+
+<p align="center">
+  <strong>Multi-agent market research that argues both sides before it makes the call.</strong>
+</p>
+
+<p align="center">
+  <a href="#product-tour">Product tour</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="docs/DEPLOYMENT.md">Deployment</a> ·
+  <a href="SECURITY.md">Security</a>
+</p>
 
 [![Python](https://img.shields.io/badge/Python-3.13-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/Node-22-43853D)](https://nodejs.org/)
@@ -20,6 +36,10 @@ serif display face for the big moments, and a matching warm-paper light mode.
 > financial advice.
 
 ![Verdict research dashboard](docs/assets/verdict-live-dashboard.png)
+
+| Research | Trading | Accountability |
+| --- | --- | --- |
+| SEC filings, news, fundamentals, insiders, and optional market signals | Live charts, timing checks, alerts, position planning, and a five-agent intraday desk | Bull/bear debate, citable evidence, dissent, history, backtests, and confidence calibration |
 
 ## Product Tour
 
@@ -70,6 +90,8 @@ that works from the stop distance, 60-second auto-refresh, and a US session
 clock (opening drive, lunch, power hour; crypto is 24/7). Most of the day the
 honest answer is "stand aside" — and the desk says so.
 
+![Verdict day-trade desk](docs/assets/verdict-live-daytrade.png)
+
 ### Alerts That Work While You Sleep
 
 Price alerts and "tell me when the verdict changes" watches are evaluated by a
@@ -116,10 +138,19 @@ own homework.
 
 ![Verdict scoreboard](docs/assets/verdict-live-scoreboard.png)
 
-Screenshots were captured from the real React UI and local development
-backend and predate the ink & copper redesign
-(`frontend/scripts/capture-screenshots.mjs` rebuilds them against a throwaway
-demo database).
+### Sign-in, Recovery, and Legal
+
+Access starts at a themed sign-in screen with invite registration (or open
+signup when enabled), a forgot-password flow, and mandatory acceptance of the
+in-app Terms of Use, Privacy Policy, and Risk & Data Disclosure — all three
+render inside the app from the sign-in screen and from the footer on every
+page.
+
+![Verdict sign-in](docs/assets/verdict-live-signin.png)
+
+Screenshots are captured from the real React UI against a throwaway demo
+database (`APP_URL=http://localhost:5173 node frontend/scripts/capture-screenshots.mjs`
+rebuilds them).
 
 ## What It Does
 
@@ -263,7 +294,7 @@ LangGraph StateGraph
 | Persistence | SQLAlchemy async ORM, SQLite by default |
 | Security | Argon2id, encrypted TOTP seed, one-time recovery codes, CSRF |
 | Ops | Docker, Docker Compose, nginx SPA proxy, structured JSON logs |
-| Tests | pytest (179 backend), Vitest (33 frontend), pytest-asyncio, pytest-httpx, ruff, TypeScript build |
+| Tests | pytest (188 backend), Vitest (33 frontend), pytest-asyncio, pytest-httpx, ruff, TypeScript build |
 
 ## Repository Layout
 
@@ -406,10 +437,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | `DAILY_RUNS_PER_USER` | No | Per-user fresh research quota |
 | `DAILY_RUNS_GLOBAL` | No | Global fresh research quota |
 | `ALERTS_CHECK_SECONDS` | No | Background alert/verdict-watch check interval; `0` disables the worker |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Enables alert emails; blank host = alerts trigger in the UI only |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Enables alert and password-reset emails; blank host = alerts trigger in the UI only |
+| `PUBLIC_SIGNUP_ENABLED` | No | `true` opens self-serve registration; default is invite-only |
+| `PASSWORD_RESET_TOKEN_MINUTES` | No | Reset-link lifetime; defaults to 30 |
+| `APP_PUBLIC_URL` | No | Origin used in password-reset links; blank falls back to the first CORS origin |
 | `RATE_LIMIT_AUTH` | No | Defaults to `5/minute` |
 | `RATE_LIMIT_RESEARCH` | No | Defaults to `30/minute` |
 | `RATE_LIMIT_FILINGS` | No | Defaults to `60/minute` |
+| `RATE_LIMIT_STORAGE_URI` | No | Redis URI for shared limiter counters; blank = per-process memory |
 
 See [.env.example](.env.example) for the complete set of operational and cost
 tracking variables.
@@ -425,6 +460,10 @@ tracking variables.
 | `POST` | `/auth/bootstrap` | One-time owner creation |
 | `POST` | `/auth/login` | Password sign-in |
 | `POST` | `/auth/2fa/verify` | TOTP or recovery-code verification |
+| `POST` | `/auth/register` | Create an account with an invite code (or without one when `PUBLIC_SIGNUP_ENABLED=true`) |
+| `POST/GET/DELETE` | `/auth/invites` | Owner mints, lists, and revokes one-time invite codes |
+| `POST` | `/auth/password-reset/request` | Email a single-use reset link (enumeration-safe; requires SMTP) |
+| `POST` | `/auth/password-reset/confirm` | Set a new password and revoke all sessions |
 | `POST` | `/filings/ingest` | Fetch, chunk, embed, and index the latest filing |
 | `POST` | `/filings/query` | Search indexed filing chunks |
 | `GET` | `/market/{ticker}/history` | Chart OHLCV bars by range/interval |
