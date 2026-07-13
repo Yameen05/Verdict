@@ -1,12 +1,16 @@
 /**
  * Capture README screenshots of the redesigned app against the demo backend.
- * Drives the local Vite dev server (5173) with system Chrome via puppeteer-core.
+ * Drives the local Vite dev server with system Chrome via puppeteer-core.
+ * Override the target with APP_URL (defaults to http://localhost:5173).
  */
 import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const OUT = "/Users/yameen/Documents/Projects/Verdict/docs/assets";
-const APP = "http://localhost:5173";
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const OUT = resolve(ROOT, "docs/assets");
+const APP = process.env.APP_URL ?? "http://localhost:5173";
 const EMAIL = "analyst@verdict.app";
 const PASSWORD = "green-verdict-screenshots-1";
 
@@ -36,9 +40,17 @@ async function clickByText(selector, text) {
   return false;
 }
 
-// --- login ---
+// --- shot 0: sign-in screen with the legal notice ---
 await page.goto(APP, { waitUntil: "networkidle2" });
 await page.waitForSelector('input[type="email"]');
+await new Promise((r) => setTimeout(r, 600));
+await page.screenshot({
+  path: `${OUT}/verdict-live-signin.png`,
+  clip: { x: 0, y: 0, width: 1560, height: 980 },
+});
+log("sign-in captured");
+
+// --- login ---
 await page.type('input[type="email"]', EMAIL);
 await page.type('input[type="password"]', PASSWORD);
 await page.keyboard.press("Enter");
@@ -128,6 +140,23 @@ await page.screenshot({
   clip: { x: 0, y: 0, width: 1560, height: 900 },
 });
 log("scoreboard captured");
+
+// --- shot 5: day-trading desk ---
+await clickByText("nav button", "day");
+await page
+  .waitForFunction(
+    () => document.body.innerText.toLowerCase().includes("session"),
+    { timeout: 90_000, polling: 1_000 },
+  )
+  .catch(() => log("day-trade desk still loading; capturing anyway"));
+await new Promise((r) => setTimeout(r, 3_000));
+await page.evaluate(() => window.scrollTo(0, 0));
+await new Promise((r) => setTimeout(r, 800));
+await page.screenshot({
+  path: `${OUT}/verdict-live-daytrade.png`,
+  clip: { x: 0, y: 0, width: 1560, height: 980 },
+});
+log("day-trade desk captured");
 
 await browser.close();
 log("all done");
