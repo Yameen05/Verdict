@@ -126,7 +126,17 @@ demo database).
 - Small-circle multi-user: the bootstrap owner mints one-time invite codes
   (7-day expiry, digest-only storage); friends register with a code — no email
   service required. Password auth, optional TOTP 2FA, HttpOnly sessions, CSRF
-  protection, origin checks, and rate limits for every account.
+  protection, origin checks, and rate limits for every account. Flip
+  `PUBLIC_SIGNUP_ENABLED=true` to open self-serve registration (daily run
+  quotas still cap spend).
+- Account recovery: a forgot-password flow emails a single-use, digest-stored
+  reset link when SMTP is configured; a successful reset revokes every session
+  for the account. The sign-in screen only offers the link when the server can
+  actually send it.
+- Legal pages built in: Terms of Use, Privacy Policy, and a Risk & Data
+  Disclosure ("not investment advice"; third-party market data is delayed,
+  may be wrong, and is for personal non-commercial use) are rendered in-app
+  from the sign-in screen and the footer on every page.
 - Free-tier protection built in: research runs are communal — a recent run for
   a ticker is served to everyone from cache (zero LLM cost), and fresh runs
   are capped per user and globally per day (`DAILY_RUNS_PER_USER`,
@@ -474,12 +484,11 @@ npm test
 npm run build
 ```
 
-Current local verification (July 10, 2026):
+Current local verification (July 13, 2026):
 
 - Backend lint: `ruff check app` passed.
-- Backend tests: `pytest` passed with `179 passed, 9 warnings` (includes the
-  day-trade desk suite: intraday math, agent votes, risk-plan coherence,
-  session clock).
+- Backend tests: `pytest` passed with `188 passed, 9 warnings` (includes the
+  day-trade desk suite plus password-reset and public-signup coverage).
 - Frontend tests: `vitest` passed with `33 passed` (chart math, position math,
   disagreement logic).
 - Frontend production build: `npm run build` passed.
@@ -507,6 +516,9 @@ make fetch-sample TICKER=AAPL
 - TOTP seeds are encrypted at rest.
 - Recovery codes are one-time and keyed-hashed.
 - Every non-health API route requires an authenticated, 2FA-verified session.
+- Password-reset tokens are single-use, expire in 30 minutes (configurable),
+  are stored as SHA-256 digests, and revoke all sessions on success. The
+  request endpoint answers identically whether or not the account exists.
 - State-changing requests require a per-session CSRF token and an allowed
   `Origin`.
 - Research history is scoped to the authenticated owner.
@@ -526,8 +538,12 @@ rg -n --hidden --glob '!.git/**' --glob '!frontend/node_modules/**' \
   `SESSION_COOKIE_SECURE=true`, and explicit `ALLOWED_HOSTS` / `CORS_ORIGINS`.
 - Terminate TLS in a maintained reverse proxy or managed load balancer.
 - Keep `APP_BIND_ADDRESS=127.0.0.1` when a local reverse proxy owns public TLS.
-- Move from SQLite to Postgres for multi-instance deployments.
-- Add shared rate-limit storage before scaling beyond one backend worker.
+- Move from SQLite to Postgres for multi-instance deployments: set
+  `DATABASE_URL=postgresql+asyncpg://user:pass@host/db` — the asyncpg driver
+  ships in requirements.
+- Share rate-limit counters before scaling beyond one backend worker: set
+  `RATE_LIMIT_STORAGE_URI=redis://host:6379/0` (blank keeps the per-process
+  in-memory store, which is correct for a single worker).
 - Add provider budgets for LLM, embeddings, Pinecone, NewsAPI, yfinance,
   Alpha Vantage, Finnhub, Polygon, Tiingo, FRED, Reddit, and StockTwits usage.
 - Do not present model output as investment advice without human review and

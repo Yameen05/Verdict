@@ -29,6 +29,7 @@ from app.routers import (
     health,
     invites,
     market,
+    password_reset,
     research,
     scoreboard,
     user_state,
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/auth", tags=["authentication"])
     app.include_router(invites.router, prefix="/auth", tags=["authentication"])
+    app.include_router(password_reset.router, prefix="/auth", tags=["authentication"])
     protected = [Depends(require_authenticated)]
     app.include_router(
         filings.router,

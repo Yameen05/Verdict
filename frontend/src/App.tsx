@@ -23,7 +23,9 @@ import { DisagreementPanel } from "./components/DisagreementPanel";
 import { ApiStatusPanel } from "./components/ApiStatusPanel";
 import { SmartAlertsPanel } from "./components/SmartAlertsPanel";
 import { DayTradePage } from "./components/daytrade/DayTradePage";
+import { LegalModal } from "./components/LegalModal";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
+import { FOOTER_DISCLAIMER } from "./lib/legal";
 import { migrateLocalStateOnce } from "./lib/migrateLocalState";
 import {
   api,
@@ -755,11 +757,43 @@ export default function App({
           </>
         )}
 
-        <footer className="mt-12 border-t border-slate-800/60 pt-6 text-center text-[11px] text-slate-500">
-          Verdict is for informational purposes only. Not investment advice. Data from
-          SEC EDGAR, NewsAPI, and Yahoo Finance via yfinance.
-        </footer>
+        <AppFooter />
       </main>
     </div>
+  );
+}
+
+function AppFooter() {
+  const [legalDoc, setLegalDoc] = useState<"risk" | "terms" | "privacy" | null>(null);
+  return (
+    <footer className="mt-12 border-t border-slate-800/60 pt-6 text-center text-[11px] text-slate-500">
+      <p className="mx-auto max-w-2xl leading-relaxed">{FOOTER_DISCLAIMER}</p>
+      <p className="mt-2 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          onClick={() => setLegalDoc("risk")}
+          className="underline decoration-slate-700 underline-offset-2 hover:text-slate-300"
+        >
+          Risk & data disclosure
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setLegalDoc("terms")}
+          className="underline decoration-slate-700 underline-offset-2 hover:text-slate-300"
+        >
+          Terms of use
+        </button>
+        <span aria-hidden="true">·</span>
+        <button
+          type="button"
+          onClick={() => setLegalDoc("privacy")}
+          className="underline decoration-slate-700 underline-offset-2 hover:text-slate-300"
+        >
+          Privacy policy
+        </button>
+      </p>
+      {legalDoc && <LegalModal initialDoc={legalDoc} onClose={() => setLegalDoc(null)} />}
+    </footer>
   );
 }

@@ -3,9 +3,11 @@ import {
   authApi,
   setCsrfToken,
   type AuthSession,
+  type AuthStatus,
   type LoginChallenge,
   type TwoFactorSetup,
 } from "../api/client";
+import { LegalModal } from "./LegalModal";
 
 type View =
   | "loading"
@@ -15,6 +17,8 @@ type View =
   | "verify"
   | "setup"
   | "recovery"
+  | "forgot"
+  | "reset"
   | "ready";
 
 interface Props {
@@ -38,7 +42,10 @@ export function AuthGate({ children }: Props) {
   const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [resetToken, setResetToken] = useState("");
   const setupRequested = useRef(false);
 
   function acceptSession(next: AuthSession) {
@@ -49,6 +56,18 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    // A reset link (…/?reset_token=…) always lands on the new-password form.
+    // The param stays in the URL until the flow ends so the effect is
+    // idempotent (StrictMode runs it twice in dev).
+    const tokenFromLink = new URLSearchParams(window.location.search).get("reset_token");
+    if (tokenFromLink) {
+      setResetToken(tokenFromLink);
+      setView("reset");
+      authApi.status().then((s) => !cancelled && setAuthStatus(s)).catch(() => undefined);
+      return () => {
+        cancelled = true;
+      };
+    }
     authApi
       .me()
       .then((value) => {
@@ -57,7 +76,10 @@ export function AuthGate({ children }: Props) {
       .catch(async () => {
         try {
           const status = await authApi.status();
-          if (!cancelled) setView(status.bootstrap_required ? "bootstrap" : "login");
+          if (!cancelled) {
+            setAuthStatus(status);
+            setView(status.bootstrap_required ? "bootstrap" : "login");
+          }
         } catch {
           if (!cancelled) {
             setError("The authentication service is unavailable.");
@@ -84,6 +106,7 @@ export function AuthGate({ children }: Props) {
   async function submitCredentials(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setNotice("");
     if ((view === "bootstrap" || view === "register") && password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -108,6 +131,46 @@ export function AuthGate({ children }: Props) {
       setPassword("");
       setConfirmPassword("");
       setBootstrapToken("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitForgot(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      await authApi.requestPasswordReset(email);
+      setNotice(
+        "If an account exists for that address, a reset link is on its way. The link works once and expires shortly.",
+      );
+      setView("login");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitReset(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await authApi.confirmPasswordReset(resetToken, password);
+      window.history.replaceState(null, "", window.location.pathname);
+      setResetToken("");
+      setPassword("");
+      setConfirmPassword("");
+      setNotice("Password updated. Sign in with your new password.");
+      setView("login");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -237,6 +300,80 @@ export function AuthGate({ children }: Props) {
     );
   }
 
+  if (view === "forgot") {
+    return (
+      <AuthShell
+        title="Reset your password"
+        subtitle="Enter your account email and we'll send a single-use reset link."
+      >
+        <form className="space-y-4" onSubmit={submitForgot}>
+          <Field
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            autoComplete="email"
+            placeholder="you@example.com"
+          />
+          <ErrorMessage message={error} />
+          <SubmitButton busy={busy} label="Email me a reset link" />
+          <button
+            type="button"
+            onClick={() => {
+              setView("login");
+              setError("");
+            }}
+            className="w-full text-xs text-slate-400 hover:text-slate-200"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </AuthShell>
+    );
+  }
+
+  if (view === "reset") {
+    return (
+      <AuthShell
+        title="Choose a new password"
+        subtitle="This reset link works once. Your other sessions will be signed out."
+      >
+        <form className="space-y-4" onSubmit={submitReset}>
+          <Field
+            label="New password"
+            type="password"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            placeholder="At least 12 characters"
+          />
+          <Field
+            label="Confirm new password"
+            type="password"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            autoComplete="new-password"
+            placeholder="Repeat your new password"
+          />
+          <ErrorMessage message={error} />
+          <SubmitButton busy={busy} label="Set new password" />
+          <button
+            type="button"
+            onClick={() => {
+              window.history.replaceState(null, "", window.location.pathname);
+              setView("login");
+              setResetToken("");
+              setError("");
+            }}
+            className="w-full text-xs text-slate-400 hover:text-slate-200"
+          >
+            Back to sign in
+          </button>
+        </form>
+      </AuthShell>
+    );
+  }
+
   if (view === "verify") {
     return (
       <AuthShell
@@ -271,6 +408,7 @@ export function AuthGate({ children }: Props) {
 
   const isBootstrap = view === "bootstrap";
   const isRegister = view === "register";
+  const publicSignup = authStatus?.public_signup_enabled ?? false;
   const needsNewPassword = isBootstrap || isRegister;
   return (
     <AuthShell
@@ -278,19 +416,23 @@ export function AuthGate({ children }: Props) {
         isBootstrap
           ? "Create the owner account"
           : isRegister
-          ? "Join with an invite"
+          ? publicSignup
+            ? "Create your account"
+            : "Join with an invite"
           : "Sign in to Verdict"
       }
       subtitle={
         isBootstrap
           ? "This one-time setup closes permanently after the first account is created."
           : isRegister
-          ? "Paste the invite code you received to create your account."
+          ? publicSignup
+            ? "Free to join. Research runs are shared and daily quotas keep things fair."
+            : "Paste the invite code you received to create your account."
           : "Your research data is protected by password and authenticator verification."
       }
     >
       <form className="space-y-4" onSubmit={submitCredentials}>
-        {isRegister && (
+        {isRegister && !publicSignup && (
           <Field
             label="Invite code"
             value={inviteCode}
@@ -336,6 +478,7 @@ export function AuthGate({ children }: Props) {
           />
         )}
         <ErrorMessage message={error} />
+        <NoticeMessage message={notice} />
         <SubmitButton
           busy={busy}
           label={
@@ -346,16 +489,34 @@ export function AuthGate({ children }: Props) {
               : "Continue securely"
           }
         />
+        {view === "login" && authStatus?.password_reset_available && (
+          <button
+            type="button"
+            onClick={() => {
+              setView("forgot");
+              setError("");
+              setNotice("");
+            }}
+            className="w-full text-xs text-slate-400 hover:text-slate-200"
+          >
+            Forgot your password?
+          </button>
+        )}
         {!isBootstrap && (
           <button
             type="button"
             onClick={() => {
               setView(isRegister ? "login" : "register");
               setError("");
+              setNotice("");
             }}
             className="w-full text-xs text-slate-400 hover:text-slate-200"
           >
-            {isRegister ? "Back to sign in" : "Have an invite code? Create an account"}
+            {isRegister
+              ? "Back to sign in"
+              : publicSignup
+              ? "New here? Create an account"
+              : "Have an invite code? Create an account"}
           </button>
         )}
       </form>
@@ -372,6 +533,7 @@ function AuthShell({
   subtitle: string;
   children?: ReactNode;
 }) {
+  const [legalOpen, setLegalOpen] = useState(false);
   return (
     <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12 text-slate-100">
       <section className="w-full max-w-md">
@@ -393,6 +555,18 @@ function AuthShell({
         <p className="mt-5 text-center text-[11px] italic text-slate-500">
           Every stock gets a trial.
         </p>
+        <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
+          Educational research tool — not investment advice. By continuing you accept the{" "}
+          <button
+            type="button"
+            onClick={() => setLegalOpen(true)}
+            className="underline decoration-slate-600 underline-offset-2 hover:text-slate-300"
+          >
+            terms, privacy policy, and risk disclosure
+          </button>
+          .
+        </p>
+        {legalOpen && <LegalModal onClose={() => setLegalOpen(false)} />}
       </section>
     </main>
   );
@@ -431,6 +605,17 @@ function Field({
 function ErrorMessage({ message }: { message: string }) {
   return message ? (
     <p role="alert" className="rounded-lg border border-rose-800 bg-rose-950/40 p-3 text-xs text-rose-200">
+      {message}
+    </p>
+  ) : null;
+}
+
+function NoticeMessage({ message }: { message: string }) {
+  return message ? (
+    <p
+      role="status"
+      className="rounded-lg border border-emerald-800 bg-emerald-950/40 p-3 text-xs text-emerald-200"
+    >
       {message}
     </p>
   ) : null;

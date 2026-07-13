@@ -40,6 +40,7 @@ from app.security import (
     verify_csrf,
     verify_password,
 )
+from app.services.mailer import email_configured
 
 router = APIRouter()
 
@@ -89,7 +90,13 @@ def _qr_data_uri(uri: str) -> str:
 @router.get("/status")
 async def auth_status(db: AsyncSession = Depends(session_scope)) -> dict:
     count = await db.scalar(select(func.count(User.id)))
-    return {"bootstrap_required": count == 0}
+    settings = get_settings()
+    return {
+        "bootstrap_required": count == 0,
+        "public_signup_enabled": settings.public_signup_enabled,
+        # The forgot-password flow only works when the server can send email.
+        "password_reset_available": email_configured(),
+    }
 
 
 @router.post("/bootstrap", status_code=201)

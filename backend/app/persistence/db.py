@@ -110,6 +110,21 @@ class LoginChallenge(Base):
     )
 
 
+class PasswordResetToken(Base):
+    """Single-use reset token emailed to the account owner. Digest-only storage."""
+
+    __tablename__ = "password_reset_tokens"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
 class Invite(Base):
     """One-time registration code issued by the owner. Only a digest is stored."""
 

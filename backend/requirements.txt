@@ -15,6 +15,8 @@ defusedxml==0.7.1
 
 # Production: logging, auth, rate limiting, persistence, SSE
 slowapi==0.1.9
+# Only exercised when RATE_LIMIT_STORAGE_URI=redis://... (multi-worker deployments)
+redis==6.4.0
 sqlalchemy==2.0.51
 aiosqlite==0.20.0
 asyncpg==0.31.0

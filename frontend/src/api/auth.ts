@@ -60,8 +60,14 @@ async function authJson<T>(
   return (await res.json()) as T;
 }
 
+export interface AuthStatus {
+  bootstrap_required: boolean;
+  public_signup_enabled: boolean;
+  password_reset_available: boolean;
+}
+
 export const authApi = {
-  status: () => authJson<{ bootstrap_required: boolean }>("/auth/status"),
+  status: () => authJson<AuthStatus>("/auth/status"),
   me: () => authJson<AuthSession>("/auth/me"),
   bootstrap: (
     email: string,
@@ -86,8 +92,31 @@ export const authApi = {
     authJson<AuthSession>("/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invite_code: inviteCode, email, password }),
+      // Omit the code entirely for open-signup registrations.
+      body: JSON.stringify({
+        ...(inviteCode ? { invite_code: inviteCode } : {}),
+        email,
+        password,
+      }),
     }),
+  requestPasswordReset: async (email: string) => {
+    const res = await fetch(`${BASE_URL}/auth/password-reset/request`, {
+      method: "POST",
+      credentials: "include",
+      headers: requestHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ email }),
+    });
+    if (!res.ok) throw await errorFromResponse(res);
+  },
+  confirmPasswordReset: async (token: string, password: string) => {
+    const res = await fetch(`${BASE_URL}/auth/password-reset/confirm`, {
+      method: "POST",
+      credentials: "include",
+      headers: requestHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ token, password }),
+    });
+    if (!res.ok) throw await errorFromResponse(res);
+  },
   createInvite: (note: string) =>
     authJson<InviteCreated>("/auth/invites", {
       method: "POST",

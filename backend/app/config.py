@@ -115,6 +115,15 @@ class Settings(BaseSettings):
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     auth_encryption_key: str = Field(default="")
     session_cookie_secure: bool = Field(default=False)
+    # Open self-serve registration (no invite code). Off = invite-only.
+    # Fresh-run quotas still bound LLM spend when this is on.
+    public_signup_enabled: bool = Field(default=False)
+    # Password-reset links are only sent when SMTP is configured; tokens are
+    # single-use and stored as digests, like sessions and invites.
+    password_reset_token_minutes: int = Field(default=30, ge=5, le=120)
+    # Absolute origin used in password-reset emails, e.g. https://verdict.example.com.
+    # Blank falls back to the first CORS origin.
+    app_public_url: str = Field(default="")
     session_ttl_hours: int = Field(default=12, ge=1, le=168)
     session_idle_minutes: int = Field(default=30, ge=5, le=1440)
     login_challenge_minutes: int = Field(default=5, ge=1, le=15)
@@ -146,6 +155,9 @@ class Settings(BaseSettings):
     rate_limit_research: str = Field(default="30/minute")
     rate_limit_filings: str = Field(default="60/minute")
     rate_limit_auth: str = Field(default="5/minute")
+    # Shared limiter storage, e.g. redis://localhost:6379/0. Blank keeps the
+    # per-process in-memory backend (fine for a single worker).
+    rate_limit_storage_uri: str = Field(default="")
     # SQLite database for research history (sync URI converted to async at runtime).
     database_url: str = Field(default="sqlite+aiosqlite:///./data/verdict.db")
     # Soft request deadline (seconds). LLM calls inside agents have their own timeouts.
@@ -158,6 +170,15 @@ class Settings(BaseSettings):
     @property
     def allowed_hosts_list(self) -> list[str]:
         return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
+
+    @property
+    def password_reset_link_base(self) -> str:
+        """Origin for links in password-reset emails — never taken from the request."""
+        base = self.app_public_url.strip()
+        if base:
+            return base.rstrip("/")
+        origins = self.cors_origins_list
+        return origins[0].rstrip("/") if origins else ""
 
     @property
     def session_cookie_name(self) -> str:

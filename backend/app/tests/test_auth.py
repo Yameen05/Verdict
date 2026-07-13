@@ -24,7 +24,7 @@ def _new_client(monkeypatch, *, require_2fa: bool) -> TestClient:
 
 def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
     with _new_client(monkeypatch, require_2fa=False) as client:
-        assert client.get("/auth/status").json() == {"bootstrap_required": True}
+        assert client.get("/auth/status").json()["bootstrap_required"] is True
         rejected = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": "wrong"},
@@ -40,7 +40,7 @@ def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
         assert created.status_code == 201
         assert created.json()["user"]["email"] == OWNER["email"]
         assert created.cookies.get("verdict_session")
-        assert client.get("/auth/status").json() == {"bootstrap_required": False}
+        assert client.get("/auth/status").json()["bootstrap_required"] is False
 
         duplicate = client.post(
             "/auth/bootstrap",

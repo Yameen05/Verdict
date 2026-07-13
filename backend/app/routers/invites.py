@@ -48,7 +48,9 @@ class InviteCreateRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    invite_code: str = Field(min_length=8, max_length=128)
+    # Optional when PUBLIC_SIGNUP_ENABLED=true; required (and validated)
+    # whenever a code is supplied.
+    invite_code: str | None = Field(default=None, min_length=8, max_length=128)
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=128)
 
@@ -149,13 +151,21 @@ async def register(
     body: RegisterRequest,
     db: AsyncSession = Depends(session_scope),
 ) -> dict:
-    invite = await db.scalar(
-        select(Invite).where(Invite.code_hash == token_digest(body.invite_code.strip()))
-    )
-    if invite is None or invite.used_at is not None or as_utc(invite.expires_at) <= utc_now():
-        await record_audit(db, request, "register_failed", details={"reason": "bad_invite"})
+    settings = get_settings()
+    code = (body.invite_code or "").strip()
+    invite: Invite | None = None
+    if code:
+        invite = await db.scalar(
+            select(Invite).where(Invite.code_hash == token_digest(code))
+        )
+        if invite is None or invite.used_at is not None or as_utc(invite.expires_at) <= utc_now():
+            await record_audit(db, request, "register_failed", details={"reason": "bad_invite"})
+            await db.commit()
+            raise HTTPException(status_code=401, detail="Invalid or expired invite code")
+    elif not settings.public_signup_enabled:
+        await record_audit(db, request, "register_failed", details={"reason": "no_invite"})
         await db.commit()
-        raise HTTPException(status_code=401, detail="Invalid or expired invite code")
+        raise HTTPException(status_code=401, detail="An invite code is required to register")
 
     email = normalize_email(body.email)
     validate_password(body.password, email)
@@ -176,16 +186,16 @@ async def register(
             status_code=409, detail="An account with this email already exists"
         ) from exc
 
-    invite.used_by = user.id
-    invite.used_at = utc_now()
+    if invite is not None:
+        invite.used_by = user.id
+        invite.used_at = utc_now()
 
-    settings = get_settings()
     user_session, raw_token = await create_session(
         db, request, user, mfa_verified=not settings.require_2fa
     )
     await record_audit(
         db, request, "member_registered", user_id=user.id,
-        details={"invite_id": invite.id},
+        details={"invite_id": invite.id if invite else None, "public_signup": invite is None},
     )
     await db.commit()
 
