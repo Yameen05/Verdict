@@ -16,12 +16,14 @@
   <a href="SECURITY.md">Security</a>
 </p>
 
-[![Python](https://img.shields.io/badge/Python-3.13-blue)](https://www.python.org/)
-[![Node](https://img.shields.io/badge/Node-26-43853D)](https://nodejs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-1.2-7E57C2)](https://langchain-ai.github.io/langgraph/)
-[![React](https://img.shields.io/badge/React-18-61DAFB)](https://react.dev/)
-[![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.13-blue" alt="Python 3.13" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/Node-26-43853D" alt="Node 26" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-0.139-009688" alt="FastAPI 0.139" /></a>
+  <a href="https://langchain-ai.github.io/langgraph/"><img src="https://img.shields.io/badge/LangGraph-1.2-7E57C2" alt="LangGraph 1.2" /></a>
+  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB" alt="React 18" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="MIT License" /></a>
+</p>
 
 Verdict is a full-stack, multi-agent stock and crypto research workspace. Pick a
 ticker, choose how long you would hold it, inspect the live chart, and get a
@@ -523,7 +525,7 @@ npm test
 npm run build
 ```
 
-Current local verification (July 13, 2026):
+Current local verification (July 14, 2026):
 
 - Backend lint: `ruff check app` passed.
 - Backend tests: `pytest` passed with `188 passed, 9 warnings` (includes the
