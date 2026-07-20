@@ -12,7 +12,7 @@ COPY . .
 RUN npm run build
 
 # ---------- runtime ----------
-FROM nginxinc/nginx-unprivileged:1.31.1-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.31.3-alpine AS runtime
 
 # nginx config that serves the SPA and proxies /api to the backend.
 COPY nginx.conf /etc/nginx/conf.d/default.conf
