@@ -1,9 +1,12 @@
 """Day-trade desk endpoints — intraday multi-agent signals and the scanner."""
 
-from __future__ import annotations
+# NOTE: no `from __future__ import annotations` — see routers/research.py for
+# why stringized annotations break slowapi-wrapped handlers.
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
+from app.config import get_settings
+from app.limiter import limiter
 from app.services.cache import TTLCache
 from app.services.daytrade import (
     DayTradeError,
@@ -15,8 +18,8 @@ from app.services.daytrade import (
 
 router = APIRouter()
 
-_signal_cache: TTLCache[DayTradeSignal] = TTLCache(60)  # a 1-minute bar's lifetime
-_scan_cache: TTLCache[ScanResponse] = TTLCache(180)
+_signal_cache: TTLCache[DayTradeSignal] = TTLCache(60, maxsize=128)  # a 1-minute bar's lifetime
+_scan_cache: TTLCache[ScanResponse] = TTLCache(180, maxsize=4)
 
 
 def _validate_ticker(raw: str) -> str:
@@ -27,7 +30,8 @@ def _validate_ticker(raw: str) -> str:
 
 
 @router.get("/scan", response_model=ScanResponse)
-async def scan() -> ScanResponse:
+@limiter.limit(lambda: get_settings().rate_limit_daytrade)
+async def scan(request: Request) -> ScanResponse:
     """Rules-only sweep of liquid day-trading names, strongest setups first."""
 
     async def factory() -> ScanResponse:
@@ -37,7 +41,8 @@ async def scan() -> ScanResponse:
 
 
 @router.get("/{ticker}/signal", response_model=DayTradeSignal)
-async def signal(ticker: str) -> DayTradeSignal:
+@limiter.limit(lambda: get_settings().rate_limit_daytrade)
+async def signal(request: Request, ticker: str) -> DayTradeSignal:
     """Full multi-agent intraday assessment for one ticker."""
     ticker = _validate_ticker(ticker)
 

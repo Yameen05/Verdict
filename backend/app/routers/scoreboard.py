@@ -32,7 +32,9 @@ log = get_logger(__name__)
 HOLD_BAND_PCT = 5.0
 MAX_TICKERS_PRICED = 25
 
-_price_cache: TTLCache[float | None] = TTLCache(600)  # 10 minutes
+# 10 minutes. A failed lookup caches as None so the scoreboard stops
+# re-hitting the provider for every unpriceable ticker on each render.
+_price_cache: TTLCache[float | None] = TTLCache(600, maxsize=256)
 
 
 async def _cached_price(ticker: str) -> float | None:

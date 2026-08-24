@@ -151,10 +151,23 @@ class Settings(BaseSettings):
     smtp_from: str = Field(default="")
     smtp_starttls: bool = Field(default=True)
 
+    # Reverse proxies whose X-Forwarded-For header may be believed, as a
+    # comma-separated list of IPs or CIDRs. The default covers loopback and the
+    # private ranges a proxy actually sits on; a request arriving straight from
+    # the internet has a public peer address, so its header is ignored. Set this
+    # explicitly when your proxy has a public address, and never to "0.0.0.0/0"
+    # — that lets any client forge its own address and skip the rate limits.
+    trusted_proxy_ips: str = Field(
+        default="127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+    )
+
     # Per-IP rate limits (slowapi syntax: "<count>/<window>")
     rate_limit_research: str = Field(default="30/minute")
     rate_limit_filings: str = Field(default="60/minute")
     rate_limit_auth: str = Field(default="5/minute")
+    # The day-trade desk runs a multi-agent LLM assessment per cache miss and
+    # has no daily-run quota behind it, so it gets its own tighter limit.
+    rate_limit_daytrade: str = Field(default="20/minute")
     # Shared limiter storage, e.g. redis://localhost:6379/0. Blank keeps the
     # per-process in-memory backend (fine for a single worker).
     rate_limit_storage_uri: str = Field(default="")
@@ -166,6 +179,10 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def trusted_proxy_ips_list(self) -> list[str]:
+        return [p.strip() for p in self.trusted_proxy_ips.split(",") if p.strip()]
 
     @property
     def allowed_hosts_list(self) -> list[str]:
@@ -239,6 +256,13 @@ class Settings(BaseSettings):
             problems.append("AUTH_ENCRYPTION_KEY must be a valid Fernet key")
         if "*" in self.cors_origins_list:
             problems.append("CORS_ORIGINS cannot contain *")
+        # A default-route entry trusts every peer, which makes X-Forwarded-For
+        # (and therefore every per-IP rate limit) client-controlled.
+        if any(
+            entry.strip() in {"0.0.0.0/0", "::/0", "*"}
+            for entry in self.trusted_proxy_ips.split(",")
+        ):
+            problems.append("TRUSTED_PROXY_IPS cannot trust every address")
         if "*" in self.allowed_hosts_list or not self.allowed_hosts_list:
             problems.append("ALLOWED_HOSTS must explicitly list deployment hosts")
         if self.docs_enabled:

@@ -23,8 +23,16 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.netaddr import client_ip
 from app.observability.logging import get_request_id
-from app.persistence.db import AuditEvent, User, UserSession, session_scope
+from app.persistence.db import (
+    AuditEvent,
+    LoginChallenge,
+    PasswordResetToken,
+    User,
+    UserSession,
+    session_scope,
+)
 
 PASSWORD_HASHER = PasswordHasher(
     time_cost=2,
@@ -151,7 +159,8 @@ def recovery_code_digest(code: str) -> str:
 
 
 def request_ip(request: Request) -> str:
-    return ((request.client.host if request.client else "") or "")[:64]
+    """Client address for audit records — proxy-aware, never a raw header."""
+    return client_ip(request)[:64]
 
 
 def request_user_agent(request: Request) -> str:
@@ -300,6 +309,22 @@ def basic_auth_payload(context: AuthContext) -> dict:
         "csrf_token": context.session.csrf_token,
         "requires_2fa_setup": not context.session.mfa_verified,
     }
+
+
+async def purge_expired_auth_rows(db: AsyncSession) -> int:
+    """Delete auth rows that are past their expiry. Returns how many went.
+
+    Expired rows are otherwise only removed when their own token is presented
+    again, so abandoned sessions and unredeemed challenges accumulate forever.
+    None of them can still authenticate — every read path re-checks expiry.
+    """
+    now = utc_now()
+    removed = 0
+    for model in (UserSession, LoginChallenge, PasswordResetToken):
+        result = await db.execute(delete(model).where(model.expires_at <= now))
+        removed += result.rowcount or 0
+    await db.commit()
+    return removed
 
 
 async def require_owner(

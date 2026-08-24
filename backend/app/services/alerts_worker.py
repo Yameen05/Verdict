@@ -8,6 +8,8 @@ the lifespan), wakes every ALERTS_CHECK_SECONDS, and:
      crossed alert triggered (email sent when SMTP is configured).
   2. Compares each armed verdict watch against the newest stored run for its
      ticker and notifies + re-arms on a recommendation change.
+  3. Deletes expired sessions, login challenges, and password-reset tokens,
+     which nothing else cleans up.
 
 Every step is best-effort: a bad ticker or provider hiccup skips that ticker
 and the loop continues. Nothing here raises out of the worker.
@@ -28,6 +30,7 @@ from app.persistence.user_state import (
     list_pending_alerts,
     mark_alert_triggered,
 )
+from app.security import purge_expired_auth_rows
 from app.services.mailer import email_configured, send_email
 from app.services.metrics_client import MetricsClientError, fetch_latest_price_bar
 
@@ -122,6 +125,9 @@ async def run_worker(stop: asyncio.Event, interval_seconds: float) -> None:
             async with get_sessionmaker()() as session:
                 await evaluate_alerts_once(session)
                 await evaluate_verdict_watches_once(session)
+                purged = await purge_expired_auth_rows(session)
+                if purged:
+                    log.info("expired_auth_rows_purged", extra={"rows": purged})
         except Exception:  # noqa: BLE001 - the worker must survive anything
             log.exception("alerts_worker_cycle_failed")
         try:

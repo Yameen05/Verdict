@@ -52,11 +52,15 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # One worker is the safe default while rate limits use in-process storage and
 # SQLite is supported. Scale out only after configuring shared infrastructure.
+#
+# No --forwarded-allow-ips: with it set to "*" uvicorn overwrites the peer
+# address with the leftmost X-Forwarded-For entry, which the client controls, so
+# every per-IP rate limit becomes trivially bypassable. The app resolves the
+# client address itself against TRUSTED_PROXY_IPS — see app/netaddr.py.
 CMD ["gunicorn", "app.main:app", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "1", \
      "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--forwarded-allow-ips", "*", \
      "--access-logfile", "-", \
      "--error-logfile", "-", \
      "--timeout", "180"]

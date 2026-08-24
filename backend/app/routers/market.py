@@ -29,10 +29,12 @@ router = APIRouter()
 PriceRange = Literal["1D", "5D", "1M", "3M", "6M", "1Y", "5Y"]
 PriceInterval = Literal["1M", "5M", "15M", "1H", "1D", "1W"]
 MAX_BACKTEST_TICKERS = 25
-_history_cache: TTLCache[tuple[list[PriceBar], str]] = TTLCache(60)
-_quote_cache: TTLCache[tuple[PriceBar, str]] = TTLCache(10)
-_daily_cache: TTLCache[list[PriceBar]] = TTLCache(600)  # 10 min; backtest + /ranges
-_timing_cache: TTLCache[TimingAssessment] = TTLCache(120)  # 2 min
+_history_cache: TTLCache[tuple[list[PriceBar], str]] = TTLCache(60, maxsize=256)
+_quote_cache: TTLCache[tuple[PriceBar, str]] = TTLCache(10, maxsize=256)
+# 10 min; backtest + /ranges. Each entry is ~5 years of daily bars, so this
+# one is capped far tighter than the rest.
+_daily_cache: TTLCache[list[PriceBar]] = TTLCache(600, maxsize=64)
+_timing_cache: TTLCache[TimingAssessment] = TTLCache(120, maxsize=128)  # 2 min
 
 
 class PriceBarResponse(BaseModel):
