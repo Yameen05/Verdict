@@ -39,6 +39,7 @@ def _isolated_env(monkeypatch, tmp_path):
     monkeypatch.setenv("RATE_LIMIT_RESEARCH", "1000/minute")
     monkeypatch.setenv("RATE_LIMIT_FILINGS", "1000/minute")
     monkeypatch.setenv("RATE_LIMIT_AUTH", "1000/minute")
+    monkeypatch.setenv("RATE_LIMIT_DAYTRADE", "1000/minute")
     get_settings.cache_clear()
     # Reset persistence singletons so the new URL is picked up.
     from app.persistence import db as db_mod

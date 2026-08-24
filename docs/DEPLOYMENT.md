@@ -38,6 +38,18 @@ Terminate HTTPS with a maintained reverse proxy or managed load balancer and
 forward traffic to `http://127.0.0.1:8080`. Preserve the original `Host` and
 `X-Forwarded-Proto` headers. Do not publish backend port 8000.
 
+Your proxy must **append** the real peer to `X-Forwarded-For` rather than
+replacing it — nginx's `$proxy_add_x_forwarded_for` does this, and the bundled
+config already uses it. The app resolves the client address by walking that
+header right to left, skipping hops listed in `TRUSTED_PROXY_IPS`, so a value a
+client forged for itself is always overridden by the address the proxy appended.
+Rate limits and audit records key off the result.
+
+`TRUSTED_PROXY_IPS` defaults to loopback plus the private ranges, which covers
+the bundled Compose setup. Set it explicitly if your proxy has a public address.
+Never set it to `0.0.0.0/0`: that trusts every peer, which lets any client claim
+an arbitrary address and walk past the login, 2FA, and password-reset limits.
+
 Use a DNS name that exactly matches `ALLOWED_HOSTS` and `CORS_ORIGINS`. Verify
 the certificate before completing owner setup.
 

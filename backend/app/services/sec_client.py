@@ -72,27 +72,34 @@ class TickerInfo:
 
 
 _ticker_cache: dict[str, TickerInfo] | None = None
+# The lookup file is a few MB; without this, every concurrent first-time
+# request downloads its own copy.
+_ticker_cache_lock = asyncio.Lock()
 
 
 async def _ensure_ticker_cache(client: httpx.AsyncClient | None = None) -> None:
     global _ticker_cache
     if _ticker_cache is not None:
         return
-    owns_client = client is None
-    c = client or httpx.AsyncClient(headers=_headers(), timeout=30.0)
-    try:
-        r = await get_with_retry(c, TICKER_LOOKUP_URL)
-        data = r.json()
-        _ticker_cache = {
-            row["ticker"].upper(): TickerInfo(
-                cik=str(row["cik_str"]).zfill(10),
-                name=row["title"],
-            )
-            for row in data.values()
-        }
-    finally:
-        if owns_client:
-            await c.aclose()
+    async with _ticker_cache_lock:
+        # Another caller may have populated it while we waited.
+        if _ticker_cache is not None:
+            return
+        owns_client = client is None
+        c = client or httpx.AsyncClient(headers=_headers(), timeout=30.0)
+        try:
+            r = await get_with_retry(c, TICKER_LOOKUP_URL)
+            data = r.json()
+            _ticker_cache = {
+                row["ticker"].upper(): TickerInfo(
+                    cik=str(row["cik_str"]).zfill(10),
+                    name=row["title"],
+                )
+                for row in data.values()
+            }
+        finally:
+            if owns_client:
+                await c.aclose()
 
 
 async def lookup_cik(ticker: str, client: httpx.AsyncClient | None = None) -> str:

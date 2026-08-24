@@ -446,7 +446,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | `RATE_LIMIT_AUTH` | No | Defaults to `5/minute` |
 | `RATE_LIMIT_RESEARCH` | No | Defaults to `30/minute` |
 | `RATE_LIMIT_FILINGS` | No | Defaults to `60/minute` |
+| `RATE_LIMIT_DAYTRADE` | No | Defaults to `20/minute` |
 | `RATE_LIMIT_STORAGE_URI` | No | Redis URI for shared limiter counters; blank = per-process memory |
+| `TRUSTED_PROXY_IPS` | No | Reverse proxies whose `X-Forwarded-For` is believed; defaults to loopback + private ranges |
 
 See [.env.example](.env.example) for the complete set of operational and cost
 tracking variables.
@@ -579,6 +581,11 @@ rg -n --hidden --glob '!.git/**' --glob '!frontend/node_modules/**' \
   `SESSION_COOKIE_SECURE=true`, and explicit `ALLOWED_HOSTS` / `CORS_ORIGINS`.
 - Terminate TLS in a maintained reverse proxy or managed load balancer.
 - Keep `APP_BIND_ADDRESS=127.0.0.1` when a local reverse proxy owns public TLS.
+- Point `TRUSTED_PROXY_IPS` at your reverse proxy if it does not sit on
+  loopback or a private range. Rate limits and audit records key off the
+  address resolved from it, and the proxy must append the real peer to
+  `X-Forwarded-For` (nginx's `$proxy_add_x_forwarded_for` does). Never set it
+  to `0.0.0.0/0`: that lets any client forge its address and skip every limit.
 - Move from SQLite to Postgres for multi-instance deployments: set
   `DATABASE_URL=postgresql+asyncpg://user:pass@host/db` — the asyncpg driver
   ships in requirements.
