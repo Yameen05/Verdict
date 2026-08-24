@@ -34,7 +34,6 @@ async def get_with_retry(
     EDGAR occasionally rate-limits or blips; a single retry avoids dropping an
     entire evidence category (filing, insider transactions) over a hiccup.
     """
-    last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
             r = await client.get(url)
@@ -43,14 +42,11 @@ async def get_with_retry(
         except httpx.HTTPStatusError as e:
             if e.response.status_code not in _RETRYABLE_STATUSES or attempt == attempts - 1:
                 raise
-            last_exc = e
-        except httpx.TransportError as e:
+        except httpx.TransportError:
             if attempt == attempts - 1:
                 raise
-            last_exc = e
         await asyncio.sleep(delay)
-    assert last_exc is not None
-    raise last_exc
+    raise RuntimeError("get_with_retry called with attempts <= 0")
 
 
 @dataclass(slots=True)

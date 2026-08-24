@@ -40,16 +40,14 @@ def _retry_sync(fn: Callable[[], T], *, attempts: int = 2, delay: float = 0.4) -
     category on the first try. Only retries the caller's own function; any
     exception on the last attempt propagates unchanged.
     """
-    last_exc: Exception | None = None
     for attempt in range(attempts):
         try:
             return fn()
-        except Exception as e:  # noqa: BLE001 - caller wraps/classifies the final error
-            last_exc = e
-            if attempt < attempts - 1:
-                time.sleep(delay)
-    assert last_exc is not None
-    raise last_exc
+        except Exception:  # noqa: BLE001 - caller wraps/classifies the final error
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay)
+    raise RuntimeError("_retry_sync called with attempts <= 0")
 
 
 @dataclass(slots=True)
