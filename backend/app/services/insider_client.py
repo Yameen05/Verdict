@@ -21,7 +21,12 @@ import httpx
 from defusedxml import ElementTree as SafeET
 
 from app.observability.logging import get_logger
-from app.services.sec_client import SUBMISSIONS_URL_TEMPLATE, _headers, lookup_cik
+from app.services.sec_client import (
+    SUBMISSIONS_URL_TEMPLATE,
+    _headers,
+    get_with_retry,
+    lookup_cik,
+)
 
 log = get_logger(__name__)
 
@@ -108,8 +113,7 @@ async def fetch_recent_form4(ticker: str, max_filings: int = MAX_FORM4) -> list[
     async with httpx.AsyncClient(headers=_headers(), timeout=20.0) as client:
         try:
             cik = await lookup_cik(ticker, client=client)
-            r = await client.get(SUBMISSIONS_URL_TEMPLATE.format(cik=cik))
-            r.raise_for_status()
+            r = await get_with_retry(client, SUBMISSIONS_URL_TEMPLATE.format(cik=cik))
             recent = r.json()["filings"]["recent"]
         except ValueError:
             raise
@@ -144,8 +148,7 @@ async def fetch_recent_form4(ticker: str, max_filings: int = MAX_FORM4) -> list[
                 cik_int=cik_int, acc_nodash=acc.replace("-", ""), doc=raw_doc
             )
             try:
-                resp = await client.get(url)
-                resp.raise_for_status()
+                resp = await get_with_retry(client, url)
                 return _parse_form4_xml(resp.text)
             except Exception as e:  # noqa: BLE001 - one bad filing shouldn't sink the rest
                 log.warning(

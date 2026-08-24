@@ -377,7 +377,10 @@ export default function App({
                   (e.data.result.report.confidence !== null
                     ? ` (${e.data.result.report.confidence}/100)`
                     : "") +
-                  ` · ${(e.data.duration_ms / 1000).toFixed(1)}s · $${totalUsd.toFixed(4)}`,
+                  ` · ${(e.data.duration_ms / 1000).toFixed(1)}s · $${totalUsd.toFixed(4)}` +
+                  (e.data.persist_error
+                    ? " · not saved to history (try again to retry saving)"
+                    : ""),
               );
             }
             setHistoryRefresh((n) => n + 1);

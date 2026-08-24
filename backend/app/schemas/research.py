@@ -145,6 +145,9 @@ class ResearchReport(BaseModel):
     horizon_days: int | None = None  # holding period this verdict was framed for
     horizon_outlook: str | None = None  # what could move the price in that window
     simple_summary: str | None = None  # jargon-free 2-3 sentence version
+    # True when the LLM judge was unavailable/unparseable and this verdict came
+    # from the deterministic scoring fallback instead of the debated judgment.
+    degraded: bool = False
 
 
 class ResearchResponse(BaseModel):

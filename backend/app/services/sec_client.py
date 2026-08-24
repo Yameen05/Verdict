@@ -8,6 +8,7 @@ Reference: https://www.sec.gov/os/accessing-edgar-data
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Literal
 
@@ -21,6 +22,35 @@ FilingForm = Literal["10-K", "10-Q"]
 TICKER_LOOKUP_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL_TEMPLATE = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_DOC_URL_TEMPLATE = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{doc}"
+
+_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+
+
+async def get_with_retry(
+    client: httpx.AsyncClient, url: str, *, attempts: int = 2, delay: float = 0.5
+) -> httpx.Response:
+    """GET with one short retry on a transient network/5xx/429 failure.
+
+    EDGAR occasionally rate-limits or blips; a single retry avoids dropping an
+    entire evidence category (filing, insider transactions) over a hiccup.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            r = await client.get(url)
+            r.raise_for_status()
+            return r
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code not in _RETRYABLE_STATUSES or attempt == attempts - 1:
+                raise
+            last_exc = e
+        except httpx.TransportError as e:
+            if attempt == attempts - 1:
+                raise
+            last_exc = e
+        await asyncio.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
 
 
 @dataclass(slots=True)
@@ -55,8 +85,7 @@ async def _ensure_ticker_cache(client: httpx.AsyncClient | None = None) -> None:
     owns_client = client is None
     c = client or httpx.AsyncClient(headers=_headers(), timeout=30.0)
     try:
-        r = await c.get(TICKER_LOOKUP_URL)
-        r.raise_for_status()
+        r = await get_with_retry(c, TICKER_LOOKUP_URL)
         data = r.json()
         _ticker_cache = {
             row["ticker"].upper(): TickerInfo(
@@ -100,8 +129,7 @@ async def _fetch_filing(ticker: str, form: FilingForm) -> Filing:
         cik = await lookup_cik(ticker, client=client)
 
         submissions_url = SUBMISSIONS_URL_TEMPLATE.format(cik=cik)
-        r = await client.get(submissions_url)
-        r.raise_for_status()
+        r = await get_with_retry(client, submissions_url)
         sub = r.json()
 
         recent = sub["filings"]["recent"]
@@ -124,8 +152,7 @@ async def _fetch_filing(ticker: str, form: FilingForm) -> Filing:
             cik_int=cik_int, acc_nodash=acc_nodash, doc=primary_document
         )
 
-        doc_r = await client.get(doc_url)
-        doc_r.raise_for_status()
+        doc_r = await get_with_retry(client, doc_url)
         raw_html = doc_r.text
 
         text = _html_to_text(raw_html)

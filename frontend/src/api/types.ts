@@ -172,6 +172,7 @@ export interface ResearchReport {
   horizon_days: number | null;
   horizon_outlook: string | null;
   simple_summary: string | null;
+  degraded: boolean;
 }
 
 export interface ResearchResponse {
@@ -277,6 +278,8 @@ export interface ResearchEnvelope {
   duration_ms: number;
   cost: CostBreakdown;
   persisted_id: number | null;
+  persist_error: string | null;
+  ingest_error: string | null;
   cached: boolean;
   cache_age_minutes: number | null;
   result: ResearchResponse;

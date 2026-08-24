@@ -21,6 +21,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import get_settings
+from app.observability.cost import record_chat
 from app.observability.logging import get_logger
 from app.services.llm import llm_key_configured, make_llm_client
 from app.services.metrics_client import (
@@ -243,6 +244,7 @@ async def _llm_assessment(
         temperature=0.2,
         response_format={"type": "json_object"},
     )
+    record_chat(settings.llm_model, resp)
     raw = resp.choices[0].message.content or "{}"
     data = json.loads(raw)
     action = data.get("action")

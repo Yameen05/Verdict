@@ -138,6 +138,14 @@ export function VerdictCard({ result, meta, onExport }: Props) {
           <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-0.5 text-[10px] text-slate-400">
             for a {label} hold
           </span>
+          {report.degraded && (
+            <span
+              className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[10px] text-amber-300"
+              title="The AI judge was unavailable or failed, so this verdict came from a conservative rule-based fallback instead of the full debate."
+            >
+              ⚠ fallback verdict
+            </span>
+          )}
           {report.confidence !== null && (
             <ConfidenceGauge value={report.confidence} color={style.gauge} />
           )}

@@ -127,6 +127,7 @@ def state_to_response(ticker: str, state: dict) -> ResearchResponse:
             justification="Graph did not produce a report.",
             company_overview="",
             financial_health="",
+            degraded=True,
         ),
     )
 

@@ -150,6 +150,7 @@ def _pending(ticker: str, justification: str) -> dict:
             justification=justification,
             company_overview="",
             financial_health="",
+            degraded=True,
         ),
         "followup_question": None,
     }
@@ -364,6 +365,7 @@ def _fallback_report(state: ResearchState, reason: str) -> dict:
             f"already had. The fallback call is {recommendation} for "
             f"{_horizon_label(horizon_days)} because {reason_text}."
         ),
+        degraded=True,
     )
     return {"report": report, "followup_question": None}
 

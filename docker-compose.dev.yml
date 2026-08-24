@@ -5,6 +5,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    environment:
+      - ALLOWED_HOSTS=localhost,127.0.0.1,backend
     volumes:
       - ./backend:/app
       - verdict-db:/app/data

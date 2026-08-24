@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import csv
 import io
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
 import yfinance as yf
@@ -23,9 +25,31 @@ from app.observability.logging import get_logger
 
 log = get_logger(__name__)
 
+T = TypeVar("T")
+
 
 class MetricsClientError(RuntimeError):
     pass
+
+
+def _retry_sync(fn: Callable[[], T], *, attempts: int = 2, delay: float = 0.4) -> T:
+    """Run a blocking call with one short retry.
+
+    yfinance/Yahoo blips transiently (rate limits, flaky scraping) often
+    enough in production that a bare failure shouldn't drop a whole evidence
+    category on the first try. Only retries the caller's own function; any
+    exception on the last attempt propagates unchanged.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 - caller wraps/classifies the final error
+            last_exc = e
+            if attempt < attempts - 1:
+                time.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
 
 
 @dataclass(slots=True)
@@ -77,7 +101,7 @@ def fetch_metrics(ticker: str) -> Metrics:
         raise MetricsClientError("Empty ticker")
 
     try:
-        info = yf.Ticker(ticker).info or {}
+        info = _retry_sync(lambda: yf.Ticker(ticker).info) or {}
     except Exception as e:  # noqa: BLE001 - yfinance has unstable internals
         raise MetricsClientError(f"yfinance lookup failed for {ticker}: {e}") from e
 
@@ -107,7 +131,7 @@ def fetch_price(ticker: str) -> float | None:
     """Just the latest price — used by the scoreboard to compute forward returns."""
     ticker = ticker.strip().upper()
     try:
-        info = yf.Ticker(ticker).info or {}
+        info = _retry_sync(lambda: yf.Ticker(ticker).info) or {}
     except Exception as e:  # noqa: BLE001 - yfinance has unstable internals
         raise MetricsClientError(f"yfinance price lookup failed for {ticker}: {e}") from e
     return _coerce_float(info.get("currentPrice") or info.get("regularMarketPrice"))
@@ -253,10 +277,12 @@ def _resolve_history_window(range_key: str, interval_key: str) -> tuple[str, str
 def _yfinance_history(ticker: str, period: str, interval: str) -> list[PriceBar]:
     """Primary source. Raises MetricsClientError on failure or empty result."""
     try:
-        history = yf.Ticker(ticker).history(
-            period=period,
-            interval=interval,
-            auto_adjust=True,
+        history = _retry_sync(
+            lambda: yf.Ticker(ticker).history(
+                period=period,
+                interval=interval,
+                auto_adjust=True,
+            )
         )
     except Exception as e:  # noqa: BLE001 - yfinance has unstable internals
         raise MetricsClientError(f"yfinance price history failed for {ticker}: {e}") from e
@@ -514,7 +540,7 @@ def fetch_days_to_earnings(ticker: str) -> int | None:
     from datetime import date
 
     try:
-        cal = yf.Ticker(ticker.strip().upper()).calendar
+        cal = _retry_sync(lambda: yf.Ticker(ticker.strip().upper()).calendar)
     except Exception:  # noqa: BLE001 - yfinance internals are unstable
         return None
 

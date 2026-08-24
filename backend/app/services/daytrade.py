@@ -25,6 +25,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import get_settings
+from app.observability.cost import record_chat
 from app.observability.logging import get_logger
 from app.services.daytrade_intraday import (
     IntradaySnapshot,
@@ -474,6 +475,7 @@ async def _llm_signal(
         temperature=0.2,
         response_format={"type": "json_object"},
     )
+    record_chat(settings.llm_model, resp)
     data = json.loads(resp.choices[0].message.content or "{}")
     action = data.get("action")
     if action not in ACTION_LABELS:

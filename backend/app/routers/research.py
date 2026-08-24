@@ -204,6 +204,11 @@ class ResearchEnvelope(BaseModel):
     duration_ms: float = 0.0
     cost: dict[str, Any] = Field(default_factory=dict)
     persisted_id: int | None = None
+    # Set when the analysis succeeded but saving it to history/cache failed —
+    # the result below is still the real, billed analysis.
+    persist_error: str | None = None
+    # Set when auto-ingesting the filing failed; the analysis proceeded without it.
+    ingest_error: str | None = None
     cached: bool = False
     cache_age_minutes: float | None = None
     result: ResearchResponse
@@ -265,12 +270,14 @@ async def research(
     await _enforce_quota(session, request.state.user_id)
     log.info("research_started", extra={"ticker": ticker, "horizon": horizon})
 
+    ingest_error: str | None = None
     if await _needs_auto_ingest(ticker):
         try:
             indexed = await _auto_ingest(ticker)
             log.info("auto_ingest_done", extra={"ticker": ticker, "chunks": indexed})
         except Exception as e:  # noqa: BLE001 - research proceeds without the filing
             log.warning("auto_ingest_failed", extra={"ticker": ticker, "reason": str(e)})
+            ingest_error = f"{type(e).__name__}: could not fetch the SEC filing"
 
     prior_run = await _load_prior_run(session, ticker)
 
@@ -289,15 +296,23 @@ async def research(
     response.headers["x-cost-usd"] = f"{tracker.total_usd:.6f}"
     response.headers["x-duration-ms"] = f"{duration_ms:.2f}"
 
-    run = await _persist(
-        session,
-        result=result,
-        ticker=ticker,
-        user_id=request.state.user_id,
-        duration_ms=duration_ms,
-        cost_usd=tracker.total_usd,
-        request_id=rid,
-    )
+    persisted_id: int | None = None
+    persist_error: str | None = None
+    try:
+        run = await _persist(
+            session,
+            result=result,
+            ticker=ticker,
+            user_id=request.state.user_id,
+            duration_ms=duration_ms,
+            cost_usd=tracker.total_usd,
+            request_id=rid,
+        )
+        persisted_id = run.id
+    except Exception as e:  # noqa: BLE001 - the analysis succeeded even if saving it failed
+        log.exception("research_persist_failed", extra={"ticker": ticker})
+        persist_error = f"{type(e).__name__}: could not save this run"
+
     log.info(
         "research_completed",
         extra={
@@ -306,7 +321,7 @@ async def research(
             "confidence": result.report.confidence,
             "duration_ms": duration_ms,
             "cost_usd": tracker.total_usd,
-            "run_id": run.id,
+            "run_id": persisted_id,
         },
     )
 
@@ -314,7 +329,9 @@ async def research(
         request_id=rid,
         duration_ms=duration_ms,
         cost=cost_payload,
-        persisted_id=run.id,
+        persisted_id=persisted_id,
+        persist_error=persist_error,
+        ingest_error=ingest_error,
         result=result,
     )
 
@@ -371,11 +388,24 @@ async def _sse_stream(
             }
 
     final_state: dict = {}
+    # Bounds only the graph run itself (like the POST path's wait_for), not
+    # the auto-ingest step above, which has already yielded its own events.
+    deadline = time.perf_counter() + get_settings().request_timeout_seconds
+    stream_iter = graph.astream(
+        initial_state(ticker, prior_run, horizon_days),
+        stream_mode=["updates", "custom"],
+    )
     try:
-        async for mode, chunk in graph.astream(
-            initial_state(ticker, prior_run, horizon_days),
-            stream_mode=["updates", "custom"],
-        ):
+        while True:
+            remaining = deadline - time.perf_counter()
+            if remaining <= 0:
+                raise TimeoutError("research stream exceeded request_timeout_seconds")
+            try:
+                mode, chunk = await asyncio.wait_for(
+                    stream_iter.__anext__(), timeout=remaining
+                )
+            except StopAsyncIteration:
+                break
             if mode == "custom":
                 yield {"event": "debate", "data": json.dumps(chunk, default=str)}
                 continue
@@ -389,6 +419,15 @@ async def _sse_stream(
                         default=str,
                     ),
                 }
+    except TimeoutError:
+        log.warning("research_stream_timeout", extra={"ticker": ticker})
+        yield {
+            "event": "error",
+            "data": json.dumps(
+                {"detail": "Research stream timed out", "error_type": "TimeoutError"}
+            ),
+        }
+        return
     except Exception as e:  # noqa: BLE001
         log.exception("research_stream_failed", extra={"ticker": ticker})
         yield {
@@ -404,6 +443,7 @@ async def _sse_stream(
 
     # Persist (best-effort; SSE consumer doesn't need to wait).
     persisted_id = None
+    persist_error: str | None = None
     try:
         async for session in session_scope():
             run = await _persist(
@@ -417,8 +457,9 @@ async def _sse_stream(
             )
             persisted_id = run.id
             break
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
         log.exception("research_stream_persist_failed", extra={"ticker": ticker})
+        persist_error = f"{type(e).__name__}: could not save this run"
 
     yield {
         "event": "completed",
@@ -428,6 +469,7 @@ async def _sse_stream(
                 "duration_ms": duration_ms,
                 "cost": tracker.to_dict(),
                 "persisted_id": persisted_id,
+                "persist_error": persist_error,
                 "cached": False,
                 "result": result.model_dump(),
             },

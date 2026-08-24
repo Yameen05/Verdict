@@ -283,6 +283,7 @@ export type StreamEvent =
         duration_ms: number;
         cost: CostBreakdown | Record<string, never>;
         persisted_id: number | null;
+        persist_error?: string | null;
         cached?: boolean;
         cache_age_minutes?: number | null;
         result: ResearchResponse;
