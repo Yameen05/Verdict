@@ -9,7 +9,7 @@ def _create_invite(client, note="for a friend"):
     return res.json()
 
 
-def _register(client, code, email="friend@example.com", password="a-strong-member-pass-123"):
+def _register(client, code, email="friend@example.com", password="A-strong-member-pass-123"):
     return client.post(
         "/auth/register",
         json={"invite_code": code, "email": email, "password": password},
@@ -52,6 +52,40 @@ def test_register_with_invite_creates_member_session(client):
     listed = client.get("/auth/invites").json()["invites"]
     assert listed[0]["status"] == "used"
     assert listed[0]["used_by_email"] == "friend@example.com"
+
+
+def test_register_password_rules(client):
+    code = _create_invite(client)["code"]
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as friend:
+        for password, message in (
+            ("Abcd1", "at least 6 characters"),
+            ("abcde1", "capital letter"),
+            ("Abcdef", "number"),
+        ):
+            rejected = _register(friend, code, password=password)
+            assert rejected.status_code == 422
+            assert message in rejected.text
+
+        # Six characters are enough; failed attempts leave the invite usable.
+        accepted = _register(friend, code, password="Abcde1")
+        assert accepted.status_code == 201, accepted.text
+
+
+def test_register_allows_email_name_in_password(client):
+    code = _create_invite(client)["code"]
+
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as friend:
+        accepted = _register(friend, code, password="Friend1")
+        assert accepted.status_code == 201, accepted.text
 
 
 def test_invite_single_use(client):

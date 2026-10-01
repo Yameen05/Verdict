@@ -154,9 +154,22 @@ async def test_judge_llm_failure_returns_fallback_verdict(monkeypatch):
     assert report.horizon_days == 14
     assert report.horizon_outlook
     assert report.simple_summary
-    assert "AI judge was unavailable" in report.justification
-    assert "OpenAIError" in report.justification
+    assert "temporarily rate-limited" in report.justification
+    assert "limited verdict" in report.justification
+    assert "OpenAIError" not in report.justification
     assert out["followup_question"] is None
+
+
+async def test_judge_missing_credentials_gives_actionable_fallback(monkeypatch):
+    monkeypatch.setattr(
+        judge_mod,
+        "_client",
+        lambda: _fake_openai_raising(OpenAIError("Missing credentials: API key is missing")),
+    )
+    out = await judge_mod.judge(_state())
+    report: ResearchReport = out["report"]
+    assert "provider key is missing" in report.justification
+    assert report.falsifiers[0].startswith("Add an LLM provider key")
 
 
 async def test_judge_requests_followup_once(monkeypatch):

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export interface StockOption {
   ticker: string;
@@ -66,110 +66,136 @@ interface Props {
 }
 
 export function StockPicker({ ticker, setTicker }: Props) {
-  const [custom, setCustom] = useState("");
   const [filter, setFilter] = useState("");
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
-  const filtered = filter
+  const normalized = filter.trim().toUpperCase();
+  const filtered = (filter
     ? POPULAR_STOCKS.filter(
         (s) =>
           s.ticker.toLowerCase().includes(filter.toLowerCase()) ||
           s.name.toLowerCase().includes(filter.toLowerCase()) ||
           s.sector.toLowerCase().includes(filter.toLowerCase()),
       )
-    : POPULAR_STOCKS;
+    : POPULAR_STOCKS.slice(0, 8)
+  ).slice(0, 8);
 
-  function applyCustom() {
-    const t = custom.trim().toUpperCase();
+  function applyTicker(value = filter) {
+    const t = value.trim().toUpperCase();
     if (t) {
       setTicker(t);
-      setCustom("");
+      setFilter("");
+      setOpen(false);
     }
   }
 
+  const exactMatch = POPULAR_STOCKS.some((stock) => stock.ticker === normalized);
+  const looksLikeTicker = /^[A-Z0-9.^=-]{1,12}$/.test(normalized);
+
+  useEffect(() => {
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="flex-1 min-w-[200px]">
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
-            Search
-          </label>
-          <input
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Type a name — Apple, Bitcoin, Nike…"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="font-medium uppercase tracking-wider text-slate-400">
-            Pick a stock or coin
-          </span>
-          <span className="text-slate-500">
-            Selected:{" "}
-            <span className="font-mono font-semibold text-indigo-300">{ticker || "—"}</span>
-          </span>
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {filtered.map((s) => {
-            const active = s.ticker === ticker;
-            return (
-              <button
-                key={s.ticker}
-                onClick={() => setTicker(s.ticker)}
-                className={`group rounded-lg border px-3 py-2 text-left transition ${
-                  active
-                    ? "border-indigo-500 bg-indigo-500/10 ring-1 ring-indigo-500"
-                    : "border-slate-800 bg-slate-950/40 hover:border-slate-600 hover:bg-slate-900"
-                }`}
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span
-                    className={`font-mono text-sm font-bold ${
-                      active ? "text-indigo-200" : "text-slate-200"
-                    }`}
-                  >
-                    {s.ticker}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                    {s.sector}
-                  </span>
-                </div>
-                <div className="truncate text-xs text-slate-400">{s.name}</div>
-              </button>
-            );
-          })}
-          {filtered.length === 0 && (
-            <div className="col-span-full rounded-md border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-500">
-              No matches in the curated list. Use the custom ticker field below.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <details className="group rounded-md border border-slate-800 bg-slate-950/40">
-        <summary className="cursor-pointer select-none px-3 py-2 text-xs uppercase tracking-wider text-slate-400 hover:text-slate-200">
-          Use a custom ticker
-        </summary>
-        <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
-          <input
-            value={custom}
-            onChange={(e) => setCustom(e.target.value.toUpperCase())}
-            onKeyDown={(e) => e.key === "Enter" && applyCustom()}
-            placeholder="e.g. BRK-B"
-            className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          />
-          <button
-            onClick={applyCustom}
-            disabled={!custom.trim()}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+    <div ref={pickerRef}>
+      <label htmlFor="asset-search" className="mb-2 block text-sm font-semibold text-slate-200">
+        Stock or cryptocurrency
+      </label>
+      <div className="relative">
+        <div className="flex min-h-12 items-center rounded-xl border border-slate-700 bg-slate-950/75 transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
+          <svg
+            width="19"
+            height="19"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            aria-hidden
+            className="ml-4 shrink-0 text-slate-500"
           >
-            Use ticker
-          </button>
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="m16 16 4 4" />
+          </svg>
+          <input
+            id="asset-search"
+            value={filter}
+            onFocus={() => setOpen(true)}
+            onChange={(e) => {
+              setFilter(e.target.value);
+              setOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") applyTicker();
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder="Search Apple, NVIDIA, Bitcoin, or enter a ticker"
+            autoComplete="off"
+            role="combobox"
+            aria-expanded={open}
+            aria-controls="asset-options"
+            className="min-w-0 flex-1 bg-transparent px-3 py-3 text-base text-slate-100 placeholder-slate-500 focus:outline-none"
+          />
+          <span className="mr-3 hidden rounded-lg bg-indigo-500/12 px-2.5 py-1.5 font-mono text-sm font-semibold text-indigo-200 sm:inline">
+            {ticker}
+          </span>
         </div>
-      </details>
+
+        {open && (
+          <div
+            id="asset-options"
+            role="listbox"
+            className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 overflow-hidden rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl shadow-black/35"
+          >
+            <div className="max-h-72 overflow-y-auto">
+              {filtered.map((stock) => (
+                <button
+                  key={stock.ticker}
+                  type="button"
+                  role="option"
+                  aria-selected={stock.ticker === ticker}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applyTicker(stock.ticker)}
+                  className={`flex min-h-12 w-full items-center justify-between gap-4 rounded-lg px-3 text-left transition ${
+                    stock.ticker === ticker
+                      ? "bg-indigo-500/12 text-indigo-200"
+                      : "text-slate-200 hover:bg-slate-800"
+                  }`}
+                >
+                  <span className="min-w-0">
+                    <span className="font-mono text-sm font-semibold">{stock.ticker}</span>
+                    <span className="ml-2 text-sm text-slate-400">{stock.name}</span>
+                  </span>
+                  <span className="shrink-0 text-xs text-slate-500">{stock.sector}</span>
+                </button>
+              ))}
+
+              {normalized && !exactMatch && looksLikeTicker && (
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => applyTicker()}
+                  className="flex min-h-12 w-full items-center justify-between rounded-lg px-3 text-left text-slate-200 transition hover:bg-slate-800"
+                >
+                  <span className="text-sm">Use ticker</span>
+                  <span className="font-mono text-sm font-semibold text-indigo-300">{normalized}</span>
+                </button>
+              )}
+
+              {filtered.length === 0 && !normalized && (
+                <p className="px-3 py-4 text-sm text-slate-500">Start typing to find an asset.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

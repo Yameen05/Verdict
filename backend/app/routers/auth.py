@@ -47,7 +47,7 @@ router = APIRouter()
 
 class BootstrapRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -119,7 +119,7 @@ async def bootstrap(
         raise HTTPException(status_code=404, detail="Not found")
 
     email = normalize_email(body.email)
-    validate_password(body.password, email)
+    validate_password(body.password)
     user = User(email=email, password_hash=hash_password(body.password), role="owner")
     db.add(user)
     try:

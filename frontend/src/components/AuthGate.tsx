@@ -345,7 +345,8 @@ export function AuthGate({ children }: Props) {
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
-            placeholder="At least 12 characters"
+            placeholder="6+ characters, one capital letter and one number"
+            minLength={6}
           />
           <Field
             label="Confirm new password"
@@ -354,6 +355,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your new password"
+            minLength={6}
           />
           <ErrorMessage message={error} />
           <SubmitButton busy={busy} label="Set new password" />
@@ -439,6 +441,7 @@ export function AuthGate({ children }: Props) {
             onChange={setInviteCode}
             autoComplete="off"
             placeholder="Paste your invite code"
+            minLength={8}
           />
         )}
         <Field
@@ -455,7 +458,8 @@ export function AuthGate({ children }: Props) {
           value={password}
           onChange={setPassword}
           autoComplete={needsNewPassword ? "new-password" : "current-password"}
-          placeholder={needsNewPassword ? "At least 12 characters" : "Your password"}
+          placeholder={needsNewPassword ? "6+ characters, one capital letter and one number" : "Your password"}
+          minLength={needsNewPassword ? 6 : undefined}
         />
         {needsNewPassword && (
           <Field
@@ -465,6 +469,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your password"
+            minLength={6}
           />
         )}
         {isBootstrap && (
@@ -586,6 +591,7 @@ function Field({
   placeholder?: string;
   autoComplete?: string;
   inputMode?: "numeric" | "text";
+  minLength?: number;
 }) {
   return (
     <label className="block text-xs font-medium text-slate-300">

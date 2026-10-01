@@ -58,6 +58,7 @@ await page.waitForSelector("nav", { timeout: 30_000 });
 log("logged in");
 
 // --- let the chart + panels load real data ---
+await clickByText('[role="tab"]', "Price & timing");
 await page.waitForFunction(
   () => document.body.innerText.toLowerCase().includes("range high"),
   { timeout: 60_000 },
@@ -65,8 +66,8 @@ await page.waitForFunction(
 await new Promise((r) => setTimeout(r, 2500));
 log("chart loaded");
 
-// --- run the timing agent so decision lines + panels populate ---
-if (await clickByText("button", "Should I buy")) {
+// --- run entry timing so decision lines + panels populate ---
+if (await clickByText("button", "Check entry timing")) {
   await page
     .waitForFunction(
       () => document.body.innerText.toLowerCase().includes("confidence"),
@@ -91,7 +92,7 @@ if (analyzeClicked) {
   log("analyze finished (or timed out)");
 }
 
-// --- shot 1: dashboard top (nav + picker + chart header) ---
+// --- shot 1: research top (nav + analyzer + verdict) ---
 await page.evaluate(() => window.scrollTo(0, 0));
 await new Promise((r) => setTimeout(r, 800));
 await page.screenshot({
@@ -101,6 +102,8 @@ await page.screenshot({
 log("dashboard captured");
 
 // --- shot 2: the chart panel alone ---
+await clickByText('[role="tab"]', "Price & timing");
+await new Promise((r) => setTimeout(r, 800));
 const chartSection = await page.$("section.overflow-hidden.rounded-lg");
 if (chartSection) {
   await chartSection.scrollIntoView();
@@ -110,29 +113,23 @@ if (chartSection) {
 }
 
 // --- shot 3: planning panels (position tracker + return ranges + alerts) ---
+await clickByText('[role="tab"]', "My position");
+await new Promise((r) => setTimeout(r, 800));
 const planning = await page.evaluateHandle(() => {
-  const headings = [...document.querySelectorAll("h3")];
-  const anchor = headings.find((h) => h.textContent?.includes("Position tracker"));
-  return anchor?.closest("div.grid")?.parentElement ?? null;
+  const headings = [...document.querySelectorAll("h2")];
+  const anchor = headings.find((h) => h.textContent?.includes("My AAPL position"));
+  return anchor?.closest("section") ?? null;
 });
 const planningEl = planning.asElement();
 if (planningEl) {
   await planningEl.scrollIntoView();
   await new Promise((r) => setTimeout(r, 800));
-  const grid = await page.evaluateHandle(() => {
-    const headings = [...document.querySelectorAll("h3")];
-    const anchor = headings.find((h) => h.textContent?.includes("Position tracker"));
-    return anchor?.closest("div.grid") ?? null;
-  });
-  const gridEl = grid.asElement();
-  if (gridEl) {
-    await gridEl.screenshot({ path: `${OUT}/verdict-live-planning-panels.png` });
-    log("planning panels captured");
-  }
+  await planningEl.screenshot({ path: `${OUT}/verdict-live-planning-panels.png` });
+  log("planning panels captured");
 }
 
-// --- shot 4: scoreboard tab ---
-await clickByText("nav button", "scoreboard");
+// --- shot 4: track-record tab ---
+await clickByText("nav button", "track record");
 await new Promise((r) => setTimeout(r, 3_500));
 await page.evaluate(() => window.scrollTo(0, 0));
 await page.screenshot({
@@ -157,6 +154,19 @@ await page.screenshot({
   clip: { x: 0, y: 0, width: 1560, height: 980 },
 });
 log("day-trade desk captured");
+
+// --- shot 6: mobile research workspace ---
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+await page.evaluate(() => window.scrollTo(0, 0));
+await page.click('button[aria-label="Open navigation"]');
+await clickByText("nav button", "research");
+await clickByText('[role="tab"]', "Verdict");
+await new Promise((r) => setTimeout(r, 800));
+await page.screenshot({
+  path: `${OUT}/verdict-live-mobile.png`,
+  fullPage: false,
+});
+log("mobile workspace captured");
 
 await browser.close();
 log("all done");

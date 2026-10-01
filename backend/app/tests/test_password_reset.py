@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 
 OWNER_EMAIL = "owner@example.com"
-OWNER_PASSWORD = "a-strong-test-password-123"
-NEW_PASSWORD = "a-brand-new-password-456"
+OWNER_PASSWORD = "A-strong-test-password-123"
+NEW_PASSWORD = "A-brand-new-password-456"
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def test_full_reset_flow(client, smtp_env):
     # The token is single-use.
     reuse = client.post(
         "/auth/password-reset/confirm",
-        json={"token": token, "password": "yet-another-password-789"},
+        json={"token": token, "password": "Yet-another-password-789"},
     )
     assert reuse.status_code == 401
 
@@ -108,7 +108,7 @@ def test_confirm_rejects_garbage_token(client):
 def test_confirm_rejects_weak_password(client, smtp_env):
     client.post("/auth/password-reset/request", json={"email": OWNER_EMAIL})
     token = _extract_token(smtp_env[0]["body"])
-    # Contains the email's local part ("owner") — rejected by validate_password.
+    # The new password needs a capital letter.
     res = client.post(
         "/auth/password-reset/confirm",
         json={"token": token, "password": "my-owner-password-123"},
@@ -122,7 +122,7 @@ def test_public_signup_disabled_requires_invite(client):
     with TestClient(create_app()) as visitor:
         res = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "a-strong-member-pass-123"},
+            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
         )
         assert res.status_code == 401
 
@@ -136,7 +136,7 @@ def test_public_signup_enabled_registers_without_invite(client, monkeypatch):
         assert visitor.get("/auth/status").json()["public_signup_enabled"] is True
         res = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "a-strong-member-pass-123"},
+            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
         )
         assert res.status_code == 201, res.text
         assert res.json()["user"]["role"] == "member"
@@ -144,7 +144,7 @@ def test_public_signup_enabled_registers_without_invite(client, monkeypatch):
         # Duplicate email still rejected.
         dup = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "a-strong-member-pass-123"},
+            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
         )
         assert dup.status_code == 409
     get_settings.cache_clear()
@@ -163,7 +163,7 @@ def test_public_signup_still_accepts_valid_invite(client, monkeypatch):
             json={
                 "invite_code": "not-a-real-code",
                 "email": "a@example.com",
-                "password": "a-strong-member-pass-123",
+                "password": "A-strong-member-pass-123",
             },
         )
         assert bad.status_code == 401
@@ -173,7 +173,7 @@ def test_public_signup_still_accepts_valid_invite(client, monkeypatch):
             json={
                 "invite_code": code,
                 "email": "b@example.com",
-                "password": "a-strong-member-pass-123",
+                "password": "A-strong-member-pass-123",
             },
         )
         assert good.status_code == 201

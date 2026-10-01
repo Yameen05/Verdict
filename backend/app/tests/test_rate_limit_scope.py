@@ -28,7 +28,7 @@ def capped_client(monkeypatch):
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json={"email": "owner@example.com", "password": "a-strong-test-password-123"},
+            json={"email": "owner@example.com", "password": "A-strong-test-password-123"},
         )
         assert created.status_code == 201, created.text
         client.headers.update({"X-CSRF-Token": created.json()["csrf_token"]})

@@ -23,7 +23,7 @@ export interface PositionCalc {
 }
 
 export function closestBarOnOrAfter(bars: PriceBar[], date: string): PriceBar | null {
-  const target = new Date(`${date}T00:00:00`).getTime();
+  const target = new Date(`${date}T00:00:00Z`).getTime();
   if (!Number.isFinite(target)) return null;
   return (
     bars.find((bar) => {
@@ -49,7 +49,7 @@ export function computePosition(
   if (!buyPrice || !current) return null;
 
   const firstBarTime = bars[0] ? new Date(bars[0].time).getTime() : Number.NaN;
-  const boughtAt = new Date(`${buyDate}T00:00:00`).getTime();
+  const boughtAt = new Date(`${buyDate}T00:00:00Z`).getTime();
   const datePredatesHistory =
     !manualValid &&
     Number.isFinite(firstBarTime) &&

@@ -51,15 +51,15 @@ export function ReturnRangePanel({ ticker }: { ticker: string }) {
     <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-100">
-            Return range table
-            <InfoTip label="Return range table">
+          <h3 className="text-base font-semibold text-slate-100">
+            Possible outcomes
+            <InfoTip label="Possible outcomes">
               These are historical swing ranges from the last year. They are not a
               promise; they show what a normal, bad, and good window looked like.
             </InfoTip>
           </h3>
-          <p className="text-[11px] text-slate-500">
-            See what different holding windows could mean in dollars.
+          <p className="mt-1 text-sm leading-6 text-slate-400">
+            Test a new investment amount against {ticker}'s historical swings.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -91,9 +91,9 @@ export function ReturnRangePanel({ ticker }: { ticker: string }) {
           <table className="w-full min-w-[680px] text-left text-xs">
             <thead className="bg-slate-900 text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-3 py-2.5">Hold</th>
-                <th className="px-3 py-2.5 text-right">Normal range</th>
-                <th className="px-3 py-2.5 text-right">Normal move</th>
+                <th className="px-3 py-2.5">Timeframe</th>
+                <th className="px-3 py-2.5 text-right">Typical value range</th>
+                <th className="px-3 py-2.5 text-right">Typical move</th>
                 <th className="px-3 py-2.5 text-right">Recent move</th>
                 <th className="px-3 py-2.5 text-right">Bad case</th>
                 <th className="px-3 py-2.5 text-right">Good case</th>

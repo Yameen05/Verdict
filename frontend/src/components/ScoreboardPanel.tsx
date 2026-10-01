@@ -53,10 +53,10 @@ export function ScoreboardPanel({ refreshKey }: { refreshKey: number }) {
   const { summary, entries } = data;
 
   return (
-    <section className="mt-6">
+    <section>
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-100">The scoreboard</h2>
-        <p className="mt-0.5 text-xs text-slate-400">
+        <h2 className="text-xl font-semibold text-slate-100">Overall performance</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-400">
           Verdict grades its own homework: every stored verdict is measured against the
           price move since it was issued. {summary.rule}
         </p>

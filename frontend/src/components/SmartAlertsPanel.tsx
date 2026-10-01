@@ -98,14 +98,17 @@ export function SmartAlertsPanel({
 
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
-      <h3 className="text-sm font-semibold text-slate-100">
-        Smart alerts
-        <InfoTip label="Smart alerts">
+      <h3 className="text-base font-semibold text-slate-100">
+        Alerts
+        <InfoTip label="Alerts">
           Alerts are saved to your account and checked by the server even when
           the app is closed (email arrives if the owner configured SMTP). Price
           alerts also appear under the chart.
         </InfoTip>
       </h3>
+      <p className="mt-1 text-sm text-slate-400">
+        Get notified when the price or verdict changes.
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"

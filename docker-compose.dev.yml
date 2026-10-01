@@ -5,6 +5,12 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    # Allow backend/.env to hold local provider credentials. When present it
+    # overrides the root .env; when absent the documented root setup still works.
+    env_file:
+      - path: .env
+      - path: backend/.env
+        required: false
     environment:
       - ALLOWED_HOSTS=localhost,127.0.0.1,backend
     volumes:

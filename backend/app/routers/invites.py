@@ -52,7 +52,7 @@ class RegisterRequest(BaseModel):
     # whenever a code is supplied.
     invite_code: str | None = Field(default=None, min_length=8, max_length=128)
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 def _invite_status(invite: Invite) -> str:
@@ -168,7 +168,7 @@ async def register(
         raise HTTPException(status_code=401, detail="An invite code is required to register")
 
     email = normalize_email(body.email)
-    validate_password(body.password, email)
+    validate_password(body.password)
 
     user = User(
         email=email,

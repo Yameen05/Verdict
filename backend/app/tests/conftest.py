@@ -66,7 +66,7 @@ def client():
             },
             json={
                 "email": "owner@example.com",
-                "password": "a-strong-test-password-123",
+                "password": "A-strong-test-password-123",
             },
         )
         assert created.status_code == 201, created.text

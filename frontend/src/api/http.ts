@@ -20,11 +20,28 @@ export async function errorFromResponse(res: Response): Promise<Error> {
   const text = await res.text();
   let detail = text;
   try {
-    const parsed = JSON.parse(text) as { detail?: unknown; request_id?: unknown };
+    const parsed = JSON.parse(text) as {
+      detail?: unknown;
+      errors?: Array<{ loc?: unknown; msg?: unknown }>;
+      request_id?: unknown;
+    };
     if (typeof parsed.detail === "string") {
-      detail = parsed.request_id
-        ? `${parsed.detail} (request ${String(parsed.request_id)})`
-        : parsed.detail;
+      detail = parsed.detail;
+      if (detail === "Validation error" && Array.isArray(parsed.errors)) {
+        const fieldNames: Record<string, string> = {
+          invite_code: "Invite code",
+          email: "Email",
+          password: "Password",
+        };
+        const messages = parsed.errors.flatMap((error) => {
+          if (typeof error.msg !== "string") return [];
+          const field = Array.isArray(error.loc) ? error.loc.at(-1) : undefined;
+          const label = typeof field === "string" ? fieldNames[field] : undefined;
+          return [label ? `${label}: ${error.msg}` : error.msg];
+        });
+        if (messages.length > 0) detail = messages.join("; ");
+      }
+      if (parsed.request_id) detail += ` (request ${String(parsed.request_id)})`;
     }
   } catch {
     // Keep the original response text when it is not JSON.

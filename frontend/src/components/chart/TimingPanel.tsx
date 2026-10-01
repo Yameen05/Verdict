@@ -113,39 +113,42 @@ export function TimingPanel({
   const t = data?.technicals ?? {};
 
   return (
-    <section className="mt-4 rounded-lg border border-slate-800 bg-slate-950">
+    <section className="rounded-xl border border-slate-800 bg-slate-950/70">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-100">Timing agent</h3>
-          <p className="text-[11px] text-slate-500">
-            Reads the chart + news and suggests whether to buy now, wait, or accumulate.
+          <h3 className="text-base font-semibold text-slate-100">Entry timing</h3>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-slate-400">
+            Checks whether today's price looks like a good entry for this short-term window. It does not replace the main verdict.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border border-slate-800">
-            {HORIZONS.map((h) => (
-              <button
-                key={h.days}
-                type="button"
-                onClick={() => (data || loading ? run(h.days) : setHorizon(h.days))}
-                className={`px-2.5 py-1 text-xs font-semibold transition ${
-                  horizon === h.days
-                    ? "bg-slate-100 text-slate-950"
-                    : "bg-slate-900 text-slate-400 hover:text-slate-100"
-                }`}
-              >
-                {h.label}
-              </button>
-            ))}
+        <div>
+          <span className="mb-1.5 block text-xs font-semibold text-slate-500">Entry window</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border border-slate-800">
+              {HORIZONS.map((h) => (
+                <button
+                  key={h.days}
+                  type="button"
+                  onClick={() => (data || loading ? run(h.days) : setHorizon(h.days))}
+                  className={`px-2.5 py-1.5 text-xs font-semibold transition ${
+                    horizon === h.days
+                      ? "bg-slate-100 text-slate-950"
+                      : "bg-slate-900 text-slate-400 hover:text-slate-100"
+                  }`}
+                >
+                  {h.label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => run(horizon)}
+              disabled={loading}
+              className="rounded-md border border-cyan-500/60 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+            >
+              {loading ? "Checking…" : data ? "Check again" : "Check entry timing"}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => run(horizon)}
-            disabled={loading}
-            className="rounded-md border border-cyan-500/60 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
-          >
-            {loading ? "Analyzing…" : data ? "Re-assess" : `Should I buy ${ticker}?`}
-          </button>
         </div>
       </header>
 

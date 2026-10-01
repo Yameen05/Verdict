@@ -47,25 +47,25 @@ export function WatchlistBar({ ticker, onSelect }: Props) {
   if (list.length === 0 && !ticker) return null;
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-        Watchlist
+    <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800/80 bg-slate-900/45 px-4 py-3">
+      <span className="mr-1 text-sm font-semibold text-slate-300">
+        Your watchlist
       </span>
       {list.map((t) => (
         <span
           key={t}
-          className={`inline-flex items-center overflow-hidden rounded-full border text-xs font-mono ${
+          className={`inline-flex min-h-9 items-center overflow-hidden rounded-lg border text-xs font-mono ${
             t === ticker
               ? "border-indigo-500 bg-indigo-500/15 text-indigo-200"
               : "border-slate-700 bg-slate-900 text-slate-300"
           }`}
         >
-          <button onClick={() => onSelect(t)} className="px-2.5 py-1 hover:text-white">
+          <button onClick={() => onSelect(t)} className="self-stretch px-2.5 hover:text-white">
             {t}
           </button>
           <button
             onClick={() => apply(userStateApi.removeWatchlist(t))}
-            className="pr-2 text-slate-500 hover:text-rose-400"
+            className="self-stretch px-2 text-slate-500 hover:bg-rose-500/10 hover:text-rose-400"
             title={`Remove ${t} from watchlist`}
             aria-label={`Remove ${t} from watchlist`}
           >
@@ -75,7 +75,7 @@ export function WatchlistBar({ ticker, onSelect }: Props) {
       ))}
       <button
         onClick={toggle}
-        className={`rounded-full border border-dashed px-2.5 py-1 text-xs transition ${
+        className={`min-h-9 rounded-lg border border-dashed px-3 text-xs font-medium transition ${
           watching
             ? "border-slate-700 text-slate-500 hover:text-slate-300"
             : "border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/10"
@@ -83,7 +83,7 @@ export function WatchlistBar({ ticker, onSelect }: Props) {
       >
         {watching ? `★ ${ticker} watched` : `☆ Watch ${ticker}`}
       </button>
-      {error && <span className="text-[10px] text-rose-400">{error}</span>}
+      {error && <span className="text-xs text-rose-400">{error}</span>}
     </div>
   );
 }

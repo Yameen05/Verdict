@@ -297,10 +297,51 @@ def _fallback_recommendation(state: ResearchState) -> tuple[str, int, list[str]]
     return "Hold", 50 if reasons else 40, reasons
 
 
-def _fallback_report(state: ResearchState, reason: str) -> dict:
+def _llm_failure_context(error: OpenAIError) -> tuple[str, str]:
+    """Turn provider exceptions into useful, non-technical recovery guidance."""
+    detail = f"{type(error).__name__} {error}".lower()
+    status = getattr(error, "status_code", None)
+    code = str(getattr(error, "code", "") or "").lower()
+
+    if "missing credentials" in detail or "api key" in detail and "missing" in detail:
+        return (
+            "the AI provider key is missing",
+            "Add an LLM provider key in the server configuration, then run the analysis again.",
+        )
+    if "insufficient_quota" in detail or "credit_balance_exhausted" in detail or code in {
+        "insufficient_quota",
+        "credit_balance_exhausted",
+    }:
+        return (
+            "the AI provider account has no remaining API credits",
+            "Add provider credits or switch to another configured provider, then run again.",
+        )
+    if status in {401, 403} or "authentication" in detail or "invalid api key" in detail:
+        return (
+            "the AI provider rejected its API key",
+            "Replace the provider key with a valid one, then run the analysis again.",
+        )
+    if status == 429 or "rate limit" in detail or "rate-limit" in detail:
+        return (
+            "the AI provider temporarily rate-limited the request",
+            "Wait a minute and run the analysis again.",
+        )
+    if "timeout" in detail or "connection" in detail:
+        return (
+            "the AI provider could not be reached",
+            "Check the provider connection and run the analysis again.",
+        )
+    return (
+        "the AI provider could not complete the request",
+        "Run the analysis again; if it keeps failing, check the provider status and configuration.",
+    )
+
+
+def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
     ticker = state["ticker"]
     horizon_days = state.get("horizon_days") or 14
     recommendation, confidence, reasons = _fallback_recommendation(state)
+    failure_reason, recovery = _llm_failure_context(error)
     metrics = state.get("metrics")
     news = state.get("news")
     sec = state.get("sec")
@@ -325,16 +366,16 @@ def _fallback_report(state: ResearchState, reason: str) -> dict:
         recommendation=recommendation,
         confidence=confidence,
         justification=(
-            f"The AI judge was unavailable ({reason}), so this is a conservative "
-            f"fallback verdict from the data already collected. For a "
+            f"The full AI analysis could not run because {failure_reason}, so this is a "
+            f"limited verdict from the data already collected. For a "
             f"{_horizon_label(horizon_days)} hold, the main signals were: {reason_text}."
         ),
         dissent=(
-            "This fallback is less nuanced than the normal debate judge, so treat it as a "
-            "temporary read and rerun once provider limits reset."
+            "This limited result does not include the normal bull-versus-bear debate, so "
+            "treat it as a temporary read and run the full analysis again when available."
         ),
         falsifiers=[
-            "Provider limits reset and the full AI judge returns a different verdict.",
+            recovery,
             "Fresh news changes the short-term setup.",
             "The price breaks outside the recent/typical swing range.",
         ],
@@ -361,8 +402,8 @@ def _fallback_report(state: ResearchState, reason: str) -> dict:
             f"({_pct(swing)}) as the rough risk band; this is not a precise forecast."
         ),
         simple_summary=(
-            f"The full AI judge hit a provider limit, so Verdict used the numbers it "
-            f"already had. The fallback call is {recommendation} for "
+            f"The full AI analysis was unavailable because {failure_reason}, so Verdict "
+            f"used the numbers it already had. The limited call is {recommendation} for "
             f"{_horizon_label(horizon_days)} because {reason_text}."
         ),
         degraded=True,
@@ -474,7 +515,7 @@ async def judge(state: ResearchState) -> dict:
         )
     except OpenAIError as e:
         log.exception("judge_llm_failed", extra={"error_type": type(e).__name__})
-        return _fallback_report(state, type(e).__name__)
+        return _fallback_report(state, e)
     record_chat(model, resp)
 
     try:

@@ -141,9 +141,9 @@ export function VerdictCard({ result, meta, onExport }: Props) {
           {report.degraded && (
             <span
               className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[10px] text-amber-300"
-              title="The AI judge was unavailable or failed, so this verdict came from a conservative rule-based fallback instead of the full debate."
+              title="The full AI analysis was unavailable, so this result uses the market data already collected."
             >
-              ⚠ fallback verdict
+              ⚠ limited result
             </span>
           )}
           {report.confidence !== null && (

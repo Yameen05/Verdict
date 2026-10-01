@@ -70,14 +70,15 @@ def normalize_email(email: str) -> str:
     return normalized
 
 
-def validate_password(password: str, email: str = "") -> None:
-    if len(password) < 12:
-        raise HTTPException(status_code=422, detail="Password must be at least 12 characters")
+def validate_password(password: str) -> None:
+    if len(password) < 6:
+        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
     if len(password) > 128:
         raise HTTPException(status_code=422, detail="Password must be at most 128 characters")
-    local_part = email.split("@", 1)[0].lower()
-    if local_part and len(local_part) >= 4 and local_part in password.lower():
-        raise HTTPException(status_code=422, detail="Password must not contain your email name")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=422, detail="Password must contain a capital letter")
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(status_code=422, detail="Password must contain a number")
 
 
 def hash_password(password: str) -> str:

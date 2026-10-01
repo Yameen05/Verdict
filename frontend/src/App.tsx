@@ -4,7 +4,6 @@ import { QueryResultPanel } from "./components/QueryResult";
 import { ReportPanel } from "./components/ReportPanel";
 import { AgentProgress, type AgentKey, type AgentState } from "./components/AgentProgress";
 import { HistoryPanel } from "./components/HistoryPanel";
-import { WelcomeHero } from "./components/WelcomeHero";
 import { ChatPanel } from "./components/ChatPanel";
 import { VerdictCard } from "./components/VerdictCard";
 import { DebatePanel } from "./components/DebatePanel";
@@ -24,6 +23,7 @@ import { ApiStatusPanel } from "./components/ApiStatusPanel";
 import { SmartAlertsPanel } from "./components/SmartAlertsPanel";
 import { DayTradePage } from "./components/daytrade/DayTradePage";
 import { LegalModal } from "./components/LegalModal";
+import { AppShell, type AppSection } from "./components/AppShell";
 import { downloadReportMarkdown } from "./lib/exportMarkdown";
 import { FOOTER_DISCLAIMER } from "./lib/legal";
 import { migrateLocalStateOnce } from "./lib/migrateLocalState";
@@ -43,15 +43,8 @@ import {
 
 type AgentStates = Record<AgentKey, AgentState>;
 type ThemeMode = "dark" | "light";
-type Tab = "research" | "daytrade" | "analyst" | "history" | "scoreboard";
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "research", label: "Research" },
-  { id: "daytrade", label: "Day trading" },
-  { id: "analyst", label: "Analyst" },
-  { id: "history", label: "History" },
-  { id: "scoreboard", label: "Scoreboard" },
-];
+type Tab = AppSection;
+type ResearchView = "verdict" | "market" | "position" | "details";
 
 const THEME_STORAGE_KEY = "verdict-theme-v2";
 
@@ -113,6 +106,13 @@ const HORIZONS: { days: number; label: string; hint: string }[] = [
   { days: 365, label: "1 year", hint: "52 weeks — the long game" },
 ];
 
+const RESEARCH_VIEWS: { id: ResearchView; label: string }[] = [
+  { id: "verdict", label: "Verdict" },
+  { id: "market", label: "Price & timing" },
+  { id: "position", label: "My position" },
+  { id: "details", label: "Sources & details" },
+];
+
 function summarizePayload(payload: Record<string, unknown>): string {
   for (const k of ["sec", "news", "metrics", "insider", "signals", "bull", "bear", "report"]) {
     const v = payload[k] as Record<string, unknown> | undefined;
@@ -135,6 +135,7 @@ export default function App({
   onLogout: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<Tab>("research");
+  const [researchView, setResearchView] = useState<ResearchView>("verdict");
   const [ticker, setTicker] = useState("AAPL");
   const [horizonDays, setHorizonDays] = useState(14);
   const [form, setForm] = useState<FilingForm>("10-K");
@@ -356,6 +357,7 @@ export default function App({
             }
           } else if (e.event === "completed") {
             setResearch(e.data.result);
+            setResearchView("verdict");
             const totalUsd =
               "total_usd" in e.data.cost ? (e.data.cost.total_usd as number) : 0;
             setMeta({ duration_ms: e.data.duration_ms, cost_usd: totalUsd });
@@ -408,15 +410,15 @@ export default function App({
     setBusy(false);
   }
 
-  const readinessSummary =
+  const readinessSummary: { state: "checking" | "ready" | "degraded"; text: string } =
     readiness === null
-      ? { color: "text-slate-400", text: "checking…" }
+      ? { state: "checking", text: "Checking the research services…" }
       : readiness.status === "ready"
-      ? { color: "text-emerald-400", text: "all systems ready" }
+      ? { state: "ready", text: "All research services are ready." }
       : {
-          color: "text-amber-400",
+          state: "degraded",
           text:
-            "degraded: " +
+            "Some services are limited: " +
             (Object.entries(readiness.checks ?? {})
               .filter(([, c]) => !c.ok)
               .map(([k]) => k)
@@ -429,112 +431,59 @@ export default function App({
   const debateEvidence = research?.evidence ?? liveEvidence;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <nav className="sticky top-0 z-10 border-b border-slate-800/60 bg-slate-950/85 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-5">
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-8 w-8 place-items-center rounded-full border border-indigo-400/50 bg-indigo-500/10 pb-0.5 font-display text-base italic leading-none text-indigo-300">
-                V
-              </span>
-              <span className="font-display text-lg tracking-tight text-slate-50">Verdict</span>
-            </div>
-            <div className="flex rounded-full border border-slate-800 bg-slate-900/60 p-1 text-xs">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  className={`rounded-full px-3 py-1.5 font-medium transition sm:px-3.5 ${
-                    tab === t.id
-                      ? "bg-slate-100 text-slate-950"
-                      : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-right text-xs">
-            <span className={readinessSummary.color} title="Backend readiness">
-              ● {readinessSummary.text}
-            </span>
-            {userRole === "owner" && (
-              <button
-                type="button"
-                onClick={() => setShowInvites((v) => !v)}
-                className={`rounded-full border px-3 py-1.5 transition ${
-                  showInvites
-                    ? "border-indigo-500 bg-indigo-500/10 text-indigo-300"
-                    : "border-slate-800 text-slate-300 hover:border-slate-600 hover:text-slate-100"
-                }`}
-              >
-                Invites
-              </button>
-            )}
-            <span className="hidden text-slate-500 md:inline">{userEmail}</span>
-            <button
-              type="button"
-              onClick={() => void onLogout()}
-              className="rounded-full border border-slate-800 px-3 py-1.5 text-slate-300 transition hover:border-slate-600 hover:text-slate-100"
-            >
-              Sign out
-            </button>
-            <button
-              type="button"
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-              aria-pressed={theme === "dark"}
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
-              className="flex h-8 items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-2 text-slate-300 transition hover:border-indigo-500/60 hover:text-slate-100"
-            >
-              <span className="relative h-4 w-8 rounded-full border border-slate-700 bg-slate-950">
-                <span
-                  className={`absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-indigo-300 shadow-sm shadow-indigo-900/40 transition ${
-                    theme === "dark" ? "left-[17px]" : "left-1"
-                  }`}
-                />
-              </span>
-              <span className="hidden text-[11px] font-medium sm:inline">
-                {theme === "dark" ? "Dark" : "Light"}
-              </span>
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      <main className="mx-auto max-w-6xl px-6 py-8">
+    <AppShell
+      activeSection={tab}
+      onSectionChange={setTab}
+      userEmail={userEmail}
+      userRole={userRole}
+      onLogout={onLogout}
+      theme={theme}
+      onThemeChange={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+      readiness={readinessSummary}
+      invitesOpen={showInvites}
+      onInvitesClick={() => {
+        setTab("research");
+        setShowInvites((value) => !value);
+      }}
+    >
+      <main className="mx-auto max-w-[90rem] px-4 py-7 sm:px-6 sm:py-9 xl:px-10">
         {tab === "scoreboard" && (
-          <>
+          <div className="space-y-6">
+            <header className="max-w-3xl">
+              <p className="text-sm font-semibold text-indigo-300">Track record</p>
+              <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-slate-50 sm:text-4xl">
+                See how past verdicts performed
+              </h1>
+              <p className="mt-2 text-base leading-7 text-slate-400">
+                Every call is measured against what happened next, so you can judge whether
+                Verdict's confidence is earned.
+              </p>
+            </header>
             <ScoreboardPanel refreshKey={historyRefresh} />
             <BacktestPanel refreshKey={historyRefresh} />
-          </>
+          </div>
         )}
 
         {tab === "daytrade" && <DayTradePage />}
 
         {tab === "analyst" && (
           <div className="mx-auto max-w-4xl">
-            <section className="text-center">
-              <span className="inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-300">
-                <span className="h-px w-8 bg-indigo-400/60" />
-                Grounded chatbot
-                <span className="h-px w-8 bg-indigo-400/60" />
-              </span>
-              <h1 className="mt-2 font-display text-3xl font-medium tracking-tight text-slate-50">
-                The analyst
+            <section>
+              <p className="text-sm font-semibold text-indigo-300">Ask analyst</p>
+              <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-slate-50 sm:text-4xl">
+                Ask about your latest research
               </h1>
-              <p className="mx-auto mt-2 max-w-lg text-xs leading-relaxed text-slate-400">
-                A conversational analyst grounded in your latest research run
+              <p className="mt-2 max-w-2xl text-base leading-7 text-slate-400">
+                Get a plain-English answer grounded in your latest research run
                 {research ? (
                   <>
                     {" "}
                     for <span className="font-mono text-indigo-300">{research.report.ticker}</span>
                   </>
                 ) : (
-                  " — run a report on the Research page first"
+                  " — run an analysis from Research first"
                 )}
-                . It answers in plain dollars and never invents numbers it wasn't given.
+                . Money questions use the figures in the report rather than invented estimates.
               </p>
             </section>
             <ChatPanel ticker={ticker} research={research} />
@@ -542,13 +491,14 @@ export default function App({
         )}
 
         {tab === "history" && (
-          <div className="mx-auto max-w-4xl">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div className="mx-auto max-w-5xl space-y-5">
+            <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <h1 className="font-display text-3xl font-medium tracking-tight text-slate-50">
-                  Verdict history
+                <p className="text-sm font-semibold text-indigo-300">History</p>
+                <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-slate-50 sm:text-4xl">
+                  Review earlier verdicts
                 </h1>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-2 max-w-2xl text-base leading-7 text-slate-400">
                   Every past verdict for{" "}
                   <span className="font-mono text-indigo-300">{ticker}</span>{" "}
                   <span className="text-slate-500">({companyName(ticker)})</span>, plotted against
@@ -563,213 +513,294 @@ export default function App({
         )}
 
         {tab === "research" && (
-          <>
+          <div className="space-y-5">
             {showInvites && <InvitesPanel onClose={() => setShowInvites(false)} />}
-            {!research && !busy && <WelcomeHero />}
-
-            <WatchlistBar ticker={ticker} onSelect={setTicker} />
-
-            <section className="space-y-6 rounded-3xl border border-slate-800/80 bg-slate-900/50 p-6 shadow-xl shadow-slate-950/40 sm:p-7">
-              <StockPicker ticker={ticker} setTicker={setTicker} />
-
-              <StockChartPanel
-                ticker={ticker}
-                research={research}
-                timing={timingAssessment}
-                onPrice={setLivePrice}
-              />
-
-              {/* key resets the panel's result when the ticker changes, so a
-                  stale assessment never shows against the new symbol. */}
-              <TimingPanel key={ticker} ticker={ticker} onAssessment={setTimingAssessment} />
-
-              <div className="grid gap-4 xl:grid-cols-2">
-                <PositionTracker ticker={ticker} research={research} timing={timingAssessment} />
-                <ReturnRangePanel ticker={ticker} />
+            <header className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-indigo-300">Research</p>
+                <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-slate-50 sm:text-4xl">
+                  {ticker} <span className="text-slate-500">· {companyName(ticker)}</span>
+                </h1>
               </div>
+            </header>
 
-              <SmartAlertsPanel
-                ticker={ticker}
-                research={research}
-                timing={timingAssessment}
-                livePrice={livePrice}
-                capabilities={capabilities}
-              />
+            <section className="rounded-2xl border border-slate-700/80 bg-slate-900/60 p-4 shadow-lg shadow-slate-950/20 sm:p-5">
+              <div className="grid items-end gap-4 lg:grid-cols-[minmax(18rem,1fr)_15rem_12rem]">
+                <StockPicker ticker={ticker} setTicker={setTicker} />
 
-              <div className="border-t border-slate-800 pt-5">
-                <div className="mb-1.5 text-xs font-medium uppercase tracking-wider text-slate-400">
-                  How long would you hold it?
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {HORIZONS.map((h) => (
-                    <button
-                      key={h.days}
-                      onClick={() => setHorizonDays(h.days)}
-                      disabled={busy}
-                      title={h.hint}
-                      className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition disabled:opacity-50 ${
-                        horizonDays === h.days
-                          ? "border-indigo-500 bg-indigo-500/15 text-indigo-200"
-                          : "border-slate-700 bg-slate-950/40 text-slate-400 hover:border-slate-500 hover:text-slate-200"
-                      }`}
-                    >
-                      {h.label}
-                      {h.days === 365 && (
-                        <span className="ml-1 text-[9px] text-slate-500">(52 weeks)</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-1.5 text-[11px] text-slate-500">
-                  The analysis is tailored to your window — a coin can be a bad 1-week bet
-                  but a fine 1-year one.
-                </p>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-semibold text-slate-200">
+                    Holding period
+                  </span>
+                  <select
+                    value={horizonDays}
+                    onChange={(event) => setHorizonDays(Number(event.target.value))}
+                    disabled={busy}
+                    className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 text-base text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                  >
+                    {HORIZONS.map((horizon) => (
+                      <option key={horizon.days} value={horizon.days}>
+                        {horizon.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="flex gap-2">
                   <button
+                    type="button"
                     onClick={() => void onResearchStream()}
                     disabled={busy}
-                    className="rounded-full bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-950/60 transition hover:bg-indigo-500 disabled:opacity-50"
+                    className="min-h-12 flex-1 rounded-xl bg-indigo-600 px-5 text-base font-semibold text-white shadow-lg shadow-indigo-950/40 transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Analyze {ticker} →
+                    {busy ? "Analyzing…" : "Analyze"}
                   </button>
                   {busy && (
                     <button
+                      type="button"
                       onClick={onCancel}
-                      className="rounded-full border border-rose-700 px-4 py-2 text-sm font-medium text-rose-300 transition hover:bg-rose-900/30"
+                      className="min-h-12 rounded-xl border border-rose-700 px-4 text-sm font-medium text-rose-300 transition hover:bg-rose-900/30"
                     >
                       Cancel
                     </button>
                   )}
-                  <span className="text-xs text-slate-500">
-                    One click — we fetch the reports, argue both sides, and give a verdict.
-                  </span>
                 </div>
+              </div>
 
-                <div className="mt-4">
-                  <AgentProgress states={agents} />
+              {(busy || status) && (
+                <div aria-live="polite" className="mt-4 border-t border-slate-800 pt-4">
+                  {busy && <AgentProgress states={agents} />}
+                  {status && <p className={`${busy ? "mt-3" : ""} text-sm leading-6 text-slate-400`}>{status}</p>}
                 </div>
+              )}
+            </section>
 
-                {status && <p className="mt-3 text-xs text-slate-400">{status}</p>}
+            <WatchlistBar ticker={ticker} onSelect={setTicker} />
 
-                <details className="mt-4 rounded-md border border-slate-800 bg-slate-950/40">
-                  <summary className="cursor-pointer select-none px-3 py-2 text-xs uppercase tracking-wider text-slate-400 hover:text-slate-200">
-                    Advanced tools
-                  </summary>
-                  <div className="space-y-2 px-3 pb-3">
+            <nav
+              aria-label="Research sections"
+              className="research-tabs"
+              role="tablist"
+            >
+              {RESEARCH_VIEWS.map((view) => (
+                <button
+                  key={view.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={researchView === view.id}
+                  onClick={() => setResearchView(view.id)}
+                  className={researchView === view.id ? "is-active" : ""}
+                >
+                  {view.label}
+                </button>
+              ))}
+            </nav>
+
+            {researchView === "verdict" && (
+              <section aria-labelledby="latest-verdict-title">
+                {research ? (
+                  <>
+                    <div className="mb-3 flex items-end justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-indigo-300">Latest result</p>
+                        <h2 id="latest-verdict-title" className="font-display text-2xl text-slate-50">
+                          The verdict on {research.report.ticker}
+                        </h2>
+                      </div>
+                    </div>
+                    {cacheInfo && (
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3 text-sm text-cyan-200">
+                        <span>
+                          Shared result from{" "}
+                          {cacheInfo.ageMinutes < 1
+                            ? "moments ago"
+                            : `${Math.round(cacheInfo.ageMinutes)} minutes ago`}.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void onResearchStream(true)}
+                          disabled={busy}
+                          className="min-h-10 rounded-lg border border-cyan-500/40 px-3 text-sm font-medium text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50"
+                        >
+                          Run fresh
+                        </button>
+                      </div>
+                    )}
+                    <VerdictCard
+                      result={research}
+                      meta={meta}
+                      onExport={() => downloadReportMarkdown(research, meta)}
+                    />
+                  </>
+                ) : (
+                  <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/20 px-6 text-center">
+                    <div>
+                      <p className="font-display text-2xl text-slate-200">No verdict yet</p>
+                      <p className="mt-1 text-sm text-slate-500">{ticker} has not been analyzed in this session.</p>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {researchView === "market" && (
+              <section className="space-y-5" aria-labelledby="market-chart-title">
+                <header className="max-w-3xl">
+                  <h2 id="market-chart-title" className="font-display text-3xl text-slate-50">
+                    Price & entry timing
+                  </h2>
+                  <p className="mt-1 text-base leading-7 text-slate-400">
+                    The chart shows what the price has done. Entry timing checks whether today's setup looks favorable.
+                  </p>
+                </header>
+                <StockChartPanel
+                  ticker={ticker}
+                  research={research}
+                  timing={timingAssessment}
+                  onPrice={setLivePrice}
+                />
+                <TimingPanel key={ticker} ticker={ticker} onAssessment={setTimingAssessment} />
+              </section>
+            )}
+
+            {researchView === "position" && (
+              <section className="space-y-5" aria-labelledby="position-title">
+                <header className="max-w-3xl">
+                  <h2 id="position-title" className="font-display text-3xl text-slate-50">
+                    My {ticker} position
+                  </h2>
+                  <p className="mt-1 text-base leading-7 text-slate-400">
+                    Track something you already own, or test what a new dollar amount could look like.
+                  </p>
+                </header>
+                <PositionTracker ticker={ticker} research={research} timing={timingAssessment} />
+                <ReturnRangePanel ticker={ticker} />
+                <SmartAlertsPanel
+                  ticker={ticker}
+                  research={research}
+                  timing={timingAssessment}
+                  livePrice={livePrice}
+                  capabilities={capabilities}
+                />
+              </section>
+            )}
+
+            {researchView === "details" && (
+              <section className="space-y-5" aria-labelledby="details-title">
+                <header className="max-w-3xl">
+                  <h2 id="details-title" className="font-display text-3xl text-slate-50">
+                    Sources & details
+                  </h2>
+                  <p className="mt-1 text-base leading-7 text-slate-400">
+                    Filing search, evidence, debate, and data-provider status.
+                  </p>
+                </header>
+
+                <section className="rounded-2xl border-l-4 border-l-cyan-600 border-y border-r border-slate-800 bg-slate-900/45 p-5">
+                  <h3 className="text-base font-semibold text-slate-100">Search the company filing</h3>
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(16rem,1fr)_13rem_auto]">
                     <textarea
+                      id="filing-question"
+                      aria-label={`Question about ${ticker}'s filing`}
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
                       rows={2}
-                      className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-base placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
                     />
-                    <button
-                      onClick={onQuery}
-                      disabled={busy}
-                      className="rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+                    <select
+                      aria-label="Filing type"
+                      value={form}
+                      onChange={(e) => setForm(e.target.value as FilingForm)}
+                      className="min-h-12 rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm"
                     >
-                      Query filing
-                    </button>
-                    <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
-                      <span className="text-[11px] text-slate-500">
-                        Reports are indexed automatically on first analysis. To refresh or
-                        switch report type:
-                      </span>
-                      <select
-                        value={form}
-                        onChange={(e) => setForm(e.target.value as FilingForm)}
-                        className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs"
-                      >
-                        <option value="10-K">10-K (annual report)</option>
-                        <option value="10-Q">10-Q (quarterly report)</option>
-                      </select>
+                      <option value="10-K">Annual report (10-K)</option>
+                      <option value="10-Q">Quarterly report (10-Q)</option>
+                    </select>
+                    <div className="flex gap-2">
                       <button
+                        type="button"
+                        onClick={onQuery}
+                        disabled={busy}
+                        className="min-h-12 rounded-xl bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-600 disabled:opacity-50"
+                      >
+                        Search
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => void onIngest()}
                         disabled={busy}
-                        className="rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800 disabled:opacity-50"
+                        className="min-h-12 rounded-xl border border-slate-700 px-4 text-sm font-medium text-slate-300 hover:bg-slate-800 disabled:opacity-50"
                       >
-                        Re-index {ticker}
+                        Refresh data
                       </button>
                     </div>
                   </div>
-                </details>
-              </div>
-            </section>
+                </section>
 
-            {research && (
-              <div className="mt-6">
-                {cacheInfo && (
-                  <div className="mb-2 flex flex-wrap items-center gap-3 rounded-lg border border-cyan-500/25 bg-cyan-500/5 px-4 py-2.5 text-xs text-cyan-200">
-                    <span>
-                      ⚡ Served instantly from a shared run{" "}
-                      {cacheInfo.ageMinutes < 1
-                        ? "moments"
-                        : `${Math.round(cacheInfo.ageMinutes)} min`}{" "}
-                      ago — cache hits don't touch your daily quota.
-                    </span>
-                    <button
-                      onClick={() => void onResearchStream(true)}
-                      disabled={busy}
-                      className="rounded-md border border-cyan-500/40 px-2.5 py-1 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50"
-                    >
-                      Re-run fresh
-                    </button>
+                <QueryResultPanel result={queryResult} />
+
+                {showDebate ? (
+                  <div className="space-y-4">
+                    <DebatePanel
+                      bull={debateBull}
+                      bear={debateBear}
+                      evidence={debateEvidence}
+                      live={busy && !research}
+                    />
+                    <ReportPanel result={research} />
+                    <EvidencePanel evidence={research?.evidence ?? []} />
+                    {research && (
+                      <>
+                        <SourceQualityPanel
+                          research={research}
+                          readiness={readiness}
+                          config={configStatus}
+                          capabilities={capabilities}
+                        />
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <CalibrationPanel report={research} refreshKey={historyRefresh} />
+                          <DisagreementPanel research={research} timing={timingAssessment} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-700 px-5 py-8 text-center text-sm text-slate-500">
+                    Evidence and debate will appear here after an analysis.
                   </div>
                 )}
-                <VerdictCard
-                  result={research}
-                  meta={meta}
-                  onExport={() => downloadReportMarkdown(research, meta)}
-                />
-              </div>
+
+                <details className="workspace-section">
+                  <summary>
+                    <span>
+                      <strong>System details</strong>
+                      <small>Data-provider availability, cache details, and diagnostics</small>
+                    </span>
+                  </summary>
+                  <div className="border-t border-slate-800 p-4 sm:p-6">
+                    <ApiStatusPanel
+                      config={configStatus}
+                      readiness={readiness}
+                      lastStatus={status}
+                      cachedAgeMinutes={cacheInfo?.ageMinutes ?? null}
+                    />
+                  </div>
+                </details>
+              </section>
             )}
-
-            <div className="mt-6 grid gap-4 xl:grid-cols-2">
-              <CalibrationPanel report={research} refreshKey={historyRefresh} />
-              <ApiStatusPanel
-                config={configStatus}
-                readiness={readiness}
-                lastStatus={status}
-                cachedAgeMinutes={cacheInfo?.ageMinutes ?? null}
-              />
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-2">
-              <SourceQualityPanel
-                research={research}
-                readiness={readiness}
-                config={configStatus}
-                capabilities={capabilities}
-              />
-              <DisagreementPanel research={research} timing={timingAssessment} />
-            </div>
-
-            {showDebate && (
-              <DebatePanel
-                bull={debateBull}
-                bear={debateBear}
-                evidence={debateEvidence}
-                live={busy && !research}
-              />
-            )}
-
-            <ReportPanel result={research} />
-            <EvidencePanel evidence={research?.evidence ?? []} />
-
-            <QueryResultPanel result={queryResult} />
-          </>
+          </div>
         )}
 
         <AppFooter />
       </main>
-    </div>
+    </AppShell>
   );
 }
 
 function AppFooter() {
   const [legalDoc, setLegalDoc] = useState<"risk" | "terms" | "privacy" | null>(null);
   return (
-    <footer className="mt-12 border-t border-slate-800/60 pt-6 text-center text-[11px] text-slate-500">
+    <footer className="mt-14 border-t border-slate-800/60 pb-4 pt-7 text-center text-xs text-slate-500">
       <p className="mx-auto max-w-2xl leading-relaxed">{FOOTER_DISCLAIMER}</p>
       <p className="mt-2 flex items-center justify-center gap-3">
         <button

@@ -113,21 +113,17 @@ export function DayTradePage() {
       <section className="rounded-3xl border border-slate-800/80 bg-slate-900/50 p-5 shadow-xl shadow-slate-950/40 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <span className="inline-flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-indigo-300">
-              <span className="h-px w-8 bg-indigo-400/60" />
-              Intraday desk
-            </span>
-            <h1 className="mt-2 font-display text-3xl font-medium tracking-tight text-slate-50">
-              Day trading
+            <p className="text-sm font-semibold text-indigo-300">Day trade</p>
+            <h1 className="mt-1 font-display text-3xl font-medium tracking-tight text-slate-50 sm:text-4xl">
+              Find a disciplined intraday setup
             </h1>
-            <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-400">
-              Any symbol, analyzed live: five desk agents vote on the tape, and a risk manager
-              issues buy / sell / stand aside with an entry, a stop, and a target — or refuses
-              the trade. Most of the day the honest answer is “stand aside”.
+            <p className="mt-2 max-w-2xl text-base leading-7 text-slate-400">
+              Five desk signals read the tape while a risk manager looks for a clear entry,
+              stop, and target. When the setup is weak, the answer is simply “stand aside.”
             </p>
           </div>
           <div className="w-full max-w-sm">
-            <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">
+            <label className="mb-2 block text-sm font-semibold text-slate-300">
               Search any ticker
             </label>
             <div className="flex gap-2">
@@ -136,13 +132,13 @@ export function DayTradePage() {
                 onChange={(e) => setSearch(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && applySearch()}
                 placeholder="e.g. TSLA, GME, BTC-USD…"
-                className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 font-mono text-sm uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 font-mono text-sm uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               />
               <button
                 type="button"
                 onClick={applySearch}
                 disabled={!search.trim()}
-                className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+                className="min-h-12 rounded-xl bg-indigo-600 px-5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
               >
                 Load
               </button>
@@ -156,7 +152,7 @@ export function DayTradePage() {
               key={t}
               type="button"
               onClick={() => setTicker(t)}
-              className={`rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold transition ${
+              className={`min-h-9 rounded-lg border px-3 font-mono text-xs font-semibold transition ${
                 ticker === t
                   ? "border-indigo-500 bg-indigo-500/15 text-indigo-200"
                   : "border-slate-800 bg-slate-950/40 text-slate-400 hover:border-slate-600 hover:text-slate-200"

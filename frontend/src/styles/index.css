@@ -31,14 +31,14 @@ html[data-theme="dark"] {
   --color-slate-50: 250 247 242;
   --color-slate-100: 237 232 223;
   --color-slate-200: 216 209 196;
-  --color-slate-300: 179 170 153;
-  --color-slate-400: 138 129 113;
-  --color-slate-500: 108 100 85;
-  --color-slate-600: 76 70 60;
-  --color-slate-700: 55 50 42;
-  --color-slate-800: 38 34 28;
-  --color-slate-900: 24 21 18;
-  --color-slate-950: 14 12 9;
+  --color-slate-300: 194 186 171;
+  --color-slate-400: 160 151 135;
+  --color-slate-500: 128 119 103;
+  --color-slate-600: 88 81 69;
+  --color-slate-700: 62 57 49;
+  --color-slate-800: 43 39 33;
+  --color-slate-900: 28 25 21;
+  --color-slate-950: 15 13 11;
 
   /* Copper — the signature accent */
   --color-indigo-50: 252 245 239;
@@ -281,9 +281,148 @@ body {
   color: rgb(var(--color-slate-100));
   background-color: rgb(var(--color-slate-950));
   background-image:
-    radial-gradient(1100px 500px at 18% -140px, var(--glow-a), transparent 62%),
-    radial-gradient(900px 460px at 85% -120px, var(--glow-b), transparent 60%);
+    radial-gradient(900px 500px at 70% -180px, var(--glow-a), transparent 64%),
+    radial-gradient(700px 420px at 15% -160px, var(--glow-b), transparent 62%);
   background-repeat: no-repeat;
+}
+
+/* Verdict is a dense research tool, but essential UI should never read like
+   fine print. These overrides lift older utility-sized labels consistently. */
+#root .text-\[9px\],
+#root .text-\[10px\],
+#root .text-\[11px\] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+#root .text-xs {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+#root .text-sm {
+  line-height: 1.5rem;
+}
+
+.research-tabs {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  border-bottom: 1px solid rgb(var(--color-slate-800) / 0.9);
+  scrollbar-width: none;
+}
+
+.research-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.research-tabs button {
+  min-height: 3rem;
+  flex: 0 0 auto;
+  border-bottom: 2px solid transparent;
+  padding: 0.7rem 1rem;
+  color: rgb(var(--color-slate-500));
+  font-size: 0.875rem;
+  font-weight: 650;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.research-tabs button:hover {
+  color: rgb(var(--color-slate-200));
+}
+
+.research-tabs button.is-active {
+  border-bottom-color: rgb(var(--color-indigo-400));
+  color: rgb(var(--color-slate-50));
+}
+
+@media (max-width: 639px) {
+  .research-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    overflow: visible;
+  }
+
+  .research-tabs button {
+    width: 100%;
+    padding-inline: 0.5rem;
+  }
+}
+
+.workspace-disclosure > summary {
+  display: flex;
+  min-height: 2.75rem;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: rgb(var(--color-slate-400));
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.workspace-disclosure > summary::-webkit-details-marker,
+.workspace-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.workspace-disclosure > summary::after,
+.workspace-section > summary::after {
+  content: "+";
+  flex: 0 0 auto;
+  color: rgb(var(--color-slate-500));
+  font-size: 1.25rem;
+  font-weight: 400;
+  transition: transform 160ms ease;
+}
+
+.workspace-disclosure[open] > summary::after,
+.workspace-section[open] > summary::after {
+  transform: rotate(45deg);
+}
+
+.workspace-section {
+  overflow: hidden;
+  border: 1px solid rgb(var(--color-slate-800) / 0.9);
+  border-radius: 1rem;
+  background: rgb(var(--color-slate-900) / 0.42);
+}
+
+.workspace-section > summary {
+  display: flex;
+  min-height: 4.75rem;
+  cursor: pointer;
+  list-style: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  transition: background-color 160ms ease;
+}
+
+.workspace-section > summary:hover {
+  background: rgb(var(--color-slate-800) / 0.35);
+}
+
+.workspace-section > summary span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.workspace-section > summary strong {
+  color: rgb(var(--color-slate-100));
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.workspace-section > summary small {
+  color: rgb(var(--color-slate-500));
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
 }
 
 /* Fraunces breathes with optical sizing; keep it slightly tightened. */
@@ -302,8 +441,19 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid rgb(var(--color-indigo-400) / 0.7);
-  outline-offset: 2px;
+  outline: 3px solid rgb(var(--color-indigo-400) / 0.72);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Quiet, themed scrollbars. */

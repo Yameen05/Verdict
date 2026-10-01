@@ -45,8 +45,8 @@ serif display face for the big moments, and a matching warm-paper light mode.
 
 ## Product Tour
 
-The app is organized into five pages: **Research**, **Day trading**,
-**Analyst**, **History**, and **Scoreboard**.
+The app is organized into five pages: **Research**, **Day trade**,
+**Ask analyst**, **History**, and **Track record**.
 
 ### Research Workspace
 
@@ -128,7 +128,7 @@ Every past verdict for any ticker lives on its own page: the full run list
 with confidence and cost, plus a timeline that plots each call against the
 price at the moment it was made — so verdict drift is visible at a glance.
 
-### The Scoreboard
+### Track Record
 
 Every verdict stores the price at the moment it was issued — and which model
 issued it. The scoreboard tab replays the book: forward return since each
@@ -206,7 +206,7 @@ rebuilds them).
   window, with rolling-window stats from price history, return ranges for
   custom dollar amounts, and an "Explain it simply" mode with zero finance
   jargon.
-- Timing agent: combines technicals, recent price behavior, news, optional
+- Entry timing: combines technicals, recent price behavior, news, optional
   market signals, and the selected horizon into simple advice such as "buy
   now", "wait for a pullback", "hold", or "avoid for this window."
 - Day-trade desk: five intraday rule agents (trend, momentum, volume/VWAP,

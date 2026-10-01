@@ -147,10 +147,9 @@ export function PositionTracker({
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
       <div className="mb-3">
-        <h3 className="text-sm font-semibold text-slate-100">Position tracker</h3>
-        <p className="text-[11px] text-slate-500">
-          Track what you already bought and translate the verdict into hold/sell/add.
-          Saved to your account.
+        <h3 className="text-base font-semibold text-slate-100">What I already own</h3>
+        <p className="mt-1 text-sm leading-6 text-slate-400">
+          Enter what you paid to see today's value, gain or loss, and the current hold/sell/add read.
         </p>
       </div>
 

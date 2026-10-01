@@ -48,7 +48,7 @@ class ResetRequest(BaseModel):
 
 class ResetConfirm(BaseModel):
     token: str = Field(min_length=32, max_length=256)
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
 
 
 def _reset_email_body(link: str, minutes: int) -> str:
@@ -139,7 +139,7 @@ async def confirm_password_reset(
         await db.commit()
         raise HTTPException(status_code=401, detail="Invalid or expired reset link")
 
-    validate_password(body.password, user.email)
+    validate_password(body.password)
     user.password_hash = hash_password(body.password)
 
     # Revoke everything that could still authenticate as this user.

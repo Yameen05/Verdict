@@ -10,7 +10,7 @@ from app.config import get_settings
 BOOTSTRAP_TOKEN = "test-bootstrap-token-with-at-least-32-characters"
 OWNER = {
     "email": "owner@example.com",
-    "password": "a-strong-test-password-123",
+    "password": "A-strong-test-password-123",
 }
 
 
@@ -45,7 +45,7 @@ def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
         duplicate = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json={"email": "other@example.com", "password": "another-strong-password-123"},
+            json={"email": "other@example.com", "password": "Another-strong-password-123"},
         )
         assert duplicate.status_code == 404
 
