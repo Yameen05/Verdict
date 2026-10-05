@@ -11,20 +11,20 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "lightweight-charts": "^5.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "lightweight-charts": "^5.2.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "@vitejs/plugin-react": "^6.0.2",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "puppeteer-core": "^25.3.0",
-    "tailwindcss": "^3.4.17",
-    "typescript": "^5.9.3",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.10"
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "puppeteer-core": "^25.12.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   }
 }
