@@ -101,6 +101,21 @@ const finish = (payload=result,cached=false) => {
 try {
   await page.setViewport({width:1440,height:1000});
   await page.goto(url,{waitUntil:"networkidle0"});
+  // Tailwind utilities must resolve the app palette in both themes.
+  const themeColors = await page.evaluate(() => {
+    const shell = document.querySelector("aside").parentElement;
+    const colors = () => {
+      const style = getComputedStyle(shell);
+      return [style.backgroundColor, style.color];
+    };
+    const dark = colors();
+    document.documentElement.dataset.theme = "light";
+    const light = colors();
+    document.documentElement.dataset.theme = "dark";
+    return {dark, light};
+  });
+  assert.deepEqual(themeColors.dark, ["rgb(15, 13, 11)", "rgb(237, 232, 223)"]);
+  assert.deepEqual(themeColors.light, ["rgb(248, 245, 238)", "rgb(50, 43, 33)"]);
   await click("Analyze");await percent(0);
   emit("progress",{kind:"provider_wait",id:"queue1",reason:"queue",phase:"started"});
   await page.waitForFunction(()=>document.body.innerText.includes("queued for the next AI request slot"));

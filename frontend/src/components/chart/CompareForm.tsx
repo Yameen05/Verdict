@@ -30,7 +30,7 @@ export function CompareForm({
         value={input}
         onChange={(e) => onInput(e.target.value)}
         placeholder="e.g. SPY"
-        className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium uppercase text-slate-100 placeholder:text-slate-600 focus:border-fuchsia-500/60 focus:outline-none"
+        className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium uppercase text-slate-100 placeholder:text-slate-600 focus:border-fuchsia-500/60 focus:outline-hidden"
       />
       <button
         type="submit"

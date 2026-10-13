@@ -65,7 +65,7 @@ function ActionHelpIcon({ action }: { action: TimingAction }) {
         role="img"
         aria-label={`${help.title}: ${help.body}`}
         title={`${help.title}: ${help.body}`}
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-xs font-bold text-slate-300 outline-none transition hover:border-cyan-500/70 hover:text-cyan-200 focus:border-cyan-500/70 focus:text-cyan-200"
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-xs font-bold text-slate-300 outline-hidden transition hover:border-cyan-500/70 hover:text-cyan-200 focus:border-cyan-500/70 focus:text-cyan-200"
       >
         i
       </span>

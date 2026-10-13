@@ -160,7 +160,7 @@ export function PositionTracker({
             value={form.amount}
             onChange={(e) => update("amount", e.target.value)}
             inputMode="decimal"
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 focus:border-cyan-500/70 focus:outline-none"
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 focus:border-cyan-500/70 focus:outline-hidden"
           />
         </label>
         <label className="text-xs">
@@ -169,7 +169,7 @@ export function PositionTracker({
             type="date"
             value={form.buyDate}
             onChange={(e) => update("buyDate", e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 focus:border-cyan-500/70 focus:outline-none"
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 focus:border-cyan-500/70 focus:outline-hidden"
           />
         </label>
         <label className="text-xs sm:col-span-2">
@@ -179,7 +179,7 @@ export function PositionTracker({
             onChange={(e) => update("buyPrice", e.target.value)}
             inputMode="decimal"
             placeholder="blank = use close near date"
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/70 focus:outline-none"
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/70 focus:outline-hidden"
           />
         </label>
       </div>

@@ -144,7 +144,8 @@ async def google_login(
             elif not get_settings().public_signup_enabled:
                 raise HTTPException(status_code=401, detail="An invite code is required to register")
             user = User(
-                email=email, password_hash="", role="member", singleton_key=secrets.randbits(60)
+                # Empty hash disables password login for Google-only accounts.
+                email=email, password_hash="", role="member", singleton_key=secrets.randbits(60)  # nosec B106
             )
             db.add(user)
             new_account = True

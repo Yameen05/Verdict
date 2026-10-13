@@ -54,7 +54,7 @@ export function StockBrowser({ ticker, directory, loading, error, initialSearch,
       onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
       className="h-[min(92dvh,60rem)] max-h-[92dvh] w-[min(96vw,80rem)] max-w-none flex-col overflow-hidden rounded-3xl border border-slate-700 bg-slate-950 p-0 text-slate-200 shadow-2xl backdrop:bg-slate-950/80 open:flex"
     >
-      <header className="border-b border-slate-800 bg-gradient-to-br from-indigo-950/60 via-slate-950 to-slate-950 px-5 py-5 sm:px-7">
+      <header className="border-b border-slate-800 bg-linear-to-br from-indigo-950/60 via-slate-950 to-slate-950 px-5 py-5 sm:px-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-300">Find your next ticker</p>
@@ -66,10 +66,10 @@ export function StockBrowser({ ticker, directory, loading, error, initialSearch,
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <input ref={search} autoFocus type="search" aria-label="Search the stock board" value={query} onChange={(event) => setQuery(event.target.value)}
             placeholder="Search a company or ticker…"
-            className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 text-base text-white placeholder-slate-500 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20" />
+            className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 text-base text-white placeholder-slate-500 focus:border-indigo-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20" />
           <select aria-label="Filter by exchange" value={exchange} disabled={category === "crypto"}
             onChange={(event) => setExchange(event.target.value)}
-            className="min-h-12 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm focus:border-indigo-400 focus:outline-none disabled:opacity-40">
+            className="min-h-12 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm focus:border-indigo-400 focus:outline-hidden disabled:opacity-40">
             <option>All exchanges</option>
             {exchanges.map((value) => <option key={value}>{value}</option>)}
           </select>
@@ -95,7 +95,7 @@ export function StockBrowser({ ticker, directory, loading, error, initialSearch,
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {visible.map((asset) => <button type="button" key={asset.ticker} aria-label={`Choose ${asset.name} (${asset.ticker})`} aria-pressed={asset.ticker === ticker}
             onClick={() => onSelect(asset.ticker)}
-            className={`group flex min-h-36 flex-col rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${asset.ticker === ticker ? "border-indigo-400/60 bg-indigo-500/15" : "border-slate-800 bg-slate-900/60 hover:border-indigo-500/50 hover:bg-slate-900"}`}>
+            className={`group flex min-h-36 flex-col rounded-2xl border p-4 text-left transition focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400 ${asset.ticker === ticker ? "border-indigo-400/60 bg-indigo-500/15" : "border-slate-800 bg-slate-900/60 hover:border-indigo-500/50 hover:bg-slate-900"}`}>
             <span className="flex w-full items-center justify-between gap-2">
               <span className="font-mono text-lg font-bold text-slate-100 group-hover:text-indigo-200">{asset.ticker}</span>
               {asset.ticker === ticker ? <span className="text-xs text-indigo-300">Selected ✓</span> : asset.popular ? <span className="rounded-full bg-indigo-500/10 px-2 py-1 text-[10px] text-indigo-300">Popular</span> : null}

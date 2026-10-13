@@ -286,7 +286,7 @@ export function AppShell(props: Props) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-800/70 bg-slate-950/95 px-4 py-5 backdrop-blur lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-slate-800/70 bg-slate-950/95 px-4 py-5 backdrop-blur-sm lg:flex">
         <div className="flex items-center gap-3 px-2">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-indigo-400/45 bg-indigo-500/10 pb-0.5 font-display text-xl italic text-indigo-300">
             V
@@ -345,7 +345,7 @@ export function AppShell(props: Props) {
         </div>
       </aside>
 
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-800/70 bg-slate-950/92 px-4 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-800/70 bg-slate-950/92 px-4 backdrop-blur-sm lg:hidden">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl border border-indigo-400/45 bg-indigo-500/10 pb-0.5 font-display text-lg italic text-indigo-300">
             V
@@ -373,7 +373,7 @@ export function AppShell(props: Props) {
           <button
             type="button"
             aria-label="Close navigation"
-            className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
+            className="absolute inset-0 bg-slate-950/75 backdrop-blur-xs"
             onClick={() => setMobileOpen(false)}
           />
           <div

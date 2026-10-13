@@ -78,7 +78,7 @@ export function InvitesPanel({ onClose }: { onClose: () => void }) {
             onChange={(e) => setNote(e.target.value)}
             maxLength={120}
             placeholder="e.g. sara"
-            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-hidden"
           />
         </div>
         <button
@@ -96,7 +96,7 @@ export function InvitesPanel({ onClose }: { onClose: () => void }) {
             Copy this code now — it is shown only once:
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-emerald-200">
+            <code className="flex-1 break-all rounded-sm bg-slate-950 px-2.5 py-1.5 font-mono text-xs text-emerald-200">
               {fresh.code}
             </code>
             <button
@@ -119,7 +119,7 @@ export function InvitesPanel({ onClose }: { onClose: () => void }) {
           {invites.map((inv) => (
             <li key={inv.id} className="flex items-center gap-3 py-2">
               <span
-                className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CHIP[inv.status]}`}
+                className={`rounded-sm px-1.5 py-0.5 text-[9px] font-semibold uppercase ${STATUS_CHIP[inv.status]}`}
               >
                 {inv.status}
               </span>

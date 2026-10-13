@@ -13,7 +13,7 @@ export function InfoTip({
         tabIndex={0}
         aria-label={label}
         title={label}
-        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-[10px] font-bold text-slate-500 outline-none transition hover:border-cyan-500/70 hover:text-cyan-200 focus:border-cyan-500/70 focus:text-cyan-200"
+        className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-700 bg-slate-950 text-[10px] font-bold text-slate-500 outline-hidden transition hover:border-cyan-500/70 hover:text-cyan-200 focus:border-cyan-500/70 focus:text-cyan-200"
       >
         i
       </span>

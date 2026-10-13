@@ -14,7 +14,8 @@ from app.schemas.failure import FailureInfo
 MESSAGES = {
     "provider_rate_limit": "Google's requests-per-minute limit was reached. Wait briefly before trying again; cached reports remain available.",
     "provider_daily_limit": "Google's daily AI quota was reached. Retrying shortly is unlikely to help. The provider did not give a confirmed reset time.",
-    "provider_token_limit": "Google's AI token quota was reached.",
+    # Quota message; no authentication credential is stored here.
+    "provider_token_limit": "Google's AI token quota was reached.",  # nosec B105
     "provider_limit": "Google rejected the request because of an AI limit. It did not identify whether this is a short rate limit or a longer quota limit, so a short wait may not help.",
     "provider_busy": "Google is temporarily busy. Try again later; cached reports remain available.",
     "timeout": "The research request timed out. Try again later; any completed checks do not make this a finished report.",

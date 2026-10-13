@@ -209,7 +209,7 @@ export function ChatPanel({ ticker, research }: Props) {
               onChange={(e) => setInput(e.target.value)}
               placeholder={`Ask anything about ${ticker}…`}
               disabled={busy}
-              className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+              className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
             />
             <button
               type="submit"

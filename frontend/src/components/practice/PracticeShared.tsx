@@ -5,7 +5,7 @@ import { checkSummary } from "../../lib/practiceGuide";
 export const panel =
   "rounded-2xl border border-slate-800 bg-slate-900/50 p-5 sm:p-6";
 export const input =
-  "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-400 focus:outline-none";
+  "w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-indigo-400 focus:outline-hidden";
 export const button =
   "rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-indigo-400 disabled:opacity-40";
 export const primary = `${button} border-indigo-500 bg-indigo-600 text-white hover:bg-indigo-500`;

@@ -90,6 +90,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Tests
+        working-directory: frontend
+        run: npm test
+
   docker:
     name: Docker images build cleanly
     runs-on: ubuntu-latest

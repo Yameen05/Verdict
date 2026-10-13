@@ -110,7 +110,7 @@ export function StockPicker({ ticker, setTicker }: Props) {
             role="combobox"
             aria-expanded={open}
             aria-controls="asset-options"
-            className="min-w-0 flex-1 bg-transparent px-3 py-3 text-base text-slate-100 placeholder-slate-500 focus:outline-none"
+            className="min-w-0 flex-1 bg-transparent px-3 py-3 text-base text-slate-100 placeholder-slate-500 focus:outline-hidden"
           />
           <span className="mr-3 hidden rounded-lg bg-indigo-500/12 px-2.5 py-1.5 font-mono text-sm font-semibold text-indigo-200 sm:inline">
             {ticker}

@@ -83,7 +83,7 @@ function HistoryTickerInput({ onApply }: { onApply: (t: string) => void }) {
         onChange={(e) => setValue(e.target.value.toUpperCase())}
         onKeyDown={(e) => e.key === "Enter" && apply()}
         placeholder="Any ticker…"
-        className="w-36 rounded-full border border-slate-700 bg-slate-950 px-3.5 py-1.5 font-mono text-xs uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none"
+        className="w-36 rounded-full border border-slate-700 bg-slate-950 px-3.5 py-1.5 font-mono text-xs uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-hidden"
       />
       <button
         type="button"
@@ -472,7 +472,7 @@ export default function App({
         setShowInvites((value) => !value);
       }}
     >
-      <main className="mx-auto max-w-[90rem] px-4 py-7 sm:px-6 sm:py-9 xl:px-10">
+      <main className="mx-auto max-w-360 px-4 py-7 sm:px-6 sm:py-9 xl:px-10">
         {tab === "scoreboard" && (
           <div className="space-y-6">
             <header className="max-w-3xl">
@@ -562,7 +562,7 @@ export default function App({
                     value={horizonDays}
                     onChange={(event) => setHorizonDays(Number(event.target.value))}
                     disabled={busy}
-                    className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 text-base text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
+                    className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 text-base text-slate-100 focus:border-indigo-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50"
                   >
                     {HORIZONS.map((horizon) => (
                       <option key={horizon.days} value={horizon.days}>
@@ -732,7 +732,7 @@ export default function App({
                       value={question}
                       onChange={(e) => setQuestion(e.target.value)}
                       rows={2}
-                      className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-base placeholder-slate-600 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                      className="min-h-12 w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 py-3 text-base placeholder-slate-600 focus:border-cyan-500 focus:outline-hidden focus:ring-2 focus:ring-cyan-500/20"
                     />
                     <select
                       aria-label="Filing type"

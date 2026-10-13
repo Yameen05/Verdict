@@ -124,7 +124,7 @@ export function PriceAlerts({ ticker, price }: { ticker: string; price: number |
           }}
           inputMode="decimal"
           placeholder="price"
-          className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:outline-none"
+          className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs font-medium text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/60 focus:outline-hidden"
         />
         <button
           type="button"

@@ -84,7 +84,7 @@ function PositionSizer({ signal }: { signal: DayTradeSignal }) {
             min={100}
             value={account}
             onChange={(e) => setAccount(Math.max(0, Number(e.target.value)))}
-            className="mt-1 block w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+            className="mt-1 block w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-100 focus:border-indigo-500 focus:outline-hidden"
           />
         </label>
         <label className="text-slate-400">
@@ -96,7 +96,7 @@ function PositionSizer({ signal }: { signal: DayTradeSignal }) {
             step={0.25}
             value={riskPct}
             onChange={(e) => setRiskPct(Math.min(5, Math.max(0.25, Number(e.target.value))))}
-            className="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+            className="mt-1 block w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 font-mono text-sm text-slate-100 focus:border-indigo-500 focus:outline-hidden"
           />
         </label>
         <div className="text-slate-300">

@@ -55,7 +55,8 @@ def assessment_failure_reason(payload) -> str:
     causes = {
         "provider_rate_limit": "the provider's per-minute quota was reached",
         "provider_daily_limit": "the provider's daily quota was reached",
-        "provider_token_limit": "the provider's token quota was reached",
+        # Quota label; no authentication credential is stored here.
+        "provider_token_limit": "the provider's token quota was reached",  # nosec B105
         "provider_limit": "a provider quota was reached; its window was not recorded",
         "provider_busy": "the provider was temporarily busy",
         "timeout": "the request timed out",

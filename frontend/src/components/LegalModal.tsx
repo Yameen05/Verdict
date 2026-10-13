@@ -21,7 +21,7 @@ export function LegalModal({ initialDoc = "risk", onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-xs"
       role="dialog"
       aria-modal="true"
       aria-label={doc.title}

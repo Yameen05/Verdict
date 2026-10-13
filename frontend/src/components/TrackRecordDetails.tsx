@@ -79,7 +79,7 @@ export function TrackRecordDetails({ id, onClose, refreshKey }: {
                 ["Analysis duration", detail.duration_ms === null ? "Not recorded" : `${(detail.duration_ms / 1000).toFixed(1)} seconds`],
                 ["Analysis cost", detail.cost_usd === null ? "Not recorded" : `$${detail.cost_usd.toFixed(4)}`],
                 ["Run ID", String(entry.id)],
-              ].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 break-words">{value}</dd></div>)}
+              ].map(([label, value]) => <div key={label}><dt className="text-xs text-slate-500">{label}</dt><dd className="mt-1 wrap-break-word">{value}</dd></div>)}
             </dl>
             {entry.horizon_assumed && <p className="mt-4 text-xs text-amber-300">This older run’s saved evaluation already used an assumed holding period. That existing evaluation is preserved; no new deadline was invented.</p>}
             <p className="mt-4 border-t border-slate-800 pt-4 text-xs leading-6 text-slate-400">{detail.rule} Daily candle completion is a conservative cutoff, not an exchange closing timestamp. Finished grades are saved and do not change with later prices.</p>
@@ -93,7 +93,7 @@ export function TrackRecordDetails({ id, onClose, refreshKey }: {
           </> : <section><h3 className="font-display text-xl">Original reasoning</h3><p className="mt-2 text-sm leading-7 text-slate-300">{detail.justification}</p><p className="mt-2 text-xs text-slate-500">This older run has an incomplete report. All saved fields are available below.</p></section>}
           <details className="rounded-xl border border-slate-800 p-4">
             <summary className="cursor-pointer text-sm font-semibold">All saved analysis data</summary>
-            <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-400">{JSON.stringify(detail.payload, null, 2)}</pre>
+            <pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap wrap-break-word text-xs text-slate-400">{JSON.stringify(detail.payload, null, 2)}</pre>
           </details>
         </>}
       </div>

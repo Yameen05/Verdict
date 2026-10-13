@@ -156,7 +156,7 @@ export function BacktestPanel({ refreshKey }: { refreshKey: number }) {
                   </td>
                   <td className="px-3 py-2">
                     <span
-                      className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${OUTCOME_CHIP[e.outcome]}`}
+                      className={`rounded-sm px-1.5 py-0.5 text-[9px] font-semibold uppercase ${OUTCOME_CHIP[e.outcome]}`}
                     >
                       {e.outcome}
                     </span>

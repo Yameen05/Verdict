@@ -132,7 +132,7 @@ export function DayTradePage() {
                 onChange={(e) => setSearch(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && applySearch()}
                 placeholder="e.g. TSLA, GME, BTC-USD…"
-                className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 font-mono text-sm uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                className="min-h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 font-mono text-sm uppercase placeholder-slate-600 focus:border-indigo-500 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20"
               />
               <button
                 type="button"

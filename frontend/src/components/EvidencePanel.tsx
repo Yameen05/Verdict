@@ -26,7 +26,7 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceItem[] }) {
             <li key={e.id} className="flex gap-3 py-2.5 text-xs">
               <span className="w-20 shrink-0 font-mono text-[10px] text-slate-500">{e.id}</span>
               <span
-                className={`h-fit shrink-0 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ${src.chip}`}
+                className={`h-fit shrink-0 rounded-sm px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide ${src.chip}`}
               >
                 {src.label}
               </span>

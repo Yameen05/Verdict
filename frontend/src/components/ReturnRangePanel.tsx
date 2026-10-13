@@ -71,7 +71,7 @@ export function ReturnRangePanel({ ticker }: { ticker: string }) {
               if (e.key === "Enter") load();
             }}
             inputMode="decimal"
-            className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm font-semibold text-slate-100 focus:border-cyan-500/70 focus:outline-none"
+            className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm font-semibold text-slate-100 focus:border-cyan-500/70 focus:outline-hidden"
           />
           <button
             type="button"

@@ -103,7 +103,7 @@ export function SourceQualityPanel({
               {s.name}
             </div>
             <span
-              className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${chip(s.status)}`}
+              className={`mt-1 inline-flex rounded-sm px-1.5 py-0.5 text-[9px] font-semibold uppercase ${chip(s.status)}`}
             >
               {s.status}
             </span>
@@ -119,7 +119,7 @@ export function SourceQualityPanel({
           {signalProviders.map((p) => (
             <span
               key={p.name}
-              className={`rounded px-2 py-1 text-[10px] font-semibold uppercase ${chip(p.status)}`}
+              className={`rounded-sm px-2 py-1 text-[10px] font-semibold uppercase ${chip(p.status)}`}
             >
               {p.name}: {p.status}
             </span>

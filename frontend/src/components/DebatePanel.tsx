@@ -63,7 +63,7 @@ function CaseColumn({
                     <button
                       key={id}
                       onClick={() => setOpenEvidence(openEvidence === `${i}:${id}` ? null : `${i}:${id}`)}
-                      className={`rounded border px-1 py-px font-mono text-[9px] transition ${s.chip}`}
+                      className={`rounded-sm border px-1 py-px font-mono text-[9px] transition ${s.chip}`}
                       title="Show the cited evidence"
                     >
                       {id}
