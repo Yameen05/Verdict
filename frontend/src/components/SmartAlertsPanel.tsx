@@ -1,3 +1,4 @@
+import { predictionKind } from "../lib/assessment";
 import { useEffect, useMemo, useState } from "react";
 import {
   userStateApi,
@@ -36,7 +37,7 @@ export function SmartAlertsPanel({
     research?.metrics.current_price ??
     research?.signals.quotes.find((q) => q.price !== null)?.price ??
     null;
-  const currentRec = research?.report.recommendation ?? null;
+  const currentRec = research && predictionKind(research) !== "none" ? research.report.recommendation : null;
   const verdictChanged = Boolean(currentRec && watchedRec && currentRec !== watchedRec);
   const target = research?.signals.fundamentals?.analyst_target ?? null;
   const earningsDays = research?.signals.earnings_days ?? null;

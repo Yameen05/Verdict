@@ -1,3 +1,4 @@
+import { researchError } from "../lib/researchErrors";
 import { useEffect, useRef, useState } from "react";
 import { api, type ChatTurn, type ResearchResponse } from "../api/client";
 
@@ -37,36 +38,6 @@ const SUGGESTED_PROMPT_GROUPS = [
     ],
   },
 ];
-
-function friendlyError(raw: string): string {
-  const r = raw.toLowerCase();
-  // Check quota/billing BEFORE rate-limiting: providers report "out of quota"
-  // as a 429/RateLimitError, but retrying never fixes it — so say so plainly.
-  if (
-    r.includes("insufficient_quota") ||
-    r.includes("out of quota") ||
-    r.includes("quota") ||
-    r.includes("billing")
-  ) {
-    return "The AI provider quota is used up. Free Gemini API keys still have request limits, so retrying right away may fail again. Wait for the quota window to reset, enable billing for higher limits, or switch to another key/provider.";
-  }
-  if (r.includes("apiconnectionerror") || r.includes("connection")) {
-    return "The backend couldn't reach the AI provider. Usually the API key is missing/invalid, or the server has no internet access.";
-  }
-  if (r.includes("authentication") || r.includes("401") || r.includes("invalid_api_key")) {
-    return "The AI provider rejected the API key. Set a valid LLM_API_KEY in the backend .env and restart.";
-  }
-  if (r.includes("503")) {
-    return "No AI key is configured on the server. Set LLM_API_KEY (and LLM_BASE_URL for Gemini) in the backend .env and restart.";
-  }
-  if (r.includes("rate") || r.includes("429")) {
-    return "Rate-limited. Wait a moment and try again.";
-  }
-  if (r.includes("502")) {
-    return "The AI call failed upstream. Check the backend logs — usually a bad key or network issue.";
-  }
-  return raw;
-}
 
 export function ChatPanel({ ticker, research }: Props) {
   const [thread, setThread] = useState<ThreadEntry[]>([]);
@@ -115,7 +86,7 @@ export function ChatPanel({ ticker, research }: Props) {
     } catch (e) {
       setThread((t) => [
         ...t,
-        { kind: "error", message: friendlyError((e as Error).message || "Request failed") },
+        { kind: "error", message: researchError(e) },
       ]);
     } finally {
       setBusy(false);

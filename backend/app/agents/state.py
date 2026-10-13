@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from app.schemas.failure import FailureInfo
 from app.schemas.research import (
     DebateCase,
     EvidenceItem,
@@ -37,4 +38,5 @@ class ResearchState(TypedDict, total=False):
     prior_run: dict[str, Any] | None
     # Reflection loop: judge may request ONE follow-up SEC retrieval.
     followup_question: str | None
+    reflection_failure: FailureInfo | None
     reflection_count: int

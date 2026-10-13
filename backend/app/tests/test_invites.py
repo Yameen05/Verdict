@@ -42,6 +42,9 @@ def test_register_with_invite_creates_member_session(client):
         assert body["user"]["email"] == "friend@example.com"
         assert body["user"]["role"] == "member"
 
+        assert "requires_2fa_setup" not in body
+        assert friend.get("/research/history/AAPL").status_code == 200
+
         # The session is live immediately.
         friend.headers.update({"X-CSRF-Token": body["csrf_token"]})
         me = friend.get("/auth/me")

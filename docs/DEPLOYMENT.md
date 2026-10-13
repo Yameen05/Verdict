@@ -17,20 +17,26 @@ APP_BIND_ADDRESS=127.0.0.1
 APP_PORT=8080
 ```
 
-Generate independent authentication secrets:
+Generate the one-time owner bootstrap token:
 
 ```bash
 openssl rand -base64 48
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Put the first value in `AUTH_BOOTSTRAP_TOKEN` and the second in
-`AUTH_ENCRYPTION_KEY`. Store both in a secret manager. The encryption key is
-required to decrypt enrolled TOTP data; losing it requires account recovery
-from a database backup or a controlled re-enrollment.
+Store the value in `AUTH_BOOTSTRAP_TOKEN` and keep it in a secret manager.
 
 Configure the provider keys needed for the features you will use. Never put
 provider keys or authentication secrets in frontend build variables.
+
+For Google sign-in, create a Google OAuth **Web application** client and add
+your HTTPS site origin to its Authorized JavaScript origins. Set
+`GOOGLE_CLIENT_ID` in the backend environment and restart the backend. No
+client secret or redirect URI is needed for the popup flow. The bundled nginx
+policy permits Google's sign-in script, styles, connections, and frames, and
+uses `same-origin-allow-popups` so popup communication works. Preserve these
+headers if you add another reverse proxy. Test a real Google login from the
+authorized HTTPS origin before release. Signup and invite rules still apply;
+Google sign-in cannot create the first owner.
 
 ## 2. Put TLS in Front
 
@@ -48,12 +54,12 @@ Rate limits and audit records key off the result.
 `TRUSTED_PROXY_IPS` defaults to loopback plus the private ranges, which covers
 the bundled Compose setup. Set it explicitly if your proxy has a public address.
 Never set it to `0.0.0.0/0`: that trusts every peer, which lets any client claim
-an arbitrary address and walk past the login, 2FA, and password-reset limits.
+an arbitrary address and walk past the login and password-reset limits.
 
 Use a DNS name that exactly matches `ALLOWED_HOSTS` and `CORS_ORIGINS`. Verify
 the certificate before completing owner setup.
 
-## 3. Start and Enroll the Owner
+## 3. Create the Owner Account
 
 ```bash
 docker compose pull
@@ -62,14 +68,12 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/api/health
 ```
 
-Open the HTTPS site, enter the bootstrap token, create a long unique password,
-and enroll an authenticator. Store the one-time recovery codes separately from
-the host. The database prevents a second owner from being bootstrapped.
+Open the HTTPS site, enter the bootstrap token, and create a long unique password.
+The database prevents a second owner from being bootstrapped.
 
 ## 4. Back Up and Operate
 
 - Back up the `verdict-db` volume and test restoration regularly.
-- Keep `AUTH_ENCRYPTION_KEY` available to restored instances.
 - Run `docker compose logs`, host monitoring, and external uptime checks.
 - Review authentication events in the `audit_events` table.
 - Apply Dependabot and base-image updates after CI passes.

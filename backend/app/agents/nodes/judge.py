@@ -31,13 +31,15 @@ from app.agents.state import ResearchState
 from app.config import get_settings
 from app.observability.cost import record_chat
 from app.observability.logging import get_logger
+from app.schemas.failure import FailureInfo
 from app.schemas.research import (
     Argument,
     DimensionScores,
     EvidenceItem,
     ResearchReport,
 )
-from app.services.llm import make_llm_client
+from app.services.failures import normalize_failure
+from app.services.llm import chat_generation_options, make_llm_client
 
 log = get_logger(__name__)
 
@@ -95,6 +97,11 @@ Only use "Pending" if the ledger is empty.
 Confidence (0-100): how decisively the winning case beats the losing one.
 40 or below means the evidence barely separates them; 80+ means one side had
 no real answer.
+An unavailable advocate is not a defeated argument. Missing or stale sources
+and contradictory findings increase uncertainty: disclose them, lower confidence
+accordingly, and leave unsupported dimension scores null.
+Zero collected headlines means missing news coverage, not neutral sentiment or
+proof that no news or catalysts exist.
 
 Be concrete everywhere — cite actual numbers and specific findings, never
 generic phrases.{followup_clause}
@@ -148,6 +155,7 @@ def _pending(ticker: str, justification: str) -> dict:
             ticker=ticker,
             recommendation="Pending",
             justification=justification,
+            failures=[FailureInfo(kind="unknown", message=justification, stage="final review")],
             company_overview="",
             financial_health="",
             degraded=True,
@@ -298,43 +306,8 @@ def _fallback_recommendation(state: ResearchState) -> tuple[str, int, list[str]]
 
 
 def _llm_failure_context(error: OpenAIError) -> tuple[str, str]:
-    """Turn provider exceptions into useful, non-technical recovery guidance."""
-    detail = f"{type(error).__name__} {error}".lower()
-    status = getattr(error, "status_code", None)
-    code = str(getattr(error, "code", "") or "").lower()
-
-    if "missing credentials" in detail or "api key" in detail and "missing" in detail:
-        return (
-            "the AI provider key is missing",
-            "Add an LLM provider key in the server configuration, then run the analysis again.",
-        )
-    if "insufficient_quota" in detail or "credit_balance_exhausted" in detail or code in {
-        "insufficient_quota",
-        "credit_balance_exhausted",
-    }:
-        return (
-            "the AI provider account has no remaining API credits",
-            "Add provider credits or switch to another configured provider, then run again.",
-        )
-    if status in {401, 403} or "authentication" in detail or "invalid api key" in detail:
-        return (
-            "the AI provider rejected its API key",
-            "Replace the provider key with a valid one, then run the analysis again.",
-        )
-    if status == 429 or "rate limit" in detail or "rate-limit" in detail:
-        return (
-            "the AI provider temporarily rate-limited the request",
-            "Wait a minute and run the analysis again.",
-        )
-    if "timeout" in detail or "connection" in detail:
-        return (
-            "the AI provider could not be reached",
-            "Check the provider connection and run the analysis again.",
-        )
-    return (
-        "the AI provider could not complete the request",
-        "Run the analysis again; if it keeps failing, check the provider status and configuration.",
-    )
+    failure = normalize_failure(error, stage="final review")
+    return "the final AI review was unavailable", failure.message
 
 
 def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
@@ -342,6 +315,14 @@ def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
     horizon_days = state.get("horizon_days") or 14
     recommendation, confidence, reasons = _fallback_recommendation(state)
     failure_reason, recovery = _llm_failure_context(error)
+    missing = [label for key, label in (("sec", "filing review"), ("news", "news review"),
+               ("metrics", "financial review"), ("insider", "insider review"),
+               ("signals", "market signals"), ("bull", "positive case"), ("bear", "negative case"))
+               if getattr(state.get(key), "status", None) == "error" or getattr(state.get(key), "failure", None)]
+    causes = list(dict.fromkeys(item.failure.message for key in ("sec", "news", "metrics", "insider", "signals", "bull", "bear")
+              if (item := state.get(key)) is not None and getattr(item, "failure", None)))
+    if missing:
+        recovery += f" The {', '.join(missing)} also could not finish. " + " ".join(causes)
     metrics = state.get("metrics")
     news = state.get("news")
     sec = state.get("sec")
@@ -359,15 +340,19 @@ def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
     sec_findings = getattr(sec, "findings", None) or []
     company_overview = sec_findings[1].answer if len(sec_findings) > 1 else ""
     risk_answers = [f.answer for f in sec_findings if "risk" in f.question.lower()]
-    key_risks = risk_answers[:2] or ["Re-run when the AI provider is available for a fuller risk review."]
+    key_risks = risk_answers[:2] or [
+        "Re-run when the AI provider is available for a fuller risk review."
+    ]
 
     report = ResearchReport(
         ticker=ticker,
-        recommendation=recommendation,
-        confidence=confidence,
+        failures=[normalize_failure(error, stage="final review")] + [item.failure for key in ("sec", "news", "metrics", "insider", "signals", "bull", "bear") if (item := state.get(key)) is not None and getattr(item, "failure", None)],
+        recommendation="Failed",
+        prediction_kind="none",
+        confidence=None,
         justification=(
             f"The full AI analysis could not run because {failure_reason}, so this is a "
-            f"limited verdict from the data already collected. For a "
+            f"limited verdict from the data already collected. {recovery} For a "
             f"{_horizon_label(horizon_days)} hold, the main signals were: {reason_text}."
         ),
         dissent=(
@@ -384,7 +369,13 @@ def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
             growth=None,
             profitability=8 if margin and margin >= 0.2 else 4 if margin is not None else None,
             balance_sheet=None,
-            sentiment=7 if sentiment and sentiment > 0.25 else 3 if sentiment and sentiment < -0.25 else 5 if sentiment is not None else None,
+            sentiment=7
+            if sentiment and sentiment > 0.25
+            else 3
+            if sentiment and sentiment < -0.25
+            else 5
+            if sentiment is not None
+            else None,
         ),
         citations=[],
         company_overview=company_overview,
@@ -392,7 +383,11 @@ def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
             f"Current price is {_money(price)}. "
             f"Recent move for the selected window is {_pct(recent)}; "
             f"typical swing is {_pct(swing)}."
-            + (f" Extra signal sources used: {', '.join(signal_sources)}." if signal_sources else "")
+            + (
+                f" Extra signal sources used: {', '.join(signal_sources)}."
+                if signal_sources
+                else ""
+            )
         ),
         key_risks=key_risks,
         news_summary=getattr(news, "summary", None) if news else None,
@@ -403,7 +398,7 @@ def _fallback_report(state: ResearchState, error: OpenAIError) -> dict:
         ),
         simple_summary=(
             f"The full AI analysis was unavailable because {failure_reason}, so Verdict "
-            f"used the numbers it already had. The limited call is {recommendation} for "
+            f"used the numbers it already had. {recovery} The limited call is {recommendation} for "
             f"{_horizon_label(horizon_days)} because {reason_text}."
         ),
         degraded=True,
@@ -417,6 +412,12 @@ def _ledger_lines(evidence: list[EvidenceItem]) -> str:
 
 def _user_payload(state: ResearchState) -> str:
     parts: list[str] = ["EVIDENCE LEDGER:", _ledger_lines(state.get("evidence") or [])]
+    parts.append("\nSOURCE COVERAGE:")
+    for key in ("sec", "news", "metrics", "insider", "signals"):
+        slot = state.get(key)
+        parts.append(f"{key}: {getattr(slot, 'status', 'unavailable')}")
+        if key == "news" and getattr(slot, "article_count", 0) == 0:
+            parts.append("No headlines were collected; news sentiment and catalyst coverage are unknown.")
     for key, title in (("bull", "BULL CASE"), ("bear", "BEAR CASE")):
         case = state.get(key)
         if case is None or case.status != "ok":
@@ -424,8 +425,7 @@ def _user_payload(state: ResearchState) -> str:
             parts.append(f"\n{title}: unavailable ({err or 'advocate did not run'})")
             continue
         args = "\n".join(
-            f"  - {a.claim} [cites: {', '.join(a.evidence) or 'none'}]"
-            for a in case.arguments
+            f"  - {a.claim} [cites: {', '.join(a.evidence) or 'none'}]" for a in case.arguments
         )
         parts.append(f"\n{title}:\nThesis: {case.thesis}\n{args}")
     prior = state.get("prior_run")
@@ -487,9 +487,7 @@ async def judge(state: ResearchState) -> dict:
             "(LLM / OpenAI embeddings / NewsAPI) and ingest a filing first.",
         )
 
-    _writer()(
-        {"kind": "judge_phase", "phase": "deliberating", "reflection": reflections}
-    )
+    _writer()({"kind": "judge_phase", "phase": "deliberating", "reflection": reflections})
 
     may_reflect = reflections < MAX_REFLECTIONS and (
         state.get("sec") is not None and state["sec"].status == "ok"
@@ -510,7 +508,7 @@ async def judge(state: ResearchState) -> dict:
                 {"role": "system", "content": system},
                 {"role": "user", "content": _user_payload(state)},
             ],
-            temperature=0.2,
+            **chat_generation_options(0.2),
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:
@@ -522,7 +520,7 @@ async def judge(state: ResearchState) -> dict:
         data = json.loads(resp.choices[0].message.content or "{}")
     except json.JSONDecodeError as e:
         log.warning("judge_parse_failed", extra={"error": str(e)})
-        return _pending(ticker, f"Judge failed to parse model output: {e}")
+        return _pending(ticker, "The final review returned an unreadable report. Try again later.")
 
     needs = data.get("needs_evidence")
     if may_reflect and isinstance(needs, str) and needs.strip():
@@ -554,8 +552,44 @@ async def judge(state: ResearchState) -> dict:
         )
     except ValidationError as e:
         log.warning("judge_report_invalid", extra={"error": str(e)})
-        return _pending(ticker, f"Judge produced an invalid report: {e}")
+        return _pending(ticker, "The final review returned an invalid report. Try again later.")
 
+    incomplete = []
+    failures = [item.failure for key in ("sec", "news", "metrics", "insider", "signals", "bull", "bear")
+                if (item := state.get(key)) is not None and getattr(item, "failure", None) is not None]
+    reflection_failure = state.get("reflection_failure")
+    if reflection_failure:
+        failures.append(reflection_failure)
+        incomplete.append("extra filing check")
+    report.failures = failures
+    missing_debate = False
+    for key, label in (("bull", "positive case"), ("bear", "negative case")):
+        case = state.get(key)
+        if case is None or case.status != "ok":
+            incomplete.append(label)
+            missing_debate = True
+    for key, label in (
+        ("sec", "filing review"),
+        ("news", "news review"),
+        ("metrics", "financial review"),
+        ("insider", "insider review"),
+        ("signals", "market signals"),
+    ):
+        item = state.get(key)
+        if getattr(item, "status", None) == "error" or getattr(item, "failure", None):
+            incomplete.append(label)
+    if incomplete:
+        report.degraded = True
+        note = f"This is a limited report: the {', '.join(incomplete)} could not finish."
+        causes = " ".join(dict.fromkeys(f.message for f in failures))
+        report.simple_summary = f"{note} {causes} {report.simple_summary or ''}".strip()
+        if not failures:
+            report.failures = [FailureInfo(kind="unknown", message="This required analysis step did not finish. Its cause was not recorded.", stage=label) for label in incomplete]
+        report.fail_assessment(incomplete=True)
+        if missing_debate:
+            # Confidence describes how the two cases compare; no valid comparison
+            # exists when an advocate failed. Do not invent a lower numeric score.
+            report.confidence = None
     return {"report": report, "followup_question": None}
 
 
@@ -567,6 +601,7 @@ def _coerce_confidence(raw: object) -> int | None:
 
 
 # ----- reflection follow-up -----
+
 
 async def followup(state: ResearchState) -> dict:
     """Run the judge's one targeted RAG query and append excerpts as evidence."""
@@ -591,7 +626,8 @@ async def followup(state: ResearchState) -> dict:
                 content=f"Retrieval failed ({type(e).__name__}); decide from existing evidence.",
             )
         )
-        return {"evidence": evidence, "followup_question": None}
+        return {"evidence": evidence, "followup_question": None,
+                "reflection_failure": normalize_failure(e, stage="extra filing check")}
 
     if not matches:
         evidence.append(
@@ -611,9 +647,7 @@ async def followup(state: ResearchState) -> dict:
                 content=m.text[:700],
             )
         )
-    _writer()(
-        {"kind": "judge_phase", "phase": "followup_done", "chunks": len(matches)}
-    )
+    _writer()({"kind": "judge_phase", "phase": "followup_done", "chunks": len(matches)})
     return {"evidence": evidence, "followup_question": None}
 
 

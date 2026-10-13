@@ -18,7 +18,7 @@ from openai import AsyncOpenAI, OpenAIError
 from app.config import get_settings
 from app.observability.cost import record_chat
 from app.observability.logging import get_logger
-from app.services.llm import make_llm_client
+from app.services.llm import chat_generation_options, make_llm_client
 from app.services.news_client import Article
 
 log = get_logger(__name__)
@@ -67,7 +67,7 @@ async def score_and_summarize(
     caller decides how to degrade.
     """
     if not articles:
-        return 0.0, [], f"No recent articles found for {company_name}."
+        return None, [], f"No recent articles found for {company_name}; news sentiment is unknown."
 
     lines = "\n".join(
         f"{i}. ({a.published_at[:10]}) {a.title}"
@@ -82,7 +82,7 @@ async def score_and_summarize(
                 {"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": f"Company: {company_name}\n\nHeadlines:\n{lines}"},
             ],
-            temperature=0.1,
+            **chat_generation_options(0.1),
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:

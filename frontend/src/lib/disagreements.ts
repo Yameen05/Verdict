@@ -1,3 +1,4 @@
+import { failedAssessment } from "./assessment";
 import type { ResearchResponse, TimingAssessment } from "../api/client";
 
 export interface Disagreement {
@@ -22,7 +23,7 @@ export function buildDisagreements(
   research: ResearchResponse | null,
   timing: TimingAssessment | null,
 ): Disagreement[] {
-  if (!research) return [];
+  if (!research || failedAssessment(research)) return [];
   const out: Disagreement[] = [];
   const rec = research.report.recommendation;
   const recLean = verdictLean(rec);

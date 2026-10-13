@@ -20,12 +20,10 @@ def _isolated_env(monkeypatch, tmp_path):
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("ALLOWED_HOSTS", "testserver,localhost")
     monkeypatch.setenv("AUTH_BOOTSTRAP_TOKEN", "test-bootstrap-token-with-at-least-32-characters")
-    monkeypatch.setenv(
-        "AUTH_ENCRYPTION_KEY",
-        "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
-    )
     monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")
-    monkeypatch.setenv("REQUIRE_2FA", "false")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
+    # Keep invite-mode tests explicit and independent of local signup settings.
+    monkeypatch.setenv("PUBLIC_SIGNUP_ENABLED", "false")
     # Isolate the suite from a developer's real key. Local runs put the OpenAI
     # key in backend/.env, which pytest (run from backend/) would otherwise load
     # and then make live API calls (e.g. the readiness probe's models.list()).

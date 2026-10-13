@@ -103,7 +103,7 @@ def test_ask_route_is_not_shadowed_by_ticker_route(client, monkeypatch):
     )
 
     assert resp.status_code == 503
-    assert "LLM API key" in resp.json()["detail"]
+    assert resp.json()["detail"]["kind"] == "configuration"
 
 
 def test_ask_returns_answer_with_valid_key(client, monkeypatch):

@@ -1,64 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-export interface StockOption {
-  ticker: string;
-  name: string;
-  sector: string;
-}
-
-export const POPULAR_STOCKS: StockOption[] = [
-  { ticker: "AAPL", name: "Apple", sector: "Technology" },
-  { ticker: "MSFT", name: "Microsoft", sector: "Technology" },
-  { ticker: "NVDA", name: "NVIDIA", sector: "Semiconductors" },
-  { ticker: "AMD", name: "AMD", sector: "Semiconductors" },
-  { ticker: "AVGO", name: "Broadcom", sector: "Semiconductors" },
-  { ticker: "TSM", name: "TSMC", sector: "Semiconductors" },
-  { ticker: "INTC", name: "Intel", sector: "Semiconductors" },
-  { ticker: "SMCI", name: "Super Micro", sector: "Technology" },
-  { ticker: "GOOGL", name: "Alphabet", sector: "Communication" },
-  { ticker: "AMZN", name: "Amazon", sector: "Consumer" },
-  { ticker: "META", name: "Meta Platforms", sector: "Communication" },
-  { ticker: "TSLA", name: "Tesla", sector: "Auto" },
-  { ticker: "ORCL", name: "Oracle", sector: "Technology" },
-  { ticker: "CRM", name: "Salesforce", sector: "Technology" },
-  { ticker: "ADBE", name: "Adobe", sector: "Technology" },
-  { ticker: "UBER", name: "Uber", sector: "Technology" },
-  { ticker: "ABNB", name: "Airbnb", sector: "Consumer" },
-  { ticker: "SPOT", name: "Spotify", sector: "Communication" },
-  { ticker: "PYPL", name: "PayPal", sector: "Financials" },
-  { ticker: "HOOD", name: "Robinhood", sector: "Financials" },
-  { ticker: "GME", name: "GameStop", sector: "Consumer" },
-  { ticker: "RDDT", name: "Reddit", sector: "Communication" },
-  { ticker: "LLY", name: "Eli Lilly", sector: "Healthcare" },
-  { ticker: "BRK-B", name: "Berkshire Hathaway", sector: "Financials" },
-  { ticker: "F", name: "Ford", sector: "Auto" },
-  { ticker: "NFLX", name: "Netflix", sector: "Communication" },
-  { ticker: "DIS", name: "Disney", sector: "Communication" },
-  { ticker: "PLTR", name: "Palantir", sector: "Technology" },
-  { ticker: "COIN", name: "Coinbase", sector: "Financials" },
-  { ticker: "JPM", name: "JPMorgan Chase", sector: "Financials" },
-  { ticker: "V", name: "Visa", sector: "Financials" },
-  { ticker: "BAC", name: "Bank of America", sector: "Financials" },
-  { ticker: "WMT", name: "Walmart", sector: "Consumer" },
-  { ticker: "COST", name: "Costco", sector: "Consumer" },
-  { ticker: "NKE", name: "Nike", sector: "Consumer" },
-  { ticker: "SBUX", name: "Starbucks", sector: "Consumer" },
-  { ticker: "KO", name: "Coca-Cola", sector: "Consumer" },
-  { ticker: "MCD", name: "McDonald's", sector: "Consumer" },
-  { ticker: "JNJ", name: "Johnson & Johnson", sector: "Healthcare" },
-  { ticker: "UNH", name: "UnitedHealth", sector: "Healthcare" },
-  { ticker: "PFE", name: "Pfizer", sector: "Healthcare" },
-  { ticker: "XOM", name: "ExxonMobil", sector: "Energy" },
-  { ticker: "CVX", name: "Chevron", sector: "Energy" },
-  { ticker: "BA", name: "Boeing", sector: "Industrials" },
-  // Crypto trades 24/7; SEC-filing and insider evidence don't apply to coins.
-  { ticker: "BTC-USD", name: "Bitcoin", sector: "Crypto" },
-  { ticker: "ETH-USD", name: "Ethereum", sector: "Crypto" },
-  { ticker: "SOL-USD", name: "Solana", sector: "Crypto" },
-  { ticker: "XRP-USD", name: "XRP", sector: "Crypto" },
-  { ticker: "DOGE-USD", name: "Dogecoin", sector: "Crypto" },
-  { ticker: "ADA-USD", name: "Cardano", sector: "Crypto" },
-];
+import { api, type StockDirectory } from "../api/client";
+import { browseAssets, filterAssets } from "../lib/stockCatalog";
+import { StockBrowser } from "./StockBrowser";
+export { POPULAR_STOCKS } from "../lib/stockCatalog";
 
 interface Props {
   ticker: string;
@@ -68,30 +13,48 @@ interface Props {
 export function StockPicker({ ticker, setTicker }: Props) {
   const [filter, setFilter] = useState("");
   const [open, setOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [directory, setDirectory] = useState<StockDirectory | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState("");
+  const [retry, setRetry] = useState(0);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  const normalized = filter.trim().toUpperCase();
-  const filtered = (filter
-    ? POPULAR_STOCKS.filter(
-        (s) =>
-          s.ticker.toLowerCase().includes(filter.toLowerCase()) ||
-          s.name.toLowerCase().includes(filter.toLowerCase()) ||
-          s.sector.toLowerCase().includes(filter.toLowerCase()),
-      )
-    : POPULAR_STOCKS.slice(0, 8)
-  ).slice(0, 8);
+  const normalized = filter.trim().toUpperCase().replaceAll(".", "-");
+  const assets = useMemo(() => browseAssets(directory?.assets ?? []), [directory]);
+  const matching = useMemo(() => filterAssets(assets, filter), [assets, filter]);
+  const filtered = matching.slice(0, 8);
+
+  useEffect(() => {
+    if ((!open && !browseOpen) || directory) return;
+    let cancelled = false;
+    setLoading(true);
+    setDirectoryError("");
+    api.stockDirectory().then((value) => {
+      if (!cancelled) { setDirectory(value); setLoading(false); }
+    }).catch((error: unknown) => {
+      if (!cancelled) { setDirectoryError(error instanceof Error ? error.message : "Directory unavailable"); setLoading(false); }
+    });
+    return () => { cancelled = true; };
+  }, [open, browseOpen, directory, retry]);
 
   function applyTicker(value = filter) {
-    const t = value.trim().toUpperCase();
+    const t = value.trim().toUpperCase().replaceAll(".", "-");
     if (t) {
       setTicker(t);
       setFilter("");
       setOpen(false);
+      setBrowseOpen(false);
     }
   }
 
-  const exactMatch = POPULAR_STOCKS.some((stock) => stock.ticker === normalized);
-  const looksLikeTicker = /^[A-Z0-9.^=-]{1,12}$/.test(normalized);
+  const exactMatch = assets.some((stock) => stock.ticker === normalized);
+  const looksLikeTicker = /^[A-Z0-9.-]{1,10}$/.test(normalized);
+
+  function openBoard() {
+    setOpen(false);
+    setBrowseOpen(true);
+  }
 
   useEffect(() => {
     function closeOnOutsideClick(event: MouseEvent) {
@@ -105,9 +68,13 @@ export function StockPicker({ ticker, setTicker }: Props) {
 
   return (
     <div ref={pickerRef}>
-      <label htmlFor="asset-search" className="mb-2 block text-sm font-semibold text-slate-200">
-        Stock or cryptocurrency
-      </label>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <label htmlFor="asset-search" className="text-sm font-semibold text-slate-200">Stock or cryptocurrency</label>
+        <button type="button" onClick={openBoard} aria-haspopup="dialog" className="flex shrink-0 items-center gap-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs font-semibold text-indigo-200 transition hover:border-indigo-400/60 hover:bg-indigo-500/20">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+          Browse all stocks
+        </button>
+      </div>
       <div className="relative">
         <div className="flex min-h-12 items-center rounded-xl border border-slate-700 bg-slate-950/75 transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
           <svg
@@ -132,7 +99,10 @@ export function StockPicker({ ticker, setTicker }: Props) {
               setOpen(true);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") applyTicker();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                if (normalized) applyTicker(filtered[0]?.ticker ?? filter);
+              }
               if (e.key === "Escape") setOpen(false);
             }}
             placeholder="Search Apple, NVIDIA, Bitcoin, or enter a ticker"
@@ -191,11 +161,18 @@ export function StockPicker({ ticker, setTicker }: Props) {
               {filtered.length === 0 && !normalized && (
                 <p className="px-3 py-4 text-sm text-slate-500">Start typing to find an asset.</p>
               )}
+              {filtered.length === 0 && normalized && !looksLikeTicker && (
+                <p className="px-3 py-4 text-sm text-slate-500">{loading ? "Searching the full directory…" : "No matching company. Try a ticker or browse the board."}</p>
+              )}
             </div>
+            <button type="button" onClick={openBoard} className="mt-2 flex min-h-11 w-full items-center justify-between rounded-lg border-t border-slate-700 px-3 py-2 text-left text-sm font-semibold text-indigo-300 hover:bg-slate-800">
+              <span>{normalized && matching.length > 8 ? `See all ${matching.length.toLocaleString()} matches` : "Open the full stock board"}</span><span aria-hidden>↗</span>
+            </button>
           </div>
         )}
       </div>
-
+      {browseOpen && <StockBrowser ticker={ticker} directory={directory} loading={loading} error={directoryError} initialSearch={filter}
+        onSelect={applyTicker} onClose={() => setBrowseOpen(false)} onRetry={() => setRetry((value) => value + 1)} />}
     </div>
   );
 }

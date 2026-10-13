@@ -14,6 +14,7 @@ from app.agents.state import ResearchState
 from app.observability.logging import get_logger
 from app.schemas.research import MetricsFindings
 from app.services.cache import TTLCache
+from app.services.failures import normalize_failure
 from app.services.metrics_client import (
     HorizonStats,
     Metrics,
@@ -51,10 +52,10 @@ async def metrics_agent(state: ResearchState) -> dict:
         metrics = await _cached_fetch(ticker)
     except MetricsClientError as e:
         log.warning("metrics_unavailable", extra={"ticker": ticker, "reason": str(e)})
-        return {"metrics": MetricsFindings(status="error", error=str(e))}
+        return {"metrics": MetricsFindings(status="error", error="The financial review was unavailable.", failure=normalize_failure(e, stage="financial review"))}
     except Exception as e:  # noqa: BLE001
         log.exception("metrics_unexpected_failure", extra={"ticker": ticker})
-        return {"metrics": MetricsFindings(status="error", error=f"Unexpected: {e}")}
+        return {"metrics": MetricsFindings(status="error", error="The financial review was unavailable.", failure=normalize_failure(e, stage="financial review"))}
 
     # Horizon stats are best-effort — thin history shouldn't sink the metrics.
     stats: HorizonStats | None = None

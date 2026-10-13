@@ -73,15 +73,17 @@ export function HistoryPanel({ ticker, refreshKey }: Props) {
         {runs.map((r) => (
           <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`font-semibold ${
                     RECOMMENDATION_COLORS[r.recommendation] ?? "text-slate-400"
                   }`}
                 >
-                  {r.recommendation}
+                  {r.recommendation === "Failed" ? "Failed to assess" : r.recommendation}
                 </span>
-                {r.confidence !== null && (
+                {r.prediction_kind && ["partial_ai", "rules_based"].includes(r.prediction_kind) && <span className="text-xs text-amber-200">{r.prediction_kind === "rules_based" ? "Rules-based · limited" : "Partial AI"} · Confidence: Not assessed</span>}
+                {r.recommendation === "Failed" && <span className="text-xs text-amber-200">Confidence: Failed to assess</span>}
+                {r.recommendation !== "Failed" && r.confidence !== null && (
                   <span className="rounded bg-slate-800 px-1 py-px text-[9px] text-slate-400">
                     {r.confidence}/100
                   </span>
@@ -93,6 +95,7 @@ export function HistoryPanel({ ticker, refreshKey }: Props) {
                 <span className="text-slate-500">{relativeTime(r.created_at)}</span>
               </div>
               <div className="truncate text-[11px] text-slate-500">{r.justification}</div>
+              {r.analysis_warning && <p className="mt-1 text-[11px] leading-5 text-amber-200">Analysis incomplete. {r.analysis_warning}</p>}
             </div>
             <div className="shrink-0 text-right text-[10px] text-slate-500">
               {r.cost_usd !== null && <div>${r.cost_usd.toFixed(4)}</div>}

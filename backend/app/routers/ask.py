@@ -21,8 +21,9 @@ from app.observability.cost import record_chat, start_tracking
 from app.observability.logging import get_logger, get_request_id
 from app.routers.research import _validate_ticker
 from app.schemas.research import ResearchResponse
+from app.services.failures import normalize_failure
 from app.services.investment_answer import investment_answer
-from app.services.llm import llm_key_configured, make_llm_client
+from app.services.llm import chat_generation_options, llm_key_configured, make_llm_client
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -45,8 +46,6 @@ class AskResponse(BaseModel):
     cost_usd: float
     request_id: str
     searched_filing: bool = False
-
-
 
 
 _ASK_SYSTEM = """You are Verdict's analyst — a plain-English guide for a regular
@@ -142,8 +141,7 @@ def _distill_context(context: ResearchResponse) -> dict[str, Any]:
             "sentiment_minus1_to_1": context.news.sentiment_score,
             "summary": _clip(context.news.summary),
             "top_headlines": [
-                {"title": h.title, "sentiment": h.score}
-                for h in context.news.top_headlines[:5]
+                {"title": h.title, "sentiment": h.score} for h in context.news.top_headlines[:5]
             ],
         },
         "insiders": {
@@ -165,6 +163,7 @@ def _distill_context(context: ResearchResponse) -> dict[str, Any]:
             for f in context.sec.findings[:3]
         ],
     }
+
 
 _SEARCH_FILING_TOOL = {
     "type": "function",
@@ -194,21 +193,7 @@ def _ask_client() -> AsyncOpenAI:
 
 
 def _llm_error_detail(e: OpenAIError) -> str:
-    """Turn a provider SDK error into a clear, actionable message.
-
-    Distinguishes a hard out-of-quota/billing failure (which retrying never
-    fixes) from a transient rate limit — the SDK reports both as
-    RateLimitError, which is what made the original failure look like a
-    temporary "try again" glitch.
-    """
-    msg = str(getattr(e, "message", "") or e).lower()
-    if any(s in msg for s in ("insufficient_quota", "exceeded your current quota", "billing")):
-        return (
-            "The AI provider rejected the request: this account is out of "
-            "quota/credits. Add billing/credits or switch to a free provider "
-            "(e.g. a Google Gemini key). Retrying won't help until then."
-        )
-    return f"LLM call failed ({type(e).__name__})"
+    return normalize_failure(e).message
 
 
 async def _run_filing_search(ticker: str, query: str) -> str:
@@ -236,6 +221,18 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     tracker = start_tracking()
     rid = get_request_id()
 
+    if body.context is not None and body.context.report.assessment_status != "complete":
+        return AskResponse(
+            answer=(
+                f"{body.context.report.analysis_warning} Originally issued prediction: {body.context.report.recommendation}. Confidence is not assessed."
+                if body.context.report.prediction_kind != "none"
+                else body.context.report.justification
+            ),
+            cost_usd=tracker.total_usd,
+            request_id=rid,
+            searched_filing=False,
+        )
+
     calculator_answer = await investment_answer(ticker, body.question.strip(), body.context)
     if calculator_answer is not None:
         log.info(
@@ -255,17 +252,11 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
     if not llm_key_configured(settings.resolved_llm_key):
         raise HTTPException(
             status_code=503,
-            detail=(
-                "No LLM API key configured. Set LLM_API_KEY (or OPENAI_API_KEY) "
-                "in the backend .env and restart. For free Google Gemini, also "
-                "set LLM_BASE_URL to its OpenAI-compatible endpoint."
-            ),
+            detail=normalize_failure(RuntimeError("No LLM API key configured")).model_dump(),
         )
 
     grounding: dict[str, Any] = {"ticker": ticker}
-    grounding["report"] = (
-        _distill_context(body.context) if body.context is not None else None
-    )
+    grounding["report"] = _distill_context(body.context) if body.context is not None else None
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _ASK_SYSTEM},
@@ -283,8 +274,7 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
         resp = await _ask_client().chat.completions.create(
             model=settings.llm_model,
             messages=messages,
-            temperature=0.3,
-            max_tokens=700,
+            **chat_generation_options(0.3, max_tokens=700),
             tools=[_SEARCH_FILING_TOOL],
         )
         record_chat(settings.llm_model, resp)
@@ -310,8 +300,7 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
             resp = await _ask_client().chat.completions.create(
                 model=settings.llm_model,
                 messages=messages,
-                temperature=0.3,
-                max_tokens=700,
+                **chat_generation_options(0.3, max_tokens=700),
             )
             record_chat(settings.llm_model, resp)
             choice = resp.choices[0]
@@ -333,14 +322,13 @@ async def ask(request: Request, body: AskRequest) -> AskResponse:
             resp = await _ask_client().chat.completions.create(
                 model=settings.llm_model,
                 messages=messages,
-                temperature=0.3,
-                max_tokens=700,
+                **chat_generation_options(0.3, max_tokens=700),
             )
             record_chat(settings.llm_model, resp)
             answer = (resp.choices[0].message.content or "").strip()
     except OpenAIError as e:
         log.exception("ask_llm_failed", extra={"error_type": type(e).__name__})
-        raise HTTPException(status_code=502, detail=_llm_error_detail(e)) from e
+        raise HTTPException(status_code=502, detail=normalize_failure(e).model_dump()) from e
 
     answer = answer or (
         "I couldn't put together an answer for that one. Try asking it a "

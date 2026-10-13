@@ -15,6 +15,7 @@ from app.agents.state import ResearchState
 from app.observability.logging import get_logger
 from app.schemas.research import InsiderFindings, InsiderTransaction
 from app.services.cache import TTLCache
+from app.services.failures import normalize_failure
 from app.services.insider_client import (
     Form4Transaction,
     InsiderClientError,
@@ -77,13 +78,13 @@ async def insider_agent(state: ResearchState) -> dict:
     try:
         transactions = await _cached_fetch(ticker)
     except ValueError as e:  # unknown ticker
-        return {"insider": InsiderFindings(status="error", error=str(e))}
+        return {"insider": InsiderFindings(status="error", error="The insider review was unavailable.", failure=normalize_failure(e, stage="insider review"))}
     except InsiderClientError as e:
         log.warning("insider_unavailable", extra={"ticker": ticker, "reason": str(e)})
-        return {"insider": InsiderFindings(status="skipped", error=str(e))}
+        return {"insider": InsiderFindings(status="skipped", error="The insider review was unavailable.", failure=normalize_failure(e, stage="insider review"))}
     except Exception as e:  # noqa: BLE001
         log.exception("insider_unexpected_failure", extra={"ticker": ticker})
-        return {"insider": InsiderFindings(status="skipped", error=f"Unexpected: {e}")}
+        return {"insider": InsiderFindings(status="skipped", error="The insider review was unavailable.", failure=normalize_failure(e, stage="insider review"))}
 
     buys = [t for t in transactions if t.kind == "buy"]
     sells = [t for t in transactions if t.kind == "sell"]

@@ -1,3 +1,7 @@
+import { failedAssessment, normalizeResearch, predictionKind } from "./lib/assessment";
+import { ResearchProgress } from "./components/ResearchProgress";
+import { initialProgress, advanceProgress, stopProgress, type ProgressState } from "./lib/researchProgress";
+import { researchError } from "./lib/researchErrors";
 import { useEffect, useRef, useState } from "react";
 import { StockPicker, POPULAR_STOCKS } from "./components/StockPicker";
 import { QueryResultPanel } from "./components/QueryResult";
@@ -9,7 +13,6 @@ import { VerdictCard } from "./components/VerdictCard";
 import { DebatePanel } from "./components/DebatePanel";
 import { EvidencePanel } from "./components/EvidencePanel";
 import { ScoreboardPanel } from "./components/ScoreboardPanel";
-import { BacktestPanel } from "./components/BacktestPanel";
 import { WatchlistBar } from "./components/WatchlistBar";
 import { InvitesPanel } from "./components/InvitesPanel";
 import { StockChartPanel } from "./components/StockChartPanel";
@@ -21,6 +24,7 @@ import { SourceQualityPanel } from "./components/SourceQualityPanel";
 import { DisagreementPanel } from "./components/DisagreementPanel";
 import { ApiStatusPanel } from "./components/ApiStatusPanel";
 import { SmartAlertsPanel } from "./components/SmartAlertsPanel";
+import { StrategiesPage } from "./components/StrategiesPage";
 import { DayTradePage } from "./components/daytrade/DayTradePage";
 import { LegalModal } from "./components/LegalModal";
 import { AppShell, type AppSection } from "./components/AppShell";
@@ -143,6 +147,7 @@ export default function App({
   const [queryResult, setQueryResult] = useState<QueryResponse | null>(null);
   const [research, setResearch] = useState<ResearchResponse | null>(null);
   const [meta, setMeta] = useState<{ duration_ms: number; cost_usd: number } | null>(null);
+  const [progress, setProgress] = useState<ProgressState | null>(null);
   const [agents, setAgents] = useState<AgentStates>(INITIAL_AGENT_STATES);
   const [status, setStatus] = useState<string>("");
   const [busy, setBusy] = useState(false);
@@ -220,18 +225,8 @@ export default function App({
     });
   }
 
-  function friendlyResearchError(message: string): string {
-    if (/429|too many requests|rate.?limit/i.test(message)) {
-      return "Research is rate-limited right now. Wait about a minute, then try again; cached reports still load without a fresh AI run.";
-    }
-    if (/quota/i.test(message)) {
-      return "The AI provider quota is out right now. Try again after the provider resets, or switch to a key/model with more quota.";
-    }
-    return `Research failed: ${message}`;
-  }
-
   function markRunFailed(message: string) {
-    setStatus(message);
+    setStatus(`Failed to assess. ${message}`);
     setAgents((s) => {
       const next: AgentStates = { ...s };
       (Object.keys(next) as AgentKey[]).forEach((k) => {
@@ -277,6 +272,7 @@ export default function App({
     setBusy(true);
     setStatus(`Convening the trial for ${ticker}…`);
     resetRun();
+    setProgress(initialProgress());
 
     abortRef.current?.abort();
     const ctl = new AbortController();
@@ -286,6 +282,9 @@ export default function App({
       await streamResearch(
         ticker,
         (e) => {
+          if (abortRef.current !== ctl || ctl.signal.aborted) return;
+          if (e.event === "completed") e = { ...e, data:{...e.data, result:normalizeResearch(e.data.result)} };
+          setProgress(p => advanceProgress(p ?? initialProgress(), e));
           if (e.event === "ingest") {
             setStatus(e.data.detail);
             setAgent("sec_agent", {
@@ -334,8 +333,9 @@ export default function App({
             // Advocate tiles get their richer summary from the debate_case
             // custom event, which arrives before this node update — keep it.
             if (node === "bull_agent" || node === "bear_agent") return;
+            const slot = Object.values(payload).find(v => v && typeof v === "object" && "status" in v) as {status?: string; failure?: unknown} | undefined;
             setAgent(node as AgentKey, {
-              status: "done",
+              status: slot?.status === "error" || slot?.failure ? "error" : "done",
               summary: summarizePayload(payload),
             });
           } else if (e.event === "debate") {
@@ -356,7 +356,7 @@ export default function App({
               }
             }
           } else if (e.event === "completed") {
-            setResearch(e.data.result);
+            setResearch(normalizeResearch(e.data.result));
             setResearchView("verdict");
             const totalUsd =
               "total_usd" in e.data.cost ? (e.data.cost.total_usd as number) : 0;
@@ -385,9 +385,10 @@ export default function App({
                     : ""),
               );
             }
+            if (failedAssessment(e.data.result)) setStatus(predictionKind(e.data.result) !== "none" ? `Original prediction: ${e.data.result.report.recommendation} · analysis incomplete · confidence not assessed` : "Failed to assess. " + e.data.result.report.justification.replace(/^Failed to assess\.\s*/, ""));
             setHistoryRefresh((n) => n + 1);
           } else if (e.event === "error") {
-            markRunFailed(friendlyResearchError(`${e.data.detail} ${e.data.error_type}`));
+            markRunFailed(researchError(e.data));
           }
         },
         ctl.signal,
@@ -395,17 +396,22 @@ export default function App({
         horizonDays,
       );
     } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        markRunFailed(friendlyResearchError((e as Error).message));
+      if (abortRef.current === ctl && !ctl.signal.aborted) {
+        setProgress(p => p ? stopProgress(p, "error") : p);
+        markRunFailed(researchError(e));
       }
     } finally {
-      if (abortRef.current === ctl) abortRef.current = null;
-      setBusy(false);
+      if (abortRef.current === ctl) {
+        abortRef.current = null;
+        setBusy(false);
+      }
     }
   }
 
   function onCancel() {
     abortRef.current?.abort();
+    abortRef.current = null;
+    setProgress(p => p ? stopProgress(p, "cancelled") : p);
     markRunFailed("Cancelled");
     setBusy(false);
   }
@@ -424,6 +430,26 @@ export default function App({
               .map(([k]) => k)
               .join(", ") || "unknown"),
         };
+
+  function openStrategyResearch(symbol: string) {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setProgress(null);
+    setBusy(false);
+    setAgents(INITIAL_AGENT_STATES);
+    setStatus("");
+    setCacheInfo(null);
+    setQueryResult(null);
+    setTicker(symbol);
+    setResearch(null);
+    setMeta(null);
+    setTimingAssessment(null);
+    setLiveBull(null);
+    setLiveBear(null);
+    setLiveEvidence([]);
+    setTab("research");
+    setResearchView("verdict");
+  }
 
   const showDebate = busy || research !== null;
   const debateBull = research?.bull ?? liveBull;
@@ -455,16 +481,16 @@ export default function App({
                 See how past verdicts performed
               </h1>
               <p className="mt-2 text-base leading-7 text-slate-400">
-                Every call is measured against what happened next, so you can judge whether
-                Verdict's confidence is earned.
+                Follow each call until its holding period ends, then see the final outcome
+                and the original analysis behind it.
               </p>
             </header>
             <ScoreboardPanel refreshKey={historyRefresh} />
-            <BacktestPanel refreshKey={historyRefresh} />
           </div>
         )}
 
         {tab === "daytrade" && <DayTradePage />}
+        {tab === "strategies" && <StrategiesPage onResearch={openStrategyResearch} />}
 
         {tab === "analyst" && (
           <div className="mx-auto max-w-4xl">
@@ -569,6 +595,7 @@ export default function App({
 
               {(busy || status) && (
                 <div aria-live="polite" className="mt-4 border-t border-slate-800 pt-4">
+                  {progress && <ResearchProgress state={progress} />}
                   {busy && <AgentProgress states={agents} />}
                   {status && <p className={`${busy ? "mt-3" : ""} text-sm leading-6 text-slate-400`}>{status}</p>}
                 </div>
@@ -604,7 +631,7 @@ export default function App({
                       <div>
                         <p className="text-sm font-semibold text-indigo-300">Latest result</p>
                         <h2 id="latest-verdict-title" className="font-display text-2xl text-slate-50">
-                          The verdict on {research.report.ticker}
+                          {predictionKind(research) === "none" ? "Research incomplete for" : "The verdict on"} {research.report.ticker}
                         </h2>
                       </div>
                     </div>

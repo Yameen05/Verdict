@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 
-export type AppSection = "research" | "daytrade" | "analyst" | "history" | "scoreboard";
+export type AppSection = "research" | "strategies" | "daytrade" | "analyst" | "history" | "scoreboard";
 
 type ThemeMode = "dark" | "light";
 type ReadinessState = "checking" | "ready" | "degraded";
@@ -28,6 +28,7 @@ interface Props {
 const NAV_ITEMS: { id: AppSection; label: string }[] = [
   { id: "research", label: "Research" },
   { id: "daytrade", label: "Day trade" },
+  { id: "strategies", label: "Strategies & practice" },
   { id: "analyst", label: "Ask analyst" },
   { id: "history", label: "History" },
   { id: "scoreboard", label: "Track record" },
@@ -53,6 +54,9 @@ function NavIcon({ section }: { section: AppSection }) {
         <path d="m16 16 4 4M8.5 11h5M11 8.5v5" />
       </svg>
     );
+  }
+  if (section === "strategies") {
+    return <svg {...common}><path d="M5 4h14v16H5zM8 8h8M8 12h5M8 16h8" /></svg>;
   }
   if (section === "daytrade") {
     return (

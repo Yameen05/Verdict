@@ -4,7 +4,7 @@ Mounted under /auth. The request endpoint never reveals whether an account
 exists; a link is emailed only when SMTP is configured. Tokens are random,
 stored as SHA-256 digests, single-use, and short-lived. A successful reset
 revokes every session, login challenge, and outstanding reset token for the
-account — but leaves 2FA enrollment intact.
+account.
 
   POST /auth/password-reset/request   {email}            → always 204
   POST /auth/password-reset/confirm   {token, password}  → 204 or 401

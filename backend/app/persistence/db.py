@@ -54,6 +54,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), default="member")
     email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512))
+    # Legacy two-factor columns retained for database compatibility; no longer used.
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     totp_last_counter: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -72,6 +73,26 @@ class User(Base):
     )
 
 
+class GoogleIdentity(Base):
+    """Stable Google subject linked to an account; email is not an identity key."""
+
+    __tablename__ = "google_identities"
+
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True
+    )
+
+
+class GoogleLoginNonce(Base):
+    """Single-use, browser-bound sign-in challenge. Only its digest is stored."""
+
+    __tablename__ = "google_login_nonces"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class UserSession(Base):
     """Server-side session. Only a SHA-256 token digest is persisted."""
 
@@ -82,6 +103,7 @@ class UserSession(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     csrf_token: Mapped[str] = mapped_column(String(64))
+    # Legacy compatibility field; authentication uses password sessions only.
     mfa_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
@@ -95,7 +117,7 @@ class UserSession(Base):
 
 
 class LoginChallenge(Base):
-    """Short-lived second-factor challenge created after password verification."""
+    """Legacy challenge rows retained only for expiry cleanup."""
 
     __tablename__ = "login_challenges"
 
@@ -188,6 +210,8 @@ class ResearchRun(Base):
     # returns against it. Null for runs where yfinance had no price.
     price_at_run: Mapped[float | None] = mapped_column(Float, nullable=True)
     payload: Mapped[dict] = mapped_column(JSON)  # full ResearchResponse as JSON
+    # Frozen once the holding period ends and a completed price candle exists.
+    horizon_evaluation: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -241,7 +265,7 @@ def get_engine():
 async def init_db() -> None:
     # Imported for its side effect: registers the user-state tables on
     # Base.metadata so create_all() below builds them.
-    from app.persistence import user_state  # noqa: F401
+    from app.persistence import practice, user_state  # noqa: F401
 
     engine = get_engine()
     async with engine.begin() as conn:
@@ -289,6 +313,10 @@ def _migrate_legacy_schema(connection) -> None:
                 "ALTER TABLE research_runs ADD COLUMN user_id INTEGER "
                 "REFERENCES users(id) ON DELETE CASCADE"
             )
+        )
+    if "horizon_evaluation" not in columns:
+        connection.execute(
+            text("ALTER TABLE research_runs ADD COLUMN horizon_evaluation JSON")
         )
     if "confidence" not in columns:
         connection.execute(

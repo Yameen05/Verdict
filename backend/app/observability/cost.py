@@ -15,17 +15,26 @@ from app.config import get_settings
 
 @dataclass(slots=True)
 class CostTracker:
+    chat_attempts: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    reasoning_tokens: int = 0
     embedding_tokens: int = 0
     # Per-call breakdown by model for nicer reporting.
     calls: list[dict] = field(default_factory=list)
 
-    def add_chat(self, model: str, prompt: int, completion: int) -> None:
+    def add_chat(self, model: str, prompt: int, completion: int, reasoning: int = 0) -> None:
         self.prompt_tokens += prompt
         self.completion_tokens += completion
+        self.reasoning_tokens += reasoning
         self.calls.append(
-            {"kind": "chat", "model": model, "prompt": prompt, "completion": completion}
+            {
+                "kind": "chat",
+                "model": model,
+                "prompt": prompt,
+                "completion": completion,
+                "reasoning": reasoning,
+            }
         )
 
     def add_embedding(self, model: str, tokens: int) -> None:
@@ -44,8 +53,10 @@ class CostTracker:
 
     def to_dict(self) -> dict:
         return {
+            "chat_attempts": self.chat_attempts,
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
+            "reasoning_tokens": self.reasoning_tokens,
             "embedding_tokens": self.embedding_tokens,
             "total_usd": self.total_usd,
         }
@@ -72,10 +83,23 @@ def record_chat(model: str, response) -> None:  # noqa: ANN001 - SDK response
     usage = getattr(response, "usage", None)
     if usage is None:
         return
+    prompt = getattr(usage, "prompt_tokens", 0) or 0
+    completion = getattr(usage, "completion_tokens", 0) or 0
+    details = getattr(usage, "completion_tokens_details", None)
+    reasoning = getattr(details, "reasoning_tokens", 0) or 0
+    if model.startswith("gemini-"):
+        # Observed Gemini compatibility usage omits thinking from completion_tokens
+        # but includes it in total_tokens. Reconcile totals without adding it twice
+        # if a future response includes thinking in completion_tokens already.
+        total = getattr(usage, "total_tokens", 0) or 0
+        output = max(completion, total - prompt)
+        reasoning = max(reasoning, output - completion)
+        completion = output
     tracker.add_chat(
         model=model,
-        prompt=getattr(usage, "prompt_tokens", 0) or 0,
-        completion=getattr(usage, "completion_tokens", 0) or 0,
+        prompt=prompt,
+        completion=completion,
+        reasoning=reasoning,
     )
 
 
@@ -86,6 +110,4 @@ def record_embedding(model: str, response) -> None:  # noqa: ANN001
     usage = getattr(response, "usage", None)
     if usage is None:
         return
-    tracker.add_embedding(
-        model=model, tokens=getattr(usage, "prompt_tokens", 0) or 0
-    )
+    tracker.add_embedding(model=model, tokens=getattr(usage, "prompt_tokens", 0) or 0)

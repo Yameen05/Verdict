@@ -7,18 +7,15 @@ its SHA-256 digest, so a database read alone cannot be used to hijack a session.
 from __future__ import annotations
 
 import hashlib
-import hmac
 import re
 import secrets
-import string
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from cryptography.fernet import Fernet, InvalidToken
-from fastapi import Depends, HTTPException, Request, Response, status
+from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,6 +24,7 @@ from app.netaddr import client_ip
 from app.observability.logging import get_request_id
 from app.persistence.db import (
     AuditEvent,
+    GoogleLoginNonce,
     LoginChallenge,
     PasswordResetToken,
     User,
@@ -46,7 +44,6 @@ _DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash(
 )
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-_RECOVERY_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 
 
 @dataclass(slots=True)
@@ -88,7 +85,10 @@ def hash_password(password: str) -> str:
 def verify_password(stored_hash: str | None, candidate: str) -> bool:
     target = stored_hash or _DUMMY_PASSWORD_HASH
     try:
-        return PASSWORD_HASHER.verify(target, candidate)
+        matches = PASSWORD_HASHER.verify(target, candidate)
+        # Google-only accounts have no password. The timing dummy must never
+        # become a usable password for those accounts.
+        return bool(stored_hash) and matches
     except (VerifyMismatchError, VerificationError, InvalidHashError):
         return False
 
@@ -103,60 +103,6 @@ def new_token(byte_length: int = 32) -> str:
 
 def token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def _fernet() -> Fernet:
-    raw = get_settings().auth_encryption_key.strip()
-    if not raw:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTH_ENCRYPTION_KEY is not configured",
-        )
-    try:
-        return Fernet(raw.encode("ascii"))
-    except (ValueError, UnicodeEncodeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTH_ENCRYPTION_KEY is invalid",
-        ) from exc
-
-
-def encrypt_totp_secret(secret: str) -> str:
-    return _fernet().encrypt(secret.encode("ascii")).decode("ascii")
-
-
-def decrypt_totp_secret(ciphertext: str) -> str:
-    try:
-        return _fernet().decrypt(ciphertext.encode("ascii")).decode("ascii")
-    except (InvalidToken, ValueError, UnicodeError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Stored 2FA configuration cannot be decrypted",
-        ) from exc
-
-
-def generate_recovery_codes(count: int = 10) -> list[str]:
-    return [
-        "-".join(
-            "".join(secrets.choice(_RECOVERY_ALPHABET) for _ in range(4))
-            for _ in range(3)
-        )
-        for _ in range(count)
-    ]
-
-
-def normalize_recovery_code(code: str) -> str:
-    return "".join(c for c in code.upper() if c in string.ascii_uppercase + string.digits)
-
-
-def recovery_code_digest(code: str) -> str:
-    key_material = get_settings().auth_encryption_key.strip().encode("utf-8")
-    key = hashlib.sha256(b"verdict-recovery-codes:" + key_material).digest()
-    return hmac.new(
-        key,
-        normalize_recovery_code(code).encode("ascii"),
-        hashlib.sha256,
-    ).hexdigest()
 
 
 def request_ip(request: Request) -> str:
@@ -192,8 +138,6 @@ async def create_session(
     db: AsyncSession,
     request: Request,
     user: User,
-    *,
-    mfa_verified: bool,
 ) -> tuple[UserSession, str]:
     settings = get_settings()
     raw_token = new_token()
@@ -202,7 +146,7 @@ async def create_session(
         token_hash=token_digest(raw_token),
         user_id=user.id,
         csrf_token=new_token(24),
-        mfa_verified=mfa_verified,
+        mfa_verified=True,  # Legacy column retained for existing databases.
         created_at=now,
         last_seen_at=now,
         expires_at=now + timedelta(hours=settings.session_ttl_hours),
@@ -294,8 +238,6 @@ async def require_authenticated(
     context: Annotated[AuthContext, Depends(get_auth_context)],
 ) -> AuthContext:
     verify_csrf(request, context)
-    if not context.session.mfa_verified:
-        raise HTTPException(status_code=403, detail="Two-factor authentication setup required")
     return context
 
 
@@ -305,10 +247,8 @@ def basic_auth_payload(context: AuthContext) -> dict:
             "id": context.user.id,
             "email": context.user.email,
             "role": context.user.role,
-            "two_factor_enabled": context.user.totp_enabled,
         },
         "csrf_token": context.session.csrf_token,
-        "requires_2fa_setup": not context.session.mfa_verified,
     }
 
 
@@ -321,7 +261,7 @@ async def purge_expired_auth_rows(db: AsyncSession) -> int:
     """
     now = utc_now()
     removed = 0
-    for model in (UserSession, LoginChallenge, PasswordResetToken):
+    for model in (UserSession, LoginChallenge, PasswordResetToken, GoogleLoginNonce):
         result = await db.execute(delete(model).where(model.expires_at <= now))
         removed += result.rowcount or 0
     await db.commit()

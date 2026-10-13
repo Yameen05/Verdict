@@ -1,7 +1,6 @@
 """Production configuration must fail closed when security controls are unsafe."""
 
 import pytest
-from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
 from app.config import Settings
@@ -21,7 +20,6 @@ def test_production_accepts_explicit_secure_configuration():
         cors_origins="https://verdict.example.com",
         allowed_hosts="verdict.example.com",
         auth_bootstrap_token="a" * 48,
-        auth_encryption_key=Fernet.generate_key().decode("ascii"),
     )
 
     assert settings.session_cookie_name == "__Host-verdict_session"

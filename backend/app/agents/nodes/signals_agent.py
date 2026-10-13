@@ -10,6 +10,7 @@ from __future__ import annotations
 from app.agents.state import ResearchState
 from app.observability.logging import get_logger
 from app.schemas.research import SignalFindings
+from app.services.failures import normalize_failure
 from app.services.signals.aggregate import gather_market_signals, reset_signal_cache
 
 log = get_logger(__name__)
@@ -21,7 +22,7 @@ async def signals_agent(state: ResearchState) -> dict:
         signals = await gather_market_signals(ticker)
     except Exception as e:  # noqa: BLE001 - optional context must not sink research
         log.exception("signals_agent_failed", extra={"ticker": ticker})
-        return {"signals": SignalFindings(status="error", error=f"Unexpected: {e}")}
+        return {"signals": SignalFindings(status="error", error="The market signals was unavailable.", failure=normalize_failure(e, stage="market signals"))}
 
     if not signals.sources_available:
         return {

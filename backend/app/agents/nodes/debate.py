@@ -27,7 +27,8 @@ from app.config import get_settings
 from app.observability.cost import record_chat
 from app.observability.logging import get_logger
 from app.schemas.research import Argument, DebateCase, EvidenceItem
-from app.services.llm import make_llm_client
+from app.services.failures import normalize_failure
+from app.services.llm import chat_generation_options, make_llm_client
 
 log = get_logger(__name__)
 
@@ -92,7 +93,7 @@ def build_evidence(state: ResearchState) -> dict:
 
     news = state.get("news")
     if news is not None and news.status == "ok":
-        if news.sentiment_score is not None:
+        if news.sentiment_score is not None and news.article_count > 0:
             items.append(
                 EvidenceItem(
                     id="news:sentiment",
@@ -358,7 +359,7 @@ async def _advocate(state: ResearchState, stance: Literal["bull", "bear"]) -> De
                 },
                 {"role": "user", "content": _ledger_lines(evidence)},
             ],
-            temperature=0.4,
+            **chat_generation_options(0.4),
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:
@@ -369,7 +370,8 @@ async def _advocate(state: ResearchState, stance: Literal["bull", "bear"]) -> De
         return DebateCase(
             stance=stance,
             status="error",
-            error=f"{stance} advocate LLM call failed ({type(e).__name__}).",
+            error=normalize_failure(e, stage=f"{stance} case").message,
+            failure=normalize_failure(e, stage=f"{stance} case"),
         )
     record_chat(model, resp)
 

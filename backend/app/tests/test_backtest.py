@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.routers import market as market_mod
+from app.services import track_record
 from app.services.backtest import compute_backtest
 from app.services.metrics_client import PriceBar
 
@@ -45,14 +45,14 @@ def _daily(start: datetime, closes: list[float]) -> list[PriceBar]:
 def test_compute_scores_buy_at_horizon():
     created = NOW - timedelta(days=30)
     run = FakeRun(1, "AAPL", "Buy", 14, 100.0, created)
-    # Daily history rising from 100 -> 120 over the window; horizon lands on +14d.
+    # The +13d daily candle completes at the +14d deadline.
     history = _daily(created, [100.0 + i for i in range(31)])
     res = compute_backtest([run], {"AAPL": history}, now=NOW)
 
     entry = res.entries[0]
     assert entry.outcome == "hit"
-    assert entry.price_at_horizon == pytest.approx(114.0)
-    assert entry.return_pct == pytest.approx(14.0)
+    assert entry.price_at_horizon == pytest.approx(113.0)
+    assert entry.return_pct == pytest.approx(13.0)
     assert res.summary.scored == 1
     assert res.summary.hits == 1
     assert res.summary.hit_rate == pytest.approx(1.0)
@@ -103,15 +103,22 @@ def test_compute_skips_pending_and_priceless():
 async def test_backtest_endpoint(client, monkeypatch):
     created = NOW - timedelta(days=30)
 
-    async def fake_recent(_session, limit=200):
-        return [FakeRun(1, "AAPL", "Buy", 14, 100.0, created)]
+    from app.persistence.db import get_sessionmaker, save_run
+
+    async with get_sessionmaker()() as session:
+        row = await save_run(
+            session, ticker="AAPL", recommendation="Buy", justification="seeded",
+            sentiment_score=None, confidence=70, horizon_days=14,
+            price_at_run=100.0, payload={},
+        )
+        row.created_at = created
+        await session.commit()
 
     async def fake_daily(ticker: str):
         assert ticker == "AAPL"
         return _daily(created, [100.0 + i for i in range(31)])
 
-    monkeypatch.setattr(market_mod, "list_recent_runs", fake_recent)
-    monkeypatch.setattr(market_mod, "_daily_history", fake_daily)
+    monkeypatch.setattr(track_record, "daily_history", fake_daily)
 
     res = client.get("/market/backtest")
     assert res.status_code == 200, res.text

@@ -31,7 +31,7 @@ from app.services.daytrade_intraday import (
     IntradaySnapshot,
     compute_intraday_snapshot,
 )
-from app.services.llm import llm_key_configured, make_llm_client
+from app.services.llm import chat_generation_options, llm_key_configured, make_llm_client
 from app.services.metrics_client import MetricsClientError, fetch_price_history
 
 log = get_logger(__name__)
@@ -472,7 +472,7 @@ async def _llm_signal(
             {"role": "system", "content": _SYSTEM.format(ticker=ticker)},
             {"role": "user", "content": payload},
         ],
-        temperature=0.2,
+        **chat_generation_options(0.2),
         response_format={"type": "json_object"},
     )
     record_chat(settings.llm_model, resp)

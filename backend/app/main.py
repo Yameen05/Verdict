@@ -26,10 +26,12 @@ from app.routers import (
     auth,
     daytrade,
     filings,
+    google_auth,
     health,
     invites,
     market,
     password_reset,
+    practice,
     research,
     scoreboard,
     user_state,
@@ -65,7 +67,20 @@ async def lifespan(app: FastAPI):
             run_worker(worker_stop, settings.alerts_check_seconds)
         )
 
+    grading_task: asyncio.Task | None = None
+    if settings.environment != "test":
+        from app.services.track_record import run_worker as run_grading_worker
+
+        grading_task = asyncio.create_task(run_grading_worker(worker_stop))
+
     yield
+
+    worker_stop.set()
+    if grading_task is not None:
+        try:
+            await asyncio.wait_for(grading_task, timeout=5)
+        except (TimeoutError, asyncio.CancelledError):
+            grading_task.cancel()
 
     if worker_task is not None:
         worker_stop.set()
@@ -152,6 +167,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/auth", tags=["authentication"])
+    app.include_router(google_auth.router, prefix="/auth", tags=["authentication"])
     app.include_router(invites.router, prefix="/auth", tags=["authentication"])
     app.include_router(password_reset.router, prefix="/auth", tags=["authentication"])
     protected = [Depends(require_authenticated)]
@@ -199,6 +215,8 @@ def create_app() -> FastAPI:
         tags=["user-state"],
         dependencies=protected,
     )
+
+    app.include_router(practice.router, prefix="/me", tags=["strategies-practice"], dependencies=protected)
 
     return app
 

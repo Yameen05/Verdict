@@ -1,0 +1,97 @@
+{
+  "ticker": "AAPL",
+  "sec": {
+    "status": "ok",
+    "findings": [],
+    "accession": null,
+    "error": null,
+    "failure": null
+  },
+  "news": {
+    "status": "ok",
+    "sentiment_score": null,
+    "summary": null,
+    "article_count": 0,
+    "top_headlines": [],
+    "error": null,
+    "failure": null
+  },
+  "metrics": {
+    "status": "ok",
+    "revenue": null,
+    "eps": null,
+    "pe_ratio": null,
+    "profit_margin": null,
+    "debt_to_equity": null,
+    "week_52_low": null,
+    "week_52_high": null,
+    "current_price": 100.0,
+    "horizon_days": null,
+    "recent_return_pct": null,
+    "typical_swing_pct": null,
+    "best_window_pct": null,
+    "worst_window_pct": null,
+    "error": null,
+    "failure": null
+  },
+  "report": {
+    "ticker": "AAPL",
+    "recommendation": "Hold",
+    "justification": "Fixture: mixed collected signals.",
+    "company_overview": "Fixture company facts.",
+    "financial_health": "Fixture financial facts.",
+    "key_risks": [],
+    "news_summary": null,
+    "confidence": 50,
+    "scores": null,
+    "falsifiers": [],
+    "dissent": null,
+    "citations": [],
+    "delta_summary": null,
+    "horizon_days": 14,
+    "horizon_outlook": null,
+    "simple_summary": null,
+    "assessment_status": "complete",
+    "degraded": false,
+    "failures": []
+  },
+  "insider": {
+    "status": "ok",
+    "transactions": [],
+    "buy_count": 0,
+    "sell_count": 0,
+    "summary": null,
+    "error": null,
+    "failure": null
+  },
+  "signals": {
+    "status": "ok",
+    "analyst": null,
+    "retail": null,
+    "macro": null,
+    "fundamentals": null,
+    "quotes": [],
+    "earnings_days": null,
+    "sources_used": [],
+    "sources_available": [],
+    "error": null,
+    "failure": null
+  },
+  "bull": {
+    "stance": "bull",
+    "status": "ok",
+    "thesis": "",
+    "arguments": [],
+    "error": null,
+    "failure": null
+  },
+  "bear": {
+    "stance": "bear",
+    "status": "ok",
+    "thesis": "",
+    "arguments": [],
+    "error": null,
+    "failure": null
+  },
+  "evidence": []
+}

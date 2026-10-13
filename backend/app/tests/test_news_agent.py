@@ -138,7 +138,7 @@ async def test_news_agent_no_articles(monkeypatch):
     findings: NewsFindings = result["news"]
     assert findings.status == "ok"
     assert findings.article_count == 0
-    assert findings.sentiment_score == 0.0
+    assert findings.sentiment_score is None
     assert "No recent market headlines" in (findings.summary or "")
 
 
@@ -153,7 +153,7 @@ async def test_news_agent_unknown_ticker(monkeypatch):
     result = await news_agent_mod.news_agent({"ticker": "ZZZZ"})
     findings: NewsFindings = result["news"]
     assert findings.status == "error"
-    assert "Unknown ticker" in (findings.error or "")
+    assert findings.failure and findings.failure.stage == "news review"
 
 
 async def test_news_agent_handles_api_error(monkeypatch):

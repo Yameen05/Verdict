@@ -1,7 +1,10 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from app.schemas.failure import FailureInfo
+from app.services.assessment import assessment_failed, prediction_kind
+from app.services.failures import normalize_failure
 from app.services.signals.types import (
     AnalystRatings,
     Fundamentals,
@@ -24,6 +27,7 @@ class SECFindings(BaseModel):
     findings: list[SECFinding] = Field(default_factory=list)
     accession: str | None = None
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class Headline(BaseModel):
@@ -41,6 +45,7 @@ class NewsFindings(BaseModel):
     article_count: int = 0
     top_headlines: list[Headline] = Field(default_factory=list)
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class MetricsFindings(BaseModel):
@@ -60,6 +65,7 @@ class MetricsFindings(BaseModel):
     best_window_pct: float | None = None
     worst_window_pct: float | None = None
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class InsiderTransaction(BaseModel):
@@ -78,6 +84,7 @@ class InsiderFindings(BaseModel):
     sell_count: int = 0
     summary: str | None = None
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class SignalFindings(BaseModel):
@@ -91,6 +98,7 @@ class SignalFindings(BaseModel):
     sources_used: list[str] = Field(default_factory=list)
     sources_available: list[str] = Field(default_factory=list)
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class EvidenceItem(BaseModel):
@@ -114,6 +122,7 @@ class DebateCase(BaseModel):
     thesis: str = ""
     arguments: list[Argument] = Field(default_factory=list)
     error: str | None = None
+    failure: FailureInfo | None = None
 
 
 class DimensionScores(BaseModel):
@@ -128,7 +137,7 @@ class DimensionScores(BaseModel):
 
 class ResearchReport(BaseModel):
     ticker: str
-    recommendation: Literal["Buy", "Hold", "Sell", "Pending"] = "Pending"
+    recommendation: Literal["Buy", "Hold", "Sell", "Pending", "Failed"] = "Pending"
     justification: str
     company_overview: str
     financial_health: str
@@ -145,9 +154,58 @@ class ResearchReport(BaseModel):
     horizon_days: int | None = None  # holding period this verdict was framed for
     horizon_outlook: str | None = None  # what could move the price in that window
     simple_summary: str | None = None  # jargon-free 2-3 sentence version
-    # True when the LLM judge was unavailable/unparseable and this verdict came
-    # from the deterministic scoring fallback instead of the debated judgment.
+    # Known failed execution, including legacy deterministic fallback records.
+    # Failed assessments keep collected facts but carry no prediction or score.
+    prediction_kind: Literal["ai", "partial_ai", "rules_based", "none"] | None = None
+    analysis_warning: str | None = None
+    assessment_status: Literal["complete", "incomplete", "failed"] = "complete"
     degraded: bool = False
+    failures: list[FailureInfo] = Field(default_factory=list)
+
+    def fail_assessment(self, *, incomplete: bool = False):
+        issued = (
+            incomplete
+            and self.recommendation in {"Buy", "Hold", "Sell"}
+            and self.prediction_kind != "none"
+        )
+        self.assessment_status = "incomplete" if issued else "failed"
+        self.degraded = True
+        if issued:
+            self.prediction_kind = (
+                "rules_based" if self.prediction_kind == "rules_based" else "partial_ai"
+            )
+        else:
+            self.prediction_kind = "none"
+            self.recommendation = "Failed"
+        self.confidence = None
+        self.scores = None
+        self.dissent = None
+        self.delta_summary = None
+        self.horizon_outlook = None
+        causes = " ".join(
+            dict.fromkeys(f"{f.stage or 'AI review'}: {f.message}" for f in self.failures)
+        )
+        reason = (
+            causes or "A required research step could not finish. Its exact cause was not recorded."
+        )
+        self.analysis_warning = reason
+        if issued:
+            self.analysis_warning = f"Analysis incomplete. {reason} The originally issued prediction remains tracked; confidence was not assessed."
+        else:
+            self.justification = f"Failed to assess. {reason} No usable prediction was issued."
+            self.simple_summary = self.justification
+        return self
+
+    @model_validator(mode="after")
+    def enforce_assessment(self):
+        self.prediction_kind = prediction_kind({"report": self.model_dump()})
+        if self.prediction_kind == "none" or assessment_failed({"report": self.model_dump()}):
+            if not self.failures:
+                failure = normalize_failure(RuntimeError(self.justification), stage="final review")
+                if failure.kind != "unknown":
+                    self.failures = [failure]
+            return self.fail_assessment(incomplete=self.prediction_kind != "none")
+        return self
 
 
 class ResearchResponse(BaseModel):
@@ -156,12 +214,44 @@ class ResearchResponse(BaseModel):
     news: NewsFindings
     metrics: MetricsFindings
     report: ResearchReport
-    insider: InsiderFindings = Field(
-        default_factory=lambda: InsiderFindings(status="skipped")
-    )
-    signals: SignalFindings = Field(
-        default_factory=lambda: SignalFindings(status="skipped")
-    )
+    insider: InsiderFindings = Field(default_factory=lambda: InsiderFindings(status="skipped"))
+    signals: SignalFindings = Field(default_factory=lambda: SignalFindings(status="skipped"))
     bull: DebateCase | None = None
     bear: DebateCase | None = None
     evidence: list[EvidenceItem] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def enforce_source_execution(self):
+        if assessment_failed(self.model_dump()):
+            for name, source in (
+                ("filing review", self.sec),
+                ("news review", self.news),
+                ("financial review", self.metrics),
+                ("insider review", self.insider),
+                ("market signals", self.signals),
+                ("positive case", self.bull),
+                ("negative case", self.bear),
+            ):
+                if source is not None and source.status == "error":
+                    source.failure = source.failure or normalize_failure(
+                        RuntimeError(source.error or ""), stage=name
+                    )
+                    source.error = source.failure.message
+            failures = [
+                source.failure
+                for source in (
+                    self.sec,
+                    self.news,
+                    self.metrics,
+                    self.insider,
+                    self.signals,
+                    self.bull,
+                    self.bear,
+                )
+                if source is not None and source.failure
+            ]
+            self.report.failures = list(
+                {f.model_dump_json(): f for f in [*self.report.failures, *failures]}.values()
+            )
+            self.report.fail_assessment(incomplete=self.report.prediction_kind != "none")
+        return self

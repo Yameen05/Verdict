@@ -128,9 +128,9 @@ export function BacktestPanel({ refreshKey }: { refreshKey: number }) {
                 <tr key={e.id} className="hover:bg-slate-900/50">
                   <td className="px-3 py-2 font-mono font-semibold text-indigo-300">{e.ticker}</td>
                   <td className={`px-3 py-2 font-semibold ${REC_COLOR[e.recommendation] ?? ""}`}>
-                    {e.recommendation}
+                    {e.recommendation === "Failed" ? "Failed to assess" : e.recommendation}<span className="block text-[10px] text-amber-200">{e.prediction_kind === "partial_ai" ? "Partial AI · confidence not assessed" : e.prediction_kind === "rules_based" ? "Rules-based · confidence not assessed" : ""}</span>
                   </td>
-                  <td className="px-3 py-2 text-slate-400">{e.horizon_days}d</td>
+                  <td className="px-3 py-2 text-slate-400">{e.horizon_days ?? "Unknown"}d</td>
                   <td className="px-3 py-2 text-slate-400">{toDate(e.created_at)}</td>
                   <td className="px-3 py-2 text-slate-400">
                     {e.evaluated_at ? toDate(e.evaluated_at) : "—"}

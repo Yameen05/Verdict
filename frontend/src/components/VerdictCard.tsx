@@ -1,3 +1,4 @@
+import { failedAssessment, normalizeResearch, predictionKind } from "../lib/assessment";
 import { useState } from "react";
 import type { MetricsFindings, ResearchResponse } from "../api/client";
 import { ScoreRadar } from "./ScoreRadar";
@@ -115,6 +116,9 @@ interface Props {
 }
 
 export function VerdictCard({ result, meta, onExport }: Props) {
+  result = normalizeResearch(result);
+  const incomplete = failedAssessment(result);
+  const failed = predictionKind(result) === "none";
   const { report, metrics } = result;
   const style = VERDICT_STYLES[report.recommendation] ?? VERDICT_STYLES.Pending;
   const [simple, setSimple] = useState(false);
@@ -131,22 +135,24 @@ export function VerdictCard({ result, meta, onExport }: Props) {
             {report.ticker}
           </span>
           <span
-            className={`rounded-2xl border px-6 py-2 font-display text-4xl font-medium italic tracking-tight ${style.badge}`}
+            className={`rounded-2xl border px-6 py-2 text-center font-display ${failed ? "text-2xl" : "text-4xl"} font-medium italic tracking-tight ${style.badge}`}
           >
-            {report.recommendation}
+            {failed ? "Failed to assess" : report.recommendation}
           </span>
           <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-0.5 text-[10px] text-slate-400">
-            for a {label} hold
+            {report.horizon_days ? `for a ${label} hold` : "Original holding period not recorded"}
           </span>
-          {report.degraded && (
+          {incomplete && (
             <span
               className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-0.5 text-[10px] text-amber-300"
-              title="The full AI analysis was unavailable, so this result uses the market data already collected."
+              title="Analysis was incomplete. Originally issued predictions remain tracked; confidence is not assessed."
             >
-              ⚠ limited result
+              ⚠ {report.prediction_kind === "rules_based" ? "Rules-based · AI review failed" : "incomplete research"}
             </span>
           )}
-          {report.confidence !== null && (
+          {incomplete && <span className="text-sm font-medium text-amber-200">Confidence: {failed ? "Failed to assess" : "Not assessed"}</span>}
+          {report.analysis_warning && <p className="text-xs leading-5 text-amber-200">{report.analysis_warning}</p>}
+          {!incomplete && report.confidence !== null && (
             <ConfidenceGauge value={report.confidence} color={style.gauge} />
           )}
           {meta && (
@@ -158,7 +164,7 @@ export function VerdictCard({ result, meta, onExport }: Props) {
 
         {/* The reasoning */}
         <div className="min-w-0 flex-1 space-y-4">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <p className="text-sm leading-relaxed text-slate-100">
               {simple && report.simple_summary ? report.simple_summary : report.justification}
             </p>
@@ -185,7 +191,7 @@ export function VerdictCard({ result, meta, onExport }: Props) {
             </div>
           </div>
 
-          <HundredDollarCard metrics={metrics} label={label} />
+          {!incomplete && report.horizon_days !== null && <HundredDollarCard metrics={metrics} label={label} />}
 
           {report.horizon_outlook && !simple && (
             <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">

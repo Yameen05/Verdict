@@ -18,7 +18,7 @@ The scoreboard lives in routers/scoreboard.py.
 import asyncio
 import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -44,13 +44,17 @@ from app.persistence.db import (
     save_run,
     session_scope,
 )
+from app.schemas.failure import FailureInfo
 from app.schemas.research import ResearchResponse
+from app.services.assessment import analysis_warning, assessment_failed, prediction_kind
+from app.services.failures import normalize_failure
 
 router = APIRouter()
 log = get_logger(__name__)
 
 
 # ----- helpers -----
+
 
 def _validate_ticker(raw: str) -> str:
     t = (raw or "").strip().upper()
@@ -76,11 +80,9 @@ def _prior_run_dict(row: ResearchRun) -> dict[str, Any]:
     }
 
 
-async def _load_prior_run(
-    session: AsyncSession, ticker: str
-) -> dict[str, Any] | None:
+async def _load_prior_run(session: AsyncSession, ticker: str) -> dict[str, Any] | None:
     row = await latest_run_for_ticker(session, ticker)
-    return _prior_run_dict(row) if row else None
+    return _prior_run_dict(row) if row and not assessment_failed(row.payload) else None
 
 
 def _cache_age_minutes(row: ResearchRun) -> float:
@@ -88,9 +90,7 @@ def _cache_age_minutes(row: ResearchRun) -> float:
     return (datetime.now(UTC) - created).total_seconds() / 60.0
 
 
-async def _cached_run(
-    session: AsyncSession, ticker: str, horizon_days: int
-) -> ResearchRun | None:
+async def _cached_run(session: AsyncSession, ticker: str, horizon_days: int) -> ResearchRun | None:
     """Recent run by ANY user within the cache window — research is communal.
 
     A verdict framed for a 2-week hold is not a 1-year verdict, so cache hits
@@ -102,12 +102,18 @@ async def _cached_run(
     row = await latest_run_for_ticker(session, ticker)
     if row is None or _cache_age_minutes(row) > ttl:
         return None
+    if row.llm_model != get_settings().llm_model:
+        return None
     if row.horizon_days != horizon_days:
         return None
     try:
         # Ensure the stored payload still parses before serving it.
-        ResearchResponse(**row.payload)
+        result = ResearchResponse(**row.payload)
     except (ValidationError, TypeError):
+        return None
+    # A provider failure must not keep serving a fallback after credentials or
+    # quota recover. Keep the saved history, but retry the full analysis.
+    if result.report.degraded:
         return None
     return row
 
@@ -119,10 +125,12 @@ async def _enforce_quota(session: AsyncSession, user_id: int | None) -> None:
     if await count_runs_since(session, day_start) >= settings.daily_runs_global:
         raise HTTPException(
             status_code=429,
-            detail=(
-                "The community's daily research budget is used up — fresh runs "
-                "reset at midnight UTC. Recent verdicts are still served instantly."
-            ),
+            detail=FailureInfo(
+                kind="app_daily_limit",
+                window="day",
+                message=f"Verdict's community limit of {settings.daily_runs_global} fresh runs today was reached. Fresh runs reset at midnight UTC; cached reports remain available.",
+                reset_at=(day_start + timedelta(days=1)).isoformat(),
+            ).model_dump(),
         )
     if (
         user_id is not None
@@ -131,10 +139,12 @@ async def _enforce_quota(session: AsyncSession, user_id: int | None) -> None:
     ):
         raise HTTPException(
             status_code=429,
-            detail=(
-                f"You've used your {settings.daily_runs_per_user} fresh runs for "
-                "today (resets midnight UTC). Cached verdicts remain available."
-            ),
+            detail=FailureInfo(
+                kind="app_daily_limit",
+                window="day",
+                message=f"You've used your {settings.daily_runs_per_user} fresh runs today in Verdict. Fresh runs reset at midnight UTC; cached reports remain available.",
+                reset_at=(day_start + timedelta(days=1)).isoformat(),
+            ).model_dump(),
         )
 
 
@@ -168,6 +178,7 @@ async def _persist(
 
 # ----- auto-ingest: the one-button experience -----
 
+
 async def _needs_auto_ingest(ticker: str) -> bool:
     """First run for a stock? Index its filing automatically."""
     from app.services import vectorstore
@@ -189,6 +200,9 @@ async def _auto_ingest(ticker: str) -> int:
     from app.services.chunker import chunk_filing
     from app.services.embeddings import embed_texts
 
+    # A broken index cannot accept vectors; fail before consuming embedding quota.
+    # The SEC agent can still read the real filing directly, with all four questions.
+    await vectorstore.count_chunks(ticker)
     filing = await sec_client.fetch_latest_10k(ticker)
     chunks = chunk_filing(filing)
     if not chunks:
@@ -233,6 +247,9 @@ class HistoryEntry(BaseModel):
     justification: str
     sentiment_score: float | None = None
     confidence: int | None = None
+    assessment_status: str = "complete"
+    prediction_kind: str = "ai"
+    analysis_warning: str | None = None
     price_at_run: float | None = None
     duration_ms: float | None = None
     cost_usd: float | None = None
@@ -245,6 +262,7 @@ class HistoryResponse(BaseModel):
 
 
 # ----- POST /research/{ticker} -----
+
 
 @router.post("/{ticker}", response_model=ResearchEnvelope)
 @limiter.limit(lambda: get_settings().rate_limit_research)
@@ -289,7 +307,10 @@ async def research(
         )
     except TimeoutError as e:
         log.warning("research_timeout", extra={"ticker": ticker})
-        raise HTTPException(status_code=504, detail="Research timed out") from e
+        raise HTTPException(status_code=504, detail=normalize_failure(e).model_dump()) from e
+    except Exception as e:  # noqa: BLE001 - only safe metadata leaves the server
+        log.exception("research_failed", extra={"ticker": ticker})
+        raise HTTPException(status_code=502, detail=normalize_failure(e).model_dump()) from e
     duration_ms = round((time.perf_counter() - started) * 1000, 2)
 
     cost_payload = tracker.to_dict()
@@ -338,6 +359,7 @@ async def research(
 
 # ----- GET /research/{ticker}/stream -----
 
+
 async def _sse_stream(
     ticker: str,
     tracker: CostTracker,
@@ -367,7 +389,10 @@ async def _sse_stream(
         yield {
             "event": "ingest",
             "data": json.dumps(
-                {"phase": "started", "detail": "First time analyzing this one — grabbing its latest annual report from the SEC…"}
+                {
+                    "phase": "started",
+                    "detail": "First time analyzing this one — grabbing its latest annual report from the SEC…",
+                }
             ),
         }
         try:
@@ -375,7 +400,10 @@ async def _sse_stream(
             yield {
                 "event": "ingest",
                 "data": json.dumps(
-                    {"phase": "done", "detail": f"Report indexed ({indexed} sections). Starting the analysis…"}
+                    {
+                        "phase": "done",
+                        "detail": f"Report indexed ({indexed} sections). Starting the analysis…",
+                    }
                 ),
             }
         except Exception as e:  # noqa: BLE001 - research proceeds without the filing
@@ -383,7 +411,10 @@ async def _sse_stream(
             yield {
                 "event": "ingest",
                 "data": json.dumps(
-                    {"phase": "failed", "detail": "Couldn't fetch the SEC report — continuing with price, news, and insider data."}
+                    {
+                        "phase": "failed",
+                        "detail": "Couldn't fetch the SEC report — continuing with price, news, and insider data.",
+                    }
                 ),
             }
 
@@ -401,13 +432,16 @@ async def _sse_stream(
             if remaining <= 0:
                 raise TimeoutError("research stream exceeded request_timeout_seconds")
             try:
-                mode, chunk = await asyncio.wait_for(
-                    stream_iter.__anext__(), timeout=remaining
-                )
+                mode, chunk = await asyncio.wait_for(stream_iter.__anext__(), timeout=remaining)
             except StopAsyncIteration:
                 break
             if mode == "custom":
-                yield {"event": "debate", "data": json.dumps(chunk, default=str)}
+                yield {
+                    "event": "progress"
+                    if chunk.get("kind") in {"filing_question", "provider_wait"}
+                    else "debate",
+                    "data": json.dumps(chunk, default=str),
+                }
                 continue
             # `chunk` is {node_name: partial_state}
             for node_name, partial in chunk.items():
@@ -419,12 +453,16 @@ async def _sse_stream(
                         default=str,
                     ),
                 }
-    except TimeoutError:
+    except TimeoutError as e:
         log.warning("research_stream_timeout", extra={"ticker": ticker})
         yield {
             "event": "error",
             "data": json.dumps(
-                {"detail": "Research stream timed out", "error_type": "TimeoutError"}
+                {
+                    "detail": normalize_failure(e).message,
+                    "failure": normalize_failure(e).model_dump(),
+                    "error_type": "TimeoutError",
+                }
             ),
         }
         return
@@ -433,7 +471,11 @@ async def _sse_stream(
         yield {
             "event": "error",
             "data": json.dumps(
-                {"detail": "Research stream failed", "error_type": type(e).__name__}
+                {
+                    "detail": normalize_failure(e).message,
+                    "failure": normalize_failure(e).model_dump(),
+                    "error_type": type(e).__name__,
+                }
             ),
         }
         return
@@ -539,13 +581,13 @@ async def research_stream(
     needs_ingest = await _needs_auto_ingest(ticker)
     log.info("research_stream_started", extra={"ticker": ticker, "horizon": horizon})
     return EventSourceResponse(
-        _sse_stream(
-            ticker, tracker, rid, request.state.user_id, prior_run, horizon, needs_ingest
-        )
+        _sse_stream(ticker, tracker, rid, request.state.user_id, prior_run, horizon, needs_ingest),
+        ping=15,
     )
 
 
 # ----- GET /research/history/{ticker} -----
+
 
 @router.get("/history/{ticker}", response_model=HistoryResponse)
 async def history(
@@ -568,10 +610,25 @@ async def history(
             HistoryEntry(
                 id=r.id,
                 ticker=r.ticker,
-                recommendation=r.recommendation,
-                justification=r.justification,
+                recommendation="Failed"
+                if prediction_kind(r.payload, r.recommendation, r.confidence) == "none"
+                else r.recommendation,
+                justification=r.justification
+                if prediction_kind(r.payload, r.recommendation, r.confidence) != "none"
+                else "Failed to assess. No usable prediction was issued.",
                 sentiment_score=r.sentiment_score,
-                confidence=r.confidence,
+                confidence=r.confidence
+                if prediction_kind(r.payload, r.recommendation, r.confidence) == "ai"
+                else None,
+                assessment_status="failed"
+                if prediction_kind(r.payload, r.recommendation, r.confidence) == "none"
+                else "incomplete"
+                if assessment_failed(r.payload)
+                else "complete",
+                prediction_kind=prediction_kind(r.payload, r.recommendation, r.confidence),
+                analysis_warning=analysis_warning(r.payload)
+                if assessment_failed(r.payload)
+                else None,
                 price_at_run=r.price_at_run,
                 duration_ms=r.duration_ms,
                 cost_usd=r.cost_usd,

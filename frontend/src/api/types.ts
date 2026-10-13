@@ -1,3 +1,4 @@
+import type { FailureInfo } from "../lib/researchErrors";
 // Research-domain types shared by the API client and components.
 
 export type AgentStatus = "ok" | "skipped" | "not_implemented" | "error";
@@ -13,6 +14,7 @@ export interface SECFindings {
   findings: SECFinding[];
   accession: string | null;
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface Headline {
@@ -30,6 +32,7 @@ export interface NewsFindings {
   article_count: number;
   top_headlines: Headline[];
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface MetricsFindings {
@@ -48,6 +51,7 @@ export interface MetricsFindings {
   best_window_pct: number | null;
   worst_window_pct: number | null;
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface InsiderTransaction {
@@ -66,6 +70,7 @@ export interface InsiderFindings {
   sell_count: number;
   summary: string | null;
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface AnalystRatings {
@@ -124,6 +129,7 @@ export interface SignalFindings {
   sources_used: string[];
   sources_available: string[];
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface EvidenceItem {
@@ -145,6 +151,7 @@ export interface DebateCase {
   thesis: string;
   arguments: Argument[];
   error: string | null;
+  failure?: FailureInfo | null;
 }
 
 export interface DimensionScores {
@@ -157,7 +164,7 @@ export interface DimensionScores {
 
 export interface ResearchReport {
   ticker: string;
-  recommendation: "Buy" | "Hold" | "Sell" | "Pending";
+  recommendation: "Buy" | "Hold" | "Sell" | "Pending" | "Failed";
   justification: string;
   company_overview: string;
   financial_health: string;
@@ -172,7 +179,11 @@ export interface ResearchReport {
   horizon_days: number | null;
   horizon_outlook: string | null;
   simple_summary: string | null;
+  prediction_kind?: "ai" | "partial_ai" | "rules_based" | "none";
+  analysis_warning?: string | null;
+  assessment_status?: "complete" | "failed" | "incomplete";
   degraded: boolean;
+  failures?: FailureInfo[];
 }
 
 export interface ResearchResponse {
@@ -288,7 +299,7 @@ export interface ResearchEnvelope {
 export interface HistoryEntry {
   id: number;
   ticker: string;
-  recommendation: "Buy" | "Hold" | "Sell" | "Pending";
+  recommendation: "Buy" | "Hold" | "Sell" | "Pending" | "Failed";
   justification: string;
   sentiment_score: number | null;
   confidence: number | null;
@@ -296,6 +307,8 @@ export interface HistoryEntry {
   duration_ms: number | null;
   cost_usd: number | null;
   created_at: string;
+  prediction_kind?: "ai" | "partial_ai" | "rules_based" | "none";
+  analysis_warning?: string | null;
 }
 
 export interface ScoreboardEntry {
@@ -303,17 +316,33 @@ export interface ScoreboardEntry {
   ticker: string;
   recommendation: string;
   confidence: number | null;
+  model: string | null;
+  horizon_days: number | null;
+  horizon_assumed: boolean;
   created_at: string;
+  due_at: string | null;
+  evaluated_at: string | null;
+  price_bar_at: string | null;
   price_at_run: number | null;
-  current_price: number | null;
+  price_at_horizon: number | null;
   return_pct: number | null;
-  outcome: "hit" | "miss" | "unscored";
+  status_reason: string;
+  outcome: "hit" | "miss" | "in_progress" | "awaiting_price" | "unscored" | "failed";
+  prediction_kind: "ai" | "partial_ai" | "rules_based" | "none";
+  analysis_status: "complete" | "incomplete" | "failed";
+  analysis_warning: string | null;
+  tracking_eligible: boolean;
 }
 
 export interface ScoreboardSummary {
   total_runs: number;
   scored: number;
   hits: number;
+  in_progress: number;
+  awaiting_price: number;
+  unscored: number;
+  failed: number;
+  by_prediction_kind?: Record<string, {total:number;scored:number;hits:number;hit_rate:number|null}>;
   hit_rate: number | null;
   avg_return_buy_pct: number | null;
   rule: string;
@@ -322,6 +351,18 @@ export interface ScoreboardSummary {
 export interface ScoreboardResponse {
   entries: ScoreboardEntry[];
   summary: ScoreboardSummary;
+  server_time: string;
+}
+
+export interface ScoreboardDetail {
+  entry: ScoreboardEntry;
+  justification: string;
+  duration_ms: number | null;
+  cost_usd: number | null;
+  request_id: string | null;
+  result: ResearchResponse | null;
+  payload: Record<string, unknown>;
+  rule: string;
 }
 
 export type BacktestOutcome = "hit" | "miss" | "immature" | "unscored";
@@ -331,13 +372,15 @@ export interface BacktestEntry {
   ticker: string;
   recommendation: string;
   confidence: number | null;
-  horizon_days: number;
+  horizon_days: number | null;
   created_at: string;
   evaluated_at: string | null;
   price_at_run: number | null;
   price_at_horizon: number | null;
   return_pct: number | null;
   outcome: BacktestOutcome;
+  prediction_kind?: "ai" | "partial_ai" | "rules_based" | "none";
+  analysis_warning?: string | null;
 }
 
 export interface BacktestHorizonStat {
@@ -512,4 +555,16 @@ export interface DayTradeScanResponse {
   skipped: string[];
   as_of: string;
   note: string;
+}
+export interface ListedAsset {
+  ticker: string;
+  name: string;
+  exchange: string;
+  asset_class: "stock" | "etf";
+}
+
+export interface StockDirectory {
+  assets: ListedAsset[];
+  fetched_at: string;
+  source: string;
 }

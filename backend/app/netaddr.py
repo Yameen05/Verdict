@@ -2,7 +2,7 @@
 
 `X-Forwarded-For` is a request header, so it is attacker-controlled unless the
 connection came from a proxy we trust. Everything that keys off a client
-address — the per-IP rate limits guarding login, 2FA, and password reset, plus
+address — the per-IP rate limits guarding login and password reset, plus
 the addresses written to the audit log — resolves through here.
 
 Rules:

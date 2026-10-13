@@ -124,7 +124,7 @@ async def test_sec_agent_uses_direct_filing_when_index_empty(
     assert all(f.source_chunks > 0 for f in sec.findings)
 
 
-async def test_sec_agent_skips_cleanly_when_index_and_direct_filing_fail(
+async def test_sec_agent_reports_failure_when_index_and_direct_filing_fail(
     patched_openai, patched_embeddings, monkeypatch
 ):
     async def fake_query(_ticker, _vector, top_k=5):
@@ -139,22 +139,70 @@ async def test_sec_agent_skips_cleanly_when_index_and_direct_filing_fail(
     result = await sec_agent_mod.sec_agent({"ticker": "AAPL"})
 
     sec: SECFindings = result["sec"]
-    assert sec.status == "skipped"
-    assert sec.error and "direct filing read" in sec.error
-    assert "POST" not in sec.error
-    assert "Pinecone" not in sec.error
+    assert sec.status == "error"
+    assert sec.failure and sec.failure.stage == "filing review"
+    assert "RuntimeError" not in (sec.error or "")
 
 
-async def test_sec_agent_error_on_query_failure(
-    patched_openai, patched_embeddings, monkeypatch
-):
+async def test_sec_agent_error_on_query_failure(patched_openai, patched_embeddings, monkeypatch):
     async def boom(_ticker, _vector, top_k=5):
         raise RuntimeError("pinecone down")
 
     monkeypatch.setattr(sec_agent_mod.vectorstore, "query", boom)
 
+    async def filing_unavailable(_ticker):
+        raise RuntimeError("SEC unavailable")
+
+    monkeypatch.setattr(sec_agent_mod.sec_client, "fetch_latest_10k", filing_unavailable)
+
     result = await sec_agent_mod.sec_agent({"ticker": "AAPL"})
 
     sec: SECFindings = result["sec"]
     assert sec.status == "error"
-    assert sec.error and "pinecone down" in sec.error
+    assert sec.failure and sec.failure.stage == "filing review"
+    assert "pinecone down" not in sec.error
+
+
+async def test_unavailable_index_still_answers_all_four_questions_from_real_filing(
+    patched_embeddings, monkeypatch
+):
+    questions = []
+
+    async def unavailable(*_args, **_kwargs):
+        raise RuntimeError("index unavailable")
+
+    async def filing(_ticker):
+        return _fake_filing()
+
+    async def summarize(question, chunks):
+        questions.append(question)
+        assert chunks and all(isinstance(c, str) for c in chunks)
+        return "Grounded filing answer."
+
+    monkeypatch.setattr(sec_agent_mod.vectorstore, "query", unavailable)
+    monkeypatch.setattr(sec_agent_mod.sec_client, "fetch_latest_10k", filing)
+    monkeypatch.setattr(sec_agent_mod, "_summarize", summarize)
+    result = (await sec_agent_mod.sec_agent({"ticker": "AAPL"}))["sec"]
+    assert result.status == "ok"
+    assert questions == sec_agent_mod.CANONICAL_QUESTIONS
+    assert len(result.findings) == 4
+    assert result.accession == _fake_filing().accession
+
+
+async def test_chat_failure_does_not_repeat_four_questions_through_direct_read(
+    patched_embeddings, monkeypatch
+):
+    async def query(*_args, **_kwargs):
+        return _make_matches(1)
+
+    async def chat_unavailable(*_args):
+        raise RuntimeError("chat capacity unavailable")
+
+    async def unexpected_fallback(*_args):
+        pytest.fail("Chat failures must not trigger another four model calls")
+
+    monkeypatch.setattr(sec_agent_mod.vectorstore, "query", query)
+    monkeypatch.setattr(sec_agent_mod, "_summarize", chat_unavailable)
+    monkeypatch.setattr(sec_agent_mod, "_direct_filing_fallback", unexpected_fallback)
+    result = (await sec_agent_mod.sec_agent({"ticker": "AAPL"}))["sec"]
+    assert result.status == "error"

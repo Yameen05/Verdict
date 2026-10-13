@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
 
 from app.config import get_settings
 from app.persistence.db import save_run, session_scope
@@ -34,7 +38,9 @@ def _payload(ticker: str = "AAPL") -> dict:
     ).model_dump()
 
 
-async def _seed_run(ticker: str, user_id: int | None) -> None:
+async def _seed_run(ticker: str, user_id: int | None, *, degraded: bool = False) -> None:
+    payload = _payload(ticker)
+    payload["report"]["degraded"] = degraded
     async for session in session_scope():
         await save_run(
             session,
@@ -46,7 +52,8 @@ async def _seed_run(ticker: str, user_id: int | None) -> None:
             confidence=70,
             price_at_run=100.0,
             horizon_days=14,
-            payload=_payload(ticker),
+            payload=payload,
+            llm_model=get_settings().llm_model,
         )
         break
 
@@ -65,6 +72,31 @@ async def test_recent_run_served_from_cache(client):
     assert body["result"]["report"]["justification"] == "cached-run"
 
 
+async def test_model_switch_does_not_serve_an_older_models_report(client, monkeypatch):
+    await _seed_run("AAPL", _user_id(client))
+    monkeypatch.setenv("LLM_MODEL", "gemini-3.8-flash")
+    get_settings.cache_clear()
+    calls = []
+
+    async def fresh_research(ticker, prior_run=None, horizon_days=14):
+        calls.append(ticker)
+        return ResearchResponse(**_payload(ticker))
+
+    async def no_ingest(_ticker):
+        return False
+
+    import app.routers.research as research_mod
+
+    monkeypatch.setattr(research_mod, "run_research", fresh_research)
+    monkeypatch.setattr(research_mod, "_needs_auto_ingest", no_ingest)
+    response = client.post("/research/AAPL")
+    assert response.status_code == 200
+    assert response.json()["cached"] is False
+    assert calls == ["AAPL"]
+    history = client.get("/research/history/AAPL").json()["runs"]
+    assert len(history) == 2  # The older report remains in history.
+
+
 async def test_stream_serves_cache_as_completed_event(client):
     await _seed_run("AAPL", _user_id(client))
     with client.stream("GET", "/research/AAPL/stream") as res:
@@ -74,6 +106,28 @@ async def test_stream_serves_cache_as_completed_event(client):
     completed = json.loads(raw.split("event: completed")[1].split("data: ")[1].split("\n")[0])
     assert completed["cached"] is True
     assert completed["result"]["report"]["recommendation"] == "Buy"
+
+
+async def test_provider_fallback_is_retried_without_fresh_flag(client, monkeypatch):
+    await _seed_run("AAPL", _user_id(client), degraded=True)
+    calls = []
+
+    async def recovered_research(ticker, prior_run=None, horizon_days=14):
+        calls.append(ticker)
+        return ResearchResponse(**_payload(ticker))
+
+    async def no_ingest(_ticker):
+        return False
+
+    import app.routers.research as research_mod
+
+    monkeypatch.setattr(research_mod, "run_research", recovered_research)
+    monkeypatch.setattr(research_mod, "_needs_auto_ingest", no_ingest)
+    res = client.post("/research/AAPL")
+    assert res.status_code == 200, res.text
+    assert res.json()["cached"] is False
+    assert res.json()["result"]["report"]["degraded"] is False
+    assert calls == ["AAPL"]
 
 
 async def test_fresh_flag_bypasses_cache(client, monkeypatch):
@@ -106,7 +160,7 @@ async def test_per_user_daily_quota(client, monkeypatch):
 
     res = client.post("/research/NVDA")
     assert res.status_code == 429
-    assert "fresh runs" in res.json()["detail"]
+    assert "fresh runs" in res.json()["detail"]["message"]
     get_settings.cache_clear()
 
 
@@ -121,8 +175,36 @@ async def test_global_daily_quota(client, monkeypatch):
 
     res = client.post("/research/NVDA")
     assert res.status_code == 429
-    assert "community" in res.json()["detail"]
+    assert "community" in res.json()["detail"]["message"]
     get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "user_count,global_count,blocked",
+    [(10, 40, None), (99, 99, None), (100, 99, "You've used"), (99, 100, "community")],
+)
+async def test_personal_ceiling_allows_old_limits_and_enforces_new_boundaries(
+    monkeypatch, user_count, global_count, blocked
+):
+    from app.routers import research as research_mod
+
+    monkeypatch.setenv("DAILY_RUNS_PER_USER", "100")
+    monkeypatch.setenv("DAILY_RUNS_GLOBAL", "100")
+    get_settings.cache_clear()
+
+    async def count(_session, since, user_id=None):
+        assert since.hour == since.minute == since.second == since.microsecond == 0
+        assert since.utcoffset().total_seconds() == 0
+        return global_count if user_id is None else user_count
+
+    monkeypatch.setattr(research_mod, "count_runs_since", count)
+    if blocked is None:
+        await research_mod._enforce_quota(SimpleNamespace(), 1)
+    else:
+        with pytest.raises(HTTPException) as error:
+            await research_mod._enforce_quota(SimpleNamespace(), 1)
+        assert error.value.status_code == 429
+        assert blocked in error.value.detail["message"]
 
 
 async def test_cache_disabled_when_ttl_zero(client, monkeypatch):

@@ -1,3 +1,4 @@
+import { failedAssessment, normalizeResearch, predictionKind } from "./assessment";
 import type { DebateCase, ResearchResponse } from "../api/client";
 
 function caseSection(title: string, c: DebateCase | null): string {
@@ -12,13 +13,17 @@ export function researchToMarkdown(
   result: ResearchResponse,
   meta: { duration_ms: number; cost_usd: number } | null,
 ): string {
+  result = normalizeResearch(result);
+  const incomplete = failedAssessment(result);
+  const failed = predictionKind(result) === "none";
   const { report, metrics, news, insider, signals, evidence } = result;
   const lines: string[] = [
-    `# Verdict — ${report.ticker}: ${report.recommendation}` +
+    `# Verdict — ${report.ticker}: ${failed ? "Failed to assess" : report.recommendation}` +
       (report.confidence !== null ? ` (confidence ${report.confidence}/100)` : ""),
     "",
     `_Generated ${new Date().toISOString().slice(0, 10)} by Verdict. Not investment advice._`,
     "",
+    ...(incomplete ? [`Prediction source: ${result.report.prediction_kind}`, `Confidence: ${failed ? "Failed to assess" : "Not assessed — analysis incomplete"}`, result.report.analysis_warning ?? "", ""] : []),
     report.justification,
   ];
 

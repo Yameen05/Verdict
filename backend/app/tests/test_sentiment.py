@@ -38,9 +38,9 @@ def reset_client():
         sentiment_mod._client.cache_clear()
 
 
-async def test_empty_articles_returns_neutral():
+async def test_empty_articles_returns_unknown_sentiment():
     agg, scored, summary = await score_and_summarize("Apple Inc.", [])
-    assert agg == 0.0
+    assert agg is None
     assert scored == []
     assert "No recent articles" in summary
 

@@ -45,8 +45,8 @@ serif display face for the big moments, and a matching warm-paper light mode.
 
 ## Product Tour
 
-The app is organized into five pages: **Research**, **Day trade**,
-**Ask analyst**, **History**, and **Track record**.
+The app is organized into six pages: **Research**, **Day trade**,
+**Strategies & practice**, **Ask analyst**, **History**, and **Track record**.
 
 ### Research Workspace
 
@@ -94,6 +94,38 @@ honest answer is "stand aside" — and the desk says so.
 
 ![Verdict day-trade desk](docs/assets/verdict-live-daytrade.png)
 
+### Saved Strategies & Practice
+
+The page walks through five steps: choose an idea, find matching stocks, read
+one result, try buying with pretend money, and see what happened. It explains
+stocks, shares, and the three starting ideas in everyday words. Number settings
+stay under **Change this idea (optional)**, and starting ideas are separate from
+the searches you have saved.
+
+Choose **Use this idea**, then **Save this idea & find stocks**. The free search
+checks 12 starter names or up to 24 supported US stocks and funds on your Research
+watchlist. Results show company names when available, why each name appeared,
+and the date of the recorded price. Missing prices are skipped. **Read more in
+Research** opens the ticker; AI analysis starts only when you choose **Analyze**.
+
+Choose **Try with pretend money** to plan a purchase, starting with one share.
+The screen shows its cost, the pretend balance left, and lower/higher prices
+where you would consider selling. These are reminders; the app does not sell
+for you. Each user starts with $100,000 pretend money, buys whole shares without
+borrowing, and gets the proceeds back when they choose **Sell my practice shares**.
+**My practice & notes** keeps the result, editable learning notes, and an
+unchanged copy of the original idea, checks, and sell plan. These results are
+separate from the AI Track record.
+
+Prices are recorded daily finishes, not live executions. Today is excluded;
+prices must be no more than five calendar days old, and previews last two minutes.
+Prices use cents. Trading costs, live price differences, company payouts, changes
+such as share splits, and automatic selling are not modeled.
+
+The authenticated `/me/strategies` and `/me/practice` routes use the existing
+CSRF protection and user-owned database tables, created at application startup.
+No new provider key or AI configuration is required.
+
 ### Alerts That Work While You Sleep
 
 Price alerts and "tell me when the verdict changes" watches are evaluated by a
@@ -130,13 +162,18 @@ price at the moment it was made — so verdict drift is visible at a glance.
 
 ### Track Record
 
-Every verdict stores the price at the moment it was issued — and which model
-issued it. The scoreboard tab replays the book: forward return since each
-call, hit/miss under a disclosed rule, aggregate hit rate, average return on
-Buys, and horizon backtests once a call is old enough to grade. A calibration
-panel adds a Brier score and hit-rate-by-confidence buckets, so you can see
-whether the app's stated confidence deserves your trust. Verdict grades its
-own homework.
+Every verdict stores its issue time, price, selected holding period, and model.
+Track record separates **In progress** calls (with exact deadlines and countdowns)
+from **Completed** hits and misses. Nothing is graded before the holding period
+ends. Evaluation uses the first fully completed daily candle ending at or after
+the deadline; market closures or missing prices leave the call awaiting price.
+Final prices and outcomes are saved so later price moves do not change history.
+A background worker grades due calls every minute while the API is running.
+
+Click a call for the original report, bull/bear debate, evidence, risks,
+confidence, model, issue/evaluation prices, grading explanation, and all saved
+data. Details can be downloaded. Only completed outcomes enter hit rates and
+calibration. Older runs with no saved holding period explicitly assume 14 days.
 
 ![Verdict scoreboard](docs/assets/verdict-live-scoreboard.png)
 
@@ -156,12 +193,10 @@ rebuilds them).
 
 ## What It Does
 
-- Small-circle multi-user: the bootstrap owner mints one-time invite codes
-  (7-day expiry, digest-only storage); friends register with a code — no email
-  service required. Password auth, optional TOTP 2FA, HttpOnly sessions, CSRF
-  protection, origin checks, and rate limits for every account. Flip
-  `PUBLIC_SIGNUP_ENABLED=true` to open self-serve registration (daily run
-  quotas still cap spend).
+- Open multi-user signup: anyone can register with Google or email without an
+  invite code. Password auth, HttpOnly sessions, CSRF protection, origin checks,
+  and rate limits protect every account; daily run quotas cap spend. An optional
+  invite-only deployment can set `PUBLIC_SIGNUP_ENABLED=false`.
 - Account recovery: a forgot-password flow emails a single-use, digest-stored
   reset link when SMTP is configured; a successful reset revokes every session
   for the account. The sign-in screen only offers the link when the server can
@@ -174,6 +209,10 @@ rebuilds them).
   a ticker is served to everyone from cache (zero LLM cost), and fresh runs
   are capped per user and globally per day (`DAILY_RUNS_PER_USER`,
   `DAILY_RUNS_GLOBAL`, `RESEARCH_CACHE_MINUTES`).
+  Personal-use defaults allow 100 fresh reports per user and 100 total per UTC
+  day, resetting at midnight UTC. Changing these ceilings keeps existing usage
+  and saved history. Google's free-tier quotas and capacity limits still apply;
+  raising the app ceiling does not enable billing or change the research checks.
 - One-button analysis for stocks and crypto: pick an asset, pick a holding
   period (1 week to 1 year), press Analyze. The filing is fetched and indexed
   automatically on first run; coins skip SEC/insider evidence with a plain
@@ -252,7 +291,7 @@ React + TypeScript + Vite
         | REST + Server-Sent Events
         v
 FastAPI
-  auth, 2FA, CSRF, rate limits, readiness/config health, market data,
+  auth, CSRF, rate limits, readiness/config health, market data,
   day-trade desk (/daytrade), per-user workspace state (/me),
   background alert worker, JSON logs, persistence
         |
@@ -294,7 +333,7 @@ LangGraph StateGraph
 | Market and news data | SEC EDGAR (filings + Form 4), NewsAPI, yfinance (primary) with Polygon/Tiingo/Stooq price fallback, Alpha Vantage, Finnhub, FRED, Reddit, StockTwits |
 | Sentiment | Batched LLM scoring (finance-aware, per headline) |
 | Persistence | SQLAlchemy async ORM, SQLite by default |
-| Security | Argon2id, encrypted TOTP seed, one-time recovery codes, CSRF |
+| Security | Argon2id, HttpOnly sessions, CSRF |
 | Ops | Docker, Docker Compose, nginx SPA proxy, structured JSON logs |
 | Tests | pytest (188 backend), Vitest (33 frontend), pytest-asyncio, pytest-httpx, ruff, TypeScript build |
 
@@ -344,7 +383,6 @@ Fill in the required security and SEC settings:
 ```bash
 SEC_USER_AGENT="Verdict Research your.email@example.com"
 AUTH_BOOTSTRAP_TOKEN="$(openssl rand -base64 48)"
-AUTH_ENCRYPTION_KEY="$(python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
 ```
 
 Then choose your model provider.
@@ -354,8 +392,31 @@ For Gemini through its OpenAI-compatible endpoint, keep the default
 
 ```bash
 LLM_API_KEY=...
-LLM_MODEL=gemini-2.5-flash
+LLM_MODEL=gemini-3.8-flash
+LLM_MIN_INTERVAL_SECONDS=13
+REQUEST_TIMEOUT_SECONDS=600
 ```
+
+An existing Gemini key works if its project has free quota for this model; no
+new key is required. Keep that project on Google's free tier for zero API
+charges. Quota exhaustion returns an error; Verdict does not automatically
+upgrade billing or switch models. Do not enable paid Search grounding tools.
+The zero token rates in `.env.example` represent free-tier usage; update them
+if you independently change the project to paid billing.
+
+All chat features share `LLM_MODEL`. Gemini 3.8 Flash uses temperature 1 and
+output budgets that leave room for thinking; concise SEC and chat responses use
+low reasoning effort, while report synthesis uses the model default. Keep
+`EMBEDDING_*` unchanged when upgrading chat: saved vectors need no reindex and
+historical reports retain their original model metadata. Practice scans use no
+AI calls. The local free project permits five chat requests per minute, so
+`LLM_MIN_INTERVAL_SECONDS=13` spaces requests through a shared queue in the
+default single worker; stock research can take a few minutes. SDK retries are
+disabled when pacing is enabled. A temporary HTTP 503 capacity failure gets
+one retry after 30 seconds through the same queue; quota errors are surfaced
+immediately. Full research has a ten-minute deadline and streaming heartbeats. Multiple app instances or other apps sharing the key need shared quota
+coordination. Compose loads `backend/.env` after `.env`; restart after changing the
+effective environment.
 
 For OpenAI chat, leave `LLM_BASE_URL` blank and set:
 
@@ -391,13 +452,40 @@ REDDIT_ENABLED=true
 docker compose up --build
 ```
 
+Compose loads the root `.env`, then optional `backend/.env` overrides, including
+local AI provider credentials. Restart the backend after changing these files.
+
 - App: http://localhost:8080
 - Backend container: internal to the Compose network
 - SQLite data: persisted in the `verdict-db` Docker volume
 
 On first launch, the browser asks for `AUTH_BOOTSTRAP_TOKEN`, creates the owner
-account, and requires TOTP enrollment. Save the recovery codes. The bootstrap
+account, and signs you in immediately. The bootstrap
 route closes permanently once the owner exists.
+
+### Optional: Sign in with Google
+
+Create a **Web application** OAuth client in the
+[Google Auth Platform](https://console.cloud.google.com/auth/clients) and configure
+its branding/consent screen. Under **Authorized JavaScript origins**, add your
+site's exact origin. For local development, add `http://localhost`,
+`http://localhost:8080`, and `http://localhost:5173` for the ports you use.
+Open the local app at `http://localhost:8080`; the Docker frontend redirects
+`http://127.0.0.1:8080` there to avoid Google's `origin_mismatch` error.
+Set `GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com` in the backend
+environment (`.env`, or `backend/.env` if used), then rebuild/restart Compose.
+This uses Google's popup button; no client secret or redirect URI is needed.
+See [Google's setup guide](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid).
+
+The button appears on sign-in and signup once configured. New Google accounts
+can register without an invite by default, always join as members,
+and do not need a password. Create the first owner through bootstrap as usual.
+Existing Gmail/Google Workspace accounts with matching emails keep their
+workspace and password login; Google subjects are stored as stable identifiers.
+An existing account with a third-party email must use its existing sign-in
+method rather than being linked automatically. Leaving `GOOGLE_CLIENT_ID` blank
+disables Google sign-in. Live Google login requires a valid OAuth client ID and
+authorized origin.
 
 ### 3. Run With Hot Reload
 
@@ -415,7 +503,6 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | --- | --- | --- |
 | `SEC_USER_AGENT` | Yes | SEC EDGAR contact user agent |
 | `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time owner creation secret |
-| `AUTH_ENCRYPTION_KEY` | Yes | Fernet key used to encrypt the TOTP seed |
 | `LLM_API_KEY` | For custom chat providers | Key for `LLM_BASE_URL` providers such as Gemini or Groq |
 | `LLM_BASE_URL` | No | OpenAI-compatible chat endpoint; blank uses OpenAI |
 | `OPENAI_API_KEY` | For SEC RAG and OpenAI chat | OpenAI embeddings and optional OpenAI chat |
@@ -440,7 +527,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | `DAILY_RUNS_GLOBAL` | No | Global fresh research quota |
 | `ALERTS_CHECK_SECONDS` | No | Background alert/verdict-watch check interval; `0` disables the worker |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Enables alert and password-reset emails; blank host = alerts trigger in the UI only |
-| `PUBLIC_SIGNUP_ENABLED` | No | `true` opens self-serve registration; default is invite-only |
+| `PUBLIC_SIGNUP_ENABLED` | No | Defaults to `true`: anyone can register without an invite |
+| `GOOGLE_CLIENT_ID` | No | Google OAuth Web application client ID; blank disables Google sign-in |
 | `PASSWORD_RESET_TOKEN_MINUTES` | No | Reset-link lifetime; defaults to 30 |
 | `APP_PUBLIC_URL` | No | Origin used in password-reset links; blank falls back to the first CORS origin |
 | `RATE_LIMIT_AUTH` | No | Defaults to `5/minute` |
@@ -463,13 +551,13 @@ tracking variables.
 | `GET` | `/auth/status` | Bootstrap/login state |
 | `POST` | `/auth/bootstrap` | One-time owner creation |
 | `POST` | `/auth/login` | Password sign-in |
-| `POST` | `/auth/2fa/verify` | TOTP or recovery-code verification |
-| `POST` | `/auth/register` | Create an account with an invite code (or without one when `PUBLIC_SIGNUP_ENABLED=true`) |
+| `POST` | `/auth/register` | Create an account; no invite required with the default public signup setting |
 | `POST/GET/DELETE` | `/auth/invites` | Owner mints, lists, and revokes one-time invite codes |
 | `POST` | `/auth/password-reset/request` | Email a single-use reset link (enumeration-safe; requires SMTP) |
 | `POST` | `/auth/password-reset/confirm` | Set a new password and revoke all sessions |
 | `POST` | `/filings/ingest` | Fetch, chunk, embed, and index the latest filing |
 | `POST` | `/filings/query` | Search indexed filing chunks |
+| `GET` | `/market/directory` | Free US stock and ETF listing directory for the searchable stock board; cached six hours, no AI calls |
 | `GET` | `/market/{ticker}/history` | Chart OHLCV bars by range/interval |
 | `GET` | `/market/{ticker}/quote` | Latest bar for live chart updates |
 | `GET` | `/market/{ticker}/timing` | Technical/timing assessment for a selected horizon |
@@ -482,7 +570,8 @@ tracking variables.
 | `GET` | `/research/{ticker}/stream` | Stream node + debate progress and final result over SSE; supports `horizon` and `fresh` query params |
 | `POST` | `/research/ask` | Contextual follow-up; can search the filing via tool use |
 | `GET` | `/research/history/{ticker}` | Return recent persisted runs |
-| `GET` | `/research/scoreboard` | Forward returns and hit rate for past verdicts |
+| `GET` | `/research/scoreboard` | Holding-period status, deadlines, frozen outcomes, and completed hit rate |
+| `GET` | `/research/scoreboard/{run_id}` | Full original research snapshot and outcome details |
 | `GET/POST/DELETE` | `/me/watchlist`, `/me/positions`, `/me/alerts`, `/me/levels`, `/me/verdict-watch` | Per-user workspace state (account-synced) |
 
 Unauthenticated liveness check:
@@ -491,8 +580,8 @@ Unauthenticated liveness check:
 curl --fail http://localhost:8080/api/health
 ```
 
-Use the browser client for protected routes. It manages the HttpOnly session,
-the 2FA challenge, and the per-session CSRF token.
+Use the browser client for protected routes. It manages the HttpOnly session
+and the per-session CSRF token.
 
 ## Development Commands
 
@@ -556,9 +645,7 @@ make fetch-sample TICKER=AAPL
 - Passwords use Argon2id.
 - Session tokens are random, stored server-side only as SHA-256 digests, and
   delivered in HttpOnly/Secure/SameSite cookies.
-- TOTP seeds are encrypted at rest.
-- Recovery codes are one-time and keyed-hashed.
-- Every non-health API route requires an authenticated, 2FA-verified session.
+- Every non-health API route requires an authenticated session.
 - Password-reset tokens are single-use, expire in 30 minutes (configurable),
   are stored as SHA-256 digests, and revoke all sessions on success. The
   request endpoint answers identically whether or not the account exists.

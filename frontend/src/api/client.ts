@@ -1,3 +1,4 @@
+import type { FailureInfo } from "../lib/researchErrors";
 import type {
   AskRequest,
   AskResponse,
@@ -18,6 +19,8 @@ import type {
   ResearchResponse,
   ReturnRangeResponse,
   ScoreboardResponse,
+  ScoreboardDetail,
+  StockDirectory,
   ServerAlert,
   ServerPosition,
   TimingAssessment,
@@ -63,6 +66,7 @@ export interface QueryResponse {
 const SSE_MESSAGE_BOUNDARY = /\r?\n\r?\n/;
 
 export const api = {
+  stockDirectory: () => getJson<StockDirectory>("/market/directory"),
   health: async () => {
     const res = await fetch(`${BASE_URL}/health`, { headers: requestHeaders() });
     return res.ok;
@@ -129,6 +133,8 @@ export const api = {
     }
     return (await res.json()) as ScoreboardResponse;
   },
+
+  scoreboardDetail: (id: number) => getJson<ScoreboardDetail>(`/research/scoreboard/${id}`),
 
   history: async (ticker: string, limit = 20): Promise<HistoryResponse> => {
     const res = await fetch(
@@ -272,6 +278,7 @@ export type StreamEvent =
       data: { node: string; payload: Record<string, unknown> };
     }
   | { event: "debate"; data: DebateStreamEvent }
+  | { event: "progress"; data: { kind: "filing_question"; index: number } | { kind: "provider_wait"; id: string; reason: "queue" | "capacity"; phase: "started" | "done" } }
   | {
       event: "ingest";
       data: { phase: "started" | "done" | "failed"; detail: string };
@@ -289,7 +296,7 @@ export type StreamEvent =
         result: ResearchResponse;
       };
     }
-  | { event: "error"; data: { detail: string; error_type: string } };
+  | { event: "error"; data: { detail: string; error_type: string; failure?: FailureInfo } };
 
 /**
  * Stream a research run via SSE.
@@ -320,6 +327,7 @@ export async function streamResearch(
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
   let buf = "";
+  let terminal = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -332,10 +340,14 @@ export async function streamResearch(
       const raw = buf.slice(0, match.index);
       buf = buf.slice(match.index + match[0].length);
       const parsed = parseSseMessage(raw);
-      if (parsed) onEvent(parsed);
+      if (parsed) {
+        if (parsed.event === "completed" || parsed.event === "error") terminal = true;
+        onEvent(parsed);
+      }
       match = SSE_MESSAGE_BOUNDARY.exec(buf);
     }
   }
+  if (!terminal) throw new Error("Research stream ended before completion");
 }
 
 function parseSseMessage(raw: string): StreamEvent | null {

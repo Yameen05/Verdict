@@ -106,14 +106,15 @@ export function CalibrationPanel({
           </div>
         </div>
       )}
+      <p className="mt-3 text-xs text-slate-500">Outcome statistics include issued complete, partial AI, and rules-based predictions. Confidence calibration uses assessed confidence only.</p>
       {report && (
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
           Current call:{" "}
           <span className="font-semibold text-slate-100">
-            {report.report.recommendation}
+            {report.report.recommendation === "Failed" ? "Failed to assess" : report.report.recommendation}
           </span>{" "}
           for a {horizonLabel(horizon)} hold
-          {report.report.confidence !== null ? ` at ${report.report.confidence}/100 confidence.` : "."}
+          {report.report.confidence !== null ? ` at ${report.report.confidence}/100 confidence.` : report.report.assessment_status === "incomplete" ? ". Analysis incomplete; confidence not assessed." : "."}
         </p>
       )}
     </section>

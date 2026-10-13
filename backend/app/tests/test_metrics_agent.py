@@ -51,7 +51,7 @@ async def test_metrics_agent_unknown_ticker(monkeypatch):
     result = await metrics_agent_mod.metrics_agent({"ticker": "ZZZZ"})
     m: MetricsFindings = result["metrics"]
     assert m.status == "error"
-    assert "No metrics" in (m.error or "")
+    assert m.failure and m.failure.stage == "financial review"
 
 
 async def test_metrics_agent_unexpected_failure(monkeypatch):
@@ -63,4 +63,5 @@ async def test_metrics_agent_unexpected_failure(monkeypatch):
     result = await metrics_agent_mod.metrics_agent({"ticker": "AAPL"})
     m: MetricsFindings = result["metrics"]
     assert m.status == "error"
-    assert "kaboom" in (m.error or "")
+    assert "kaboom" not in (m.error or "")
+    assert m.failure

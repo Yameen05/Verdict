@@ -6,7 +6,6 @@ export interface AuthUser {
   id: number;
   email: string;
   role: "owner" | "member";
-  two_factor_enabled: boolean;
 }
 
 export interface InviteEntry {
@@ -29,22 +28,6 @@ export interface InviteCreated {
 export interface AuthSession {
   user: AuthUser;
   csrf_token: string;
-  requires_2fa_setup: boolean;
-}
-
-export interface LoginChallenge {
-  requires_2fa: true;
-  challenge_token: string;
-}
-
-export interface TwoFactorSetup {
-  secret: string;
-  provisioning_uri: string;
-  qr_code_data_uri: string;
-}
-
-export interface TwoFactorEnabled extends AuthSession {
-  recovery_codes: string[];
 }
 
 async function authJson<T>(
@@ -64,11 +47,19 @@ export interface AuthStatus {
   bootstrap_required: boolean;
   public_signup_enabled: boolean;
   password_reset_available: boolean;
+  google_client_id: string | null;
 }
 
 export const authApi = {
   status: () => authJson<AuthStatus>("/auth/status"),
   me: () => authJson<AuthSession>("/auth/me"),
+  googleNonce: () => authJson<{ nonce: string }>("/auth/google/nonce"),
+  googleLogin: (credential: string, inviteCode: string) =>
+    authJson<AuthSession>("/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ credential, invite_code: inviteCode }),
+    }),
   bootstrap: (
     email: string,
     password: string,
@@ -83,7 +74,7 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     }),
   login: (email: string, password: string) =>
-    authJson<AuthSession | LoginChallenge>("/auth/login", {
+    authJson<AuthSession>("/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -132,20 +123,6 @@ export const authApi = {
     });
     if (!res.ok) throw await errorFromResponse(res);
   },
-  verifyTwoFactor: (challengeToken: string, code: string) =>
-    authJson<AuthSession>("/auth/2fa/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challenge_token: challengeToken, code }),
-    }),
-  setupTwoFactor: () =>
-    authJson<TwoFactorSetup>("/auth/2fa/setup", { method: "POST" }),
-  enableTwoFactor: (code: string) =>
-    authJson<TwoFactorEnabled>("/auth/2fa/enable", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    }),
   logout: async () => {
     const res = await fetch(`${BASE_URL}/auth/logout`, {
       method: "POST",

@@ -1,3 +1,5 @@
+import { failedAssessment, predictionKind } from "../lib/assessment";
+import { researchError } from "../lib/researchErrors";
 import type { ResearchResponse } from "../api/client";
 
 interface Props {
@@ -26,6 +28,7 @@ export function ReportPanel({ result }: Props) {
 
   return (
     <section className="mt-6 space-y-4">
+      {failedAssessment(result) && <p className="text-sm text-amber-200">{predictionKind(result) === "none" ? "Incomplete collected facts · Failed to assess · no issued prediction" : `Analysis incomplete · original ${result.report.recommendation} prediction remains tracked` }</p>}
       {(report.company_overview || report.financial_health || report.key_risks.length > 0) && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
           <div className="grid gap-4 md:grid-cols-3">
@@ -251,7 +254,7 @@ function AgentCard({
         <h3 className="text-sm font-medium">{title}</h3>
         <StatusBadge status={status} />
       </div>
-      {error && <p className="mb-2 text-xs text-slate-500">{error}</p>}
+      {error && <p className="mb-2 text-xs text-slate-500">{status === "error" ? researchError(new Error(error)) : /^Cryptocurrencies/.test(error) ? error : "This source was unavailable."}</p>}
       {children}
     </div>
   );

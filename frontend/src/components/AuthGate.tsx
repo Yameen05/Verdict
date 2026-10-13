@@ -1,32 +1,24 @@
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import {
   authApi,
   setCsrfToken,
   type AuthSession,
   type AuthStatus,
-  type LoginChallenge,
-  type TwoFactorSetup,
 } from "../api/client";
 import { LegalModal } from "./LegalModal";
+import { GoogleSignIn } from "./GoogleSignIn";
 
 type View =
   | "loading"
   | "login"
   | "bootstrap"
   | "register"
-  | "verify"
-  | "setup"
-  | "recovery"
   | "forgot"
   | "reset"
   | "ready";
 
 interface Props {
   children: (session: AuthSession, logout: () => Promise<void>) => ReactNode;
-}
-
-function isChallenge(value: AuthSession | LoginChallenge): value is LoginChallenge {
-  return "requires_2fa" in value && value.requires_2fa;
 }
 
 export function AuthGate({ children }: Props) {
@@ -37,21 +29,16 @@ export function AuthGate({ children }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [challengeToken, setChallengeToken] = useState("");
-  const [code, setCode] = useState("");
-  const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
-  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [resetToken, setResetToken] = useState("");
-  const setupRequested = useRef(false);
 
   function acceptSession(next: AuthSession) {
     setCsrfToken(next.csrf_token);
     setSession(next);
-    setView(next.requires_2fa_setup ? "setup" : "ready");
+    setView("ready");
   }
 
   useEffect(() => {
@@ -92,17 +79,6 @@ export function AuthGate({ children }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    if (view !== "setup" || setup || setupRequested.current) return;
-    setupRequested.current = true;
-    setBusy(true);
-    authApi
-      .setupTwoFactor()
-      .then(setSetup)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setBusy(false));
-  }, [view, setup]);
-
   async function submitCredentials(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -119,14 +95,7 @@ export function AuthGate({ children }: Props) {
         acceptSession(await authApi.register(inviteCode.trim(), email, password));
         setInviteCode("");
       } else {
-        const result = await authApi.login(email, password);
-        if (isChallenge(result)) {
-          setChallengeToken(result.challenge_token);
-          setCode("");
-          setView("verify");
-        } else {
-          acceptSession(result);
-        }
+        acceptSession(await authApi.login(email, password));
       }
       setPassword("");
       setConfirmPassword("");
@@ -155,6 +124,23 @@ export function AuthGate({ children }: Props) {
     }
   }
 
+  async function signInWithGoogle(credential: string) {
+    setError("");
+    setNotice("");
+    setBusy(true);
+    try {
+      acceptSession(await authApi.googleLogin(credential, inviteCode.trim()));
+      setInviteCode("");
+      setPassword("");
+      setConfirmPassword("");
+    } catch (e) {
+      setError((e as Error).message);
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submitReset(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -178,45 +164,9 @@ export function AuthGate({ children }: Props) {
     }
   }
 
-  async function submitSecondFactor(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    setBusy(true);
-    try {
-      acceptSession(await authApi.verifyTwoFactor(challengeToken, code));
-      setChallengeToken("");
-      setCode("");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function enableTwoFactor(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    setBusy(true);
-    try {
-      const result = await authApi.enableTwoFactor(code);
-      setCsrfToken(result.csrf_token);
-      setSession(result);
-      setRecoveryCodes(result.recovery_codes);
-      setCode("");
-      setView("recovery");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function logout() {
     await authApi.logout();
     setSession(null);
-    setSetup(null);
-    setupRequested.current = false;
-    setRecoveryCodes([]);
     setView("login");
   }
 
@@ -224,80 +174,6 @@ export function AuthGate({ children }: Props) {
 
   if (view === "loading") {
     return <AuthShell title="Securing your session…" subtitle="Checking authentication state." />;
-  }
-
-  if (view === "setup") {
-    return (
-      <AuthShell
-        title="Protect your account"
-        subtitle="Two-factor authentication is required before financial research is unlocked."
-      >
-        {setup ? (
-          <form className="space-y-5" onSubmit={enableTwoFactor}>
-            <div className="rounded-xl bg-white p-4">
-              <img
-                src={setup.qr_code_data_uri}
-                alt="Authenticator QR code"
-                className="mx-auto h-52 w-52"
-              />
-            </div>
-            <div>
-              <p className="text-xs text-slate-400">
-                Scan with 1Password, Bitwarden, Google Authenticator, or another TOTP app.
-                If scanning fails, enter this key manually:
-              </p>
-              <code className="mt-2 block break-all rounded-lg border border-slate-700 bg-slate-950 p-3 text-center text-sm tracking-wider text-cyan-300">
-                {setup.secret}
-              </code>
-            </div>
-            <Field
-              label="6-digit verification code"
-              value={code}
-              onChange={setCode}
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              placeholder="123456"
-            />
-            <ErrorMessage message={error} />
-            <SubmitButton busy={busy} label="Enable two-factor authentication" />
-          </form>
-        ) : (
-          <p className="text-sm text-slate-400">{busy ? "Generating a secure key…" : error}</p>
-        )}
-      </AuthShell>
-    );
-  }
-
-  if (view === "recovery" && session) {
-    const text = recoveryCodes.join("\n");
-    return (
-      <AuthShell
-        title="Save your recovery codes"
-        subtitle="Each code works once. Store them in a password manager; they will not be shown again."
-      >
-        <div className="grid grid-cols-2 gap-2 rounded-xl border border-amber-700/50 bg-amber-950/20 p-4 font-mono text-sm text-amber-100">
-          {recoveryCodes.map((recoveryCode) => (
-            <span key={recoveryCode}>{recoveryCode}</span>
-          ))}
-        </div>
-        <div className="mt-4 flex gap-3">
-          <button
-            type="button"
-            onClick={() => navigator.clipboard.writeText(text)}
-            className="rounded-lg border border-slate-700 px-4 py-2 text-sm hover:bg-slate-800"
-          >
-            Copy codes
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("ready")}
-            className="flex-1 rounded-full bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-400"
-          >
-            I saved them securely
-          </button>
-        </div>
-      </AuthShell>
-    );
   }
 
   if (view === "forgot") {
@@ -376,38 +252,6 @@ export function AuthGate({ children }: Props) {
     );
   }
 
-  if (view === "verify") {
-    return (
-      <AuthShell
-        title="Two-factor verification"
-        subtitle="Enter your authenticator code or one unused recovery code."
-      >
-        <form className="space-y-4" onSubmit={submitSecondFactor}>
-          <Field
-            label="Verification code"
-            value={code}
-            onChange={setCode}
-            autoComplete="one-time-code"
-            placeholder="123456 or recovery code"
-          />
-          <ErrorMessage message={error} />
-          <SubmitButton busy={busy} label="Verify and sign in" />
-          <button
-            type="button"
-            onClick={() => {
-              setView("login");
-              setChallengeToken("");
-              setError("");
-            }}
-            className="w-full text-xs text-slate-400 hover:text-slate-200"
-          >
-            Back to password sign in
-          </button>
-        </form>
-      </AuthShell>
-    );
-  }
-
   const isBootstrap = view === "bootstrap";
   const isRegister = view === "register";
   const publicSignup = authStatus?.public_signup_enabled ?? false;
@@ -430,7 +274,9 @@ export function AuthGate({ children }: Props) {
           ? publicSignup
             ? "Free to join. Research runs are shared and daily quotas keep things fair."
             : "Paste the invite code you received to create your account."
-          : "Your research data is protected by password and authenticator verification."
+          : authStatus?.google_client_id
+          ? "Sign in with Google or your email to access your research."
+          : "Sign in with your email and password to access your research."
       }
     >
       <form className="space-y-4" onSubmit={submitCredentials}>
@@ -443,6 +289,10 @@ export function AuthGate({ children }: Props) {
             placeholder="Paste your invite code"
             minLength={8}
           />
+        )}
+        {!isBootstrap && authStatus?.google_client_id && (
+          <GoogleSignIn clientId={authStatus.google_client_id} disabled={busy}
+            onCredential={signInWithGoogle} />
         )}
         <Field
           label="Email"

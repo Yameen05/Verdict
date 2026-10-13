@@ -1,11 +1,13 @@
-"""End-to-end owner authentication and two-factor tests."""
+"""End-to-end password authentication and legacy-account compatibility tests."""
 
 from __future__ import annotations
 
-import pyotp
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.config import get_settings
+from app.persistence.db import User, UserSession, get_sessionmaker
 
 BOOTSTRAP_TOKEN = "test-bootstrap-token-with-at-least-32-characters"
 OWNER = {
@@ -14,8 +16,7 @@ OWNER = {
 }
 
 
-def _new_client(monkeypatch, *, require_2fa: bool) -> TestClient:
-    monkeypatch.setenv("REQUIRE_2FA", str(require_2fa).lower())
+def _new_client() -> TestClient:
     get_settings.cache_clear()
     from app.main import create_app
 
@@ -23,7 +24,7 @@ def _new_client(monkeypatch, *, require_2fa: bool) -> TestClient:
 
 
 def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
-    with _new_client(monkeypatch, require_2fa=False) as client:
+    with _new_client() as client:
         assert client.get("/auth/status").json()["bootstrap_required"] is True
         rejected = client.post(
             "/auth/bootstrap",
@@ -50,63 +51,59 @@ def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
         assert duplicate.status_code == 404
 
 
-def test_mandatory_totp_recovery_and_logout(monkeypatch):
-    with _new_client(monkeypatch, require_2fa=True) as client:
+@pytest.mark.parametrize("previously_enrolled", [False, True])
+def test_password_login_for_legacy_accounts(monkeypatch, previously_enrolled):
+    # Old deployment settings must not restore the removed requirement.
+    monkeypatch.setenv("REQUIRE_2FA", "true")
+    with _new_client() as client:
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
             json=OWNER,
         )
         assert created.status_code == 201
+        assert "requires_2fa_setup" not in created.json()
         csrf = created.json()["csrf_token"]
-        assert created.json()["requires_2fa_setup"] is True
-        assert client.get("/research/history/AAPL").status_code == 403
 
-        setup = client.post("/auth/2fa/setup", headers={"X-CSRF-Token": csrf})
-        assert setup.status_code == 200
-        assert setup.json()["qr_code_data_uri"].startswith("data:image/svg+xml;base64,")
+        async def restore_legacy_state():
+            async with get_sessionmaker()() as db:
+                user = await db.scalar(select(User))
+                user.totp_enabled = previously_enrolled
+                user.totp_secret_encrypted = "legacy-secret-with-no-decryption-key"
+                session = await db.scalar(select(UserSession))
+                session.mfa_verified = False
+                await db.commit()
 
-        code = pyotp.TOTP(setup.json()["secret"]).now()
-        enabled = client.post(
-            "/auth/2fa/enable",
-            headers={"X-CSRF-Token": csrf},
-            json={"code": code},
-        )
-        assert enabled.status_code == 200
-        recovery_codes = enabled.json()["recovery_codes"]
-        assert len(recovery_codes) == 10
+        client.portal.call(restore_legacy_state)
+        assert client.get("/auth/me").status_code == 200
         assert client.get("/research/history/AAPL").status_code == 200
-
-        csrf = enabled.json()["csrf_token"]
         assert client.post("/auth/logout", headers={"X-CSRF-Token": csrf}).status_code == 204
+        assert client.get("/research/history/AAPL").status_code == 401
+
+        rejected = client.post("/auth/login", json={**OWNER, "password": "wrong"})
+        assert rejected.status_code == 401
+        assert client.get("/research/history/AAPL").status_code == 401
+
         login = client.post("/auth/login", json=OWNER)
         assert login.status_code == 200
-        assert login.json()["requires_2fa"] is True
+        assert login.cookies.get("verdict_session")
+        assert "challenge_token" not in login.json()
+        assert "requires_2fa_setup" not in login.json()
+        assert "two_factor_enabled" not in login.json()["user"]
+        assert client.get("/research/history/AAPL").status_code == 200
+        assert client.post("/auth/logout").status_code == 403
+        assert client.post(
+            "/auth/logout", headers={"X-CSRF-Token": login.json()["csrf_token"]}
+        ).status_code == 204
 
-        recovered = client.post(
-            "/auth/2fa/verify",
-            json={
-                "challenge_token": login.json()["challenge_token"],
-                "code": recovery_codes[0],
-            },
-        )
-        assert recovered.status_code == 200
 
-        csrf = recovered.json()["csrf_token"]
-        client.post("/auth/logout", headers={"X-CSRF-Token": csrf})
-        second_login = client.post("/auth/login", json=OWNER).json()
-        reused = client.post(
-            "/auth/2fa/verify",
-            json={
-                "challenge_token": second_login["challenge_token"],
-                "code": recovery_codes[0],
-            },
-        )
-        assert reused.status_code == 401
+@pytest.mark.parametrize("route", ["setup", "enable", "verify"])
+def test_two_factor_endpoints_removed(client, route):
+    assert client.post(f"/auth/2fa/{route}", json={}).status_code == 404
 
 
 def test_state_changing_route_rejects_missing_csrf(monkeypatch):
-    with _new_client(monkeypatch, require_2fa=False) as client:
+    with _new_client() as client:
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
@@ -119,7 +116,7 @@ def test_state_changing_route_rejects_missing_csrf(monkeypatch):
 
 
 def test_validation_errors_do_not_reflect_credentials(monkeypatch):
-    with _new_client(monkeypatch, require_2fa=False) as client:
+    with _new_client() as client:
         secret = "this-value-must-never-be-reflected"
         response = client.post(
             "/auth/login",

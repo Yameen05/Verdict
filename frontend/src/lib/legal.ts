@@ -68,7 +68,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
         heading: "Eligibility and accounts",
         body: [
           "You must be at least 18 years old (or the age of majority where you live) to use the app.",
-          "You are responsible for keeping your password, two-factor device, and recovery codes secure, and for all activity on your account. Provide a real email address you control — it is used for account recovery and alert emails.",
+          "You are responsible for keeping your password secure, and for all activity on your account. Provide a real email address you control — it is used for account recovery and alert emails.",
         ],
       },
       {
@@ -98,12 +98,12 @@ export const LEGAL_DOCS: LegalDoc[] = [
     id: "privacy",
     label: "Privacy",
     title: "Privacy Policy",
-    updated: "July 13, 2026",
+    updated: "October 11, 2026",
     sections: [
       {
         heading: "What is stored",
         body: [
-          "Account data: your email address, an Argon2id hash of your password (never the password itself), an encrypted TOTP seed if you enable two-factor authentication, and keyed hashes of recovery codes, invites, sessions, and password-reset tokens.",
+          "Account data: your email address, an Argon2id hash if you set a password (never the password itself), your Google account identifier if you use Google sign-in, and hashes of invites, sessions, and password-reset tokens.",
           "Workspace data: your watchlist, positions, price alerts, chart levels, verdict watches, and the research runs you trigger (research runs for a ticker are shared across accounts on this deployment).",
           "Security log: authentication events (login, logout, resets, failures) with IP address and browser user-agent, kept to detect abuse.",
         ],
@@ -111,7 +111,7 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         heading: "Cookies",
         body: [
-          "The app sets one HttpOnly session cookie, used only to keep you signed in. There are no advertising cookies, no analytics trackers, and no third-party scripts.",
+          "The app uses an HttpOnly session cookie to keep you signed in. Google sign-in also uses a short-lived HttpOnly security cookie. When enabled, it loads Google Identity Services to authenticate you; Google's privacy policy applies to that service. The app does not add advertising cookies or analytics trackers.",
         ],
       },
       {

@@ -17,6 +17,7 @@ from app.observability.logging import get_logger
 from app.schemas.research import Headline, NewsFindings
 from app.services import sec_client
 from app.services.cache import TTLCache
+from app.services.failures import normalize_failure
 from app.services.news_client import Article, NewsAPIError, fetch_market_articles
 from app.services.sentiment import ScoredArticle, SentimentError, score_and_summarize
 
@@ -65,7 +66,7 @@ async def news_agent(state: ResearchState) -> dict:
             company_name = await sec_client.lookup_company_name(ticker)
         except ValueError as e:
             if settings.news_api_key:
-                return {"news": NewsFindings(status="error", error=str(e))}
+                return {"news": NewsFindings(status="error", error=normalize_failure(e, stage="news review").message, failure=normalize_failure(e, stage="news review"))}
             log.warning(
                 "company_lookup_failed_news_fallback",
                 extra={"ticker": ticker, "reason": str(e)},
@@ -75,14 +76,14 @@ async def news_agent(state: ResearchState) -> dict:
     try:
         articles = await _cached_fetch_articles(ticker, company_name)
     except NewsAPIError as e:
-        return {"news": NewsFindings(status="error", error=str(e))}
+        return {"news": NewsFindings(status="error", error=normalize_failure(e, stage="news review").message, failure=normalize_failure(e, stage="news review"))}
 
     if not articles:
         return {
             "news": NewsFindings(
                 status="ok",
-                sentiment_score=0.0,
-                summary=f"No recent market headlines found for {company_name}.",
+                sentiment_score=None,
+                summary=f"No recent market headlines found for {company_name}. News coverage is unavailable; this does not establish an absence of news or catalysts.",
                 article_count=0,
             )
         }
@@ -96,7 +97,8 @@ async def news_agent(state: ResearchState) -> dict:
             "news": NewsFindings(
                 status="ok",
                 sentiment_score=None,
-                summary=f"({len(articles)} recent headlines; sentiment scoring unavailable: {e})",
+                summary=f"{len(articles)} recent headlines; sentiment scoring unavailable. {normalize_failure(e).message}",
+                failure=normalize_failure(e, stage="news sentiment"),
                 article_count=len(articles),
                 top_headlines=[
                     Headline(

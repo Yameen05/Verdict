@@ -7,6 +7,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 
 from app.persistence.db import (
+    GoogleLoginNonce,
     LoginChallenge,
     PasswordResetToken,
     User,
@@ -58,16 +59,20 @@ async def test_purge_removes_only_expired_rows():
                     expires_at=now + offset,
                 )
             )
+            session.add(GoogleLoginNonce(
+                token_hash=token_digest(f"google-{tag}"), expires_at=now + offset,
+            ))
         await session.commit()
 
         assert await _count(session, UserSession) == 2
 
         removed = await purge_expired_auth_rows(session)
-        assert removed == 3
+        assert removed == 4
 
         assert await _count(session, UserSession) == 1
         assert await _count(session, LoginChallenge) == 1
         assert await _count(session, PasswordResetToken) == 1
+        assert await _count(session, GoogleLoginNonce) == 1
         # The surviving rows are the unexpired ones.
         survivor = await session.scalar(select(UserSession))
         assert survivor.token_hash == token_digest("session-live")

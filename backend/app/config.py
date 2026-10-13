@@ -1,5 +1,3 @@
-import base64
-import binascii
 from functools import lru_cache
 from typing import Literal
 
@@ -93,6 +91,8 @@ class Settings(BaseSettings):
     # API key for the LLM provider. If blank, falls back to openai_api_key so
     # existing OpenAI-only setups keep working with no env changes.
     llm_api_key: str = Field(default="")
+    # Space chat requests for low-quota free projects (one app worker).
+    llm_min_interval_seconds: float = Field(default=0, ge=0, le=60)
 
     # USD per 1M tokens for cost tracking. Defaults target OpenAI
     # gpt-4o-mini / text-embedding-3-small. Override when you swap providers.
@@ -111,13 +111,12 @@ class Settings(BaseSettings):
     # --- Owner authentication ---
     # One-time secret required only to create the first owner account.
     auth_bootstrap_token: str = Field(default="")
-    # Fernet key used to encrypt the TOTP seed. Generate with:
-    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    auth_encryption_key: str = Field(default="")
     session_cookie_secure: bool = Field(default=False)
-    # Open self-serve registration (no invite code). Off = invite-only.
+    # Open self-serve registration by default. Off = optional invite-only mode.
     # Fresh-run quotas still bound LLM spend when this is on.
-    public_signup_enabled: bool = Field(default=False)
+    public_signup_enabled: bool = Field(default=True)
+    # Google Identity Services web client ID. Blank disables Google sign-in.
+    google_client_id: str = Field(default="")
     # Password-reset links are only sent when SMTP is configured; tokens are
     # single-use and stored as digests, like sessions and invites.
     password_reset_token_minutes: int = Field(default=30, ge=5, le=120)
@@ -126,8 +125,6 @@ class Settings(BaseSettings):
     app_public_url: str = Field(default="")
     session_ttl_hours: int = Field(default=12, ge=1, le=168)
     session_idle_minutes: int = Field(default=30, ge=5, le=1440)
-    login_challenge_minutes: int = Field(default=5, ge=1, le=15)
-    require_2fa: bool = Field(default=True)
 
     # --- Free-tier protection: shared run cache + daily quotas ---
     # A research run for a ticker is served to everyone from the most recent
@@ -135,8 +132,9 @@ class Settings(BaseSettings):
     # (?fresh=true bypasses). Zero LLM cost for cache hits.
     research_cache_minutes: int = Field(default=360, ge=0)
     # Fresh (non-cached) runs allowed per user and across all users per UTC day.
-    daily_runs_per_user: int = Field(default=10, ge=1)
-    daily_runs_global: int = Field(default=40, ge=1)
+    # Finite personal-use ceiling; provider quotas and pacing apply separately.
+    daily_runs_per_user: int = Field(default=100, ge=1)
+    daily_runs_global: int = Field(default=100, ge=1)
 
     # --- Server-side alert evaluation ---
     # How often the background worker checks price alerts. 0 disables it
@@ -247,13 +245,6 @@ class Settings(BaseSettings):
             ("change", "replace", "generate")
         ):
             problems.append("AUTH_BOOTSTRAP_TOKEN must contain at least 32 characters")
-        encryption_key = self.auth_encryption_key.strip()
-        try:
-            decoded_key = base64.urlsafe_b64decode(encryption_key.encode("ascii"))
-        except (ValueError, UnicodeEncodeError, binascii.Error):
-            decoded_key = b""
-        if len(decoded_key) != 32:
-            problems.append("AUTH_ENCRYPTION_KEY must be a valid Fernet key")
         if "*" in self.cors_origins_list:
             problems.append("CORS_ORIGINS cannot contain *")
         # A default-route entry trusts every peer, which makes X-Forwarded-For

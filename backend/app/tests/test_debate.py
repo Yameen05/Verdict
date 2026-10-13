@@ -117,6 +117,11 @@ def test_build_evidence_skips_unusable_agents():
     assert out["evidence"] == []
 
 
+def test_no_headlines_cannot_become_neutral_news_evidence():
+    state = {"ticker": "AAPL", "news": NewsFindings(status="ok", sentiment_score=0.0, article_count=0)}
+    assert debate_mod.build_evidence(state)["evidence"] == []
+
+
 def test_build_evidence_includes_market_signals():
     state = {
         "ticker": "AAPL",

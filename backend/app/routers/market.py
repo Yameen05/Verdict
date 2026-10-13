@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Literal, cast
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,13 +23,24 @@ from app.services.metrics_client import (
     fetch_price_history,
     horizon_stats_from_closes,
 )
+from app.services.stock_directory import StockDirectory, get_stock_directory
 from app.services.timing import TimingAssessment, TimingError, assess_timing
 
 router = APIRouter()
 
+
+@router.get("/directory", response_model=StockDirectory)
+async def stock_directory() -> StockDirectory:
+    try:
+        return await get_stock_directory()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The full stock directory is temporarily unavailable. Popular stocks and manual ticker search still work.",
+        ) from exc
+
 PriceRange = Literal["1D", "5D", "1M", "3M", "6M", "1Y", "5Y"]
 PriceInterval = Literal["1M", "5M", "15M", "1H", "1D", "1W"]
-MAX_BACKTEST_TICKERS = 25
 _history_cache: TTLCache[tuple[list[PriceBar], str]] = TTLCache(60, maxsize=256)
 _quote_cache: TTLCache[tuple[PriceBar, str]] = TTLCache(10, maxsize=256)
 # 10 min; backtest + /ranges. Each entry is ~5 years of daily bars, so this
@@ -286,9 +298,7 @@ async def backtest(
     """Grade every past verdict at the horizon it committed to (see services/backtest)."""
     rows = await list_recent_runs(session, limit=min(max(limit, 1), 500))
 
-    scorable = [r for r in rows if r.price_at_run and r.recommendation != "Pending"]
-    tickers = list(dict.fromkeys(r.ticker.upper() for r in scorable))[:MAX_BACKTEST_TICKERS]
-    fetched = await asyncio.gather(*(_daily_history(t) for t in tickers))
-    histories = dict(zip(tickers, fetched, strict=True))
+    from app.services.track_record import grade_runs
 
-    return compute_backtest(rows, histories)
+    await grade_runs(session, rows)
+    return compute_backtest(rows, {})

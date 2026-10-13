@@ -1,6 +1,6 @@
 """The per-IP auth rate limit must survive a forged X-Forwarded-For.
 
-The limiter is what stands between an attacker and unlimited password/TOTP
+The limiter is what stands between an attacker and unlimited password
 guesses, so the address it keys on cannot be client-supplied.
 """
 

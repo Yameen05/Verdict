@@ -121,6 +121,25 @@ async def test_judge_full_verdict(monkeypatch):
     assert judge_mod.route_after_judge(out) == "__end__"
 
 
+async def test_missing_opponent_cannot_produce_complete_high_confidence_report(monkeypatch):
+    monkeypatch.setattr(judge_mod, "_client", lambda: _fake_openai_returning(_verdict_json(confidence=99)))
+    state = _state()
+    state["bear"] = DebateCase(stance="bear", status="error", error="Provider busy")
+    report = (await judge_mod.judge(state))["report"]
+    assert report.degraded is True
+    assert report.confidence is None
+    assert "negative case" in report.simple_summary
+
+
+async def test_failed_filing_review_is_disclosed_even_when_judge_returns_json(monkeypatch):
+    monkeypatch.setattr(judge_mod, "_client", lambda: _fake_openai_returning(_verdict_json()))
+    state = _state()
+    state["sec"] = SECFindings(status="error", error="Provider busy")
+    report = (await judge_mod.judge(state))["report"]
+    assert report.degraded is True
+    assert "filing review" in report.simple_summary
+
+
 async def test_judge_short_circuits_when_no_agents_usable():
     state = {
         "ticker": "AAPL",
@@ -129,15 +148,15 @@ async def test_judge_short_circuits_when_no_agents_usable():
         "metrics": MetricsFindings(status="error", error="unknown ticker"),
     }
     out = await judge_mod.judge(state)
-    assert out["report"].recommendation == "Pending"
+    assert out["report"].recommendation == "Failed"
     assert "No agent" in out["report"].justification
 
 
 async def test_judge_handles_invalid_json(monkeypatch):
     monkeypatch.setattr(judge_mod, "_client", lambda: _fake_openai_returning("not json"))
     out = await judge_mod.judge(_state())
-    assert out["report"].recommendation == "Pending"
-    assert "parse" in out["report"].justification
+    assert out["report"].recommendation == "Failed"
+    assert "unreadable report" in out["report"].justification
 
 
 async def test_judge_llm_failure_returns_fallback_verdict(monkeypatch):
@@ -148,14 +167,14 @@ async def test_judge_llm_failure_returns_fallback_verdict(monkeypatch):
     )
     out = await judge_mod.judge(_state())
     report: ResearchReport = out["report"]
-    assert report.recommendation in {"Buy", "Hold", "Sell"}
-    assert report.recommendation != "Pending"
-    assert report.confidence is not None
+    assert report.recommendation == "Failed"
+    assert report.confidence is None
     assert report.horizon_days == 14
-    assert report.horizon_outlook
+    assert report.horizon_outlook is None
     assert report.simple_summary
-    assert "temporarily rate-limited" in report.justification
-    assert "limited verdict" in report.justification
+    assert report.failures[0].kind == "provider_limit"
+    assert "short wait may not help" in report.justification
+    assert "No usable prediction was issued" in report.justification
     assert "OpenAIError" not in report.justification
     assert out["followup_question"] is None
 
@@ -168,8 +187,8 @@ async def test_judge_missing_credentials_gives_actionable_fallback(monkeypatch):
     )
     out = await judge_mod.judge(_state())
     report: ResearchReport = out["report"]
-    assert "provider key is missing" in report.justification
-    assert report.falsifiers[0].startswith("Add an LLM provider key")
+    assert report.failures[0].kind == "configuration"
+    assert "server configuration needs attention" in report.falsifiers[0]
 
 
 async def test_judge_requests_followup_once(monkeypatch):
@@ -239,3 +258,21 @@ async def test_followup_survives_retrieval_failure(monkeypatch):
     out = await judge_mod.followup(state)
     assert out["followup_question"] is None
     assert any(e.id == "sec:f0" for e in out["evidence"])
+
+
+async def test_successful_judge_explains_known_partial_failure(monkeypatch):
+    import httpx
+    from openai import APIStatusError
+
+    from app.services.failures import normalize_failure
+
+    error = APIStatusError("PRIVATE raw key", response=httpx.Response(503, request=httpx.Request("POST", "https://example.test")), body={})
+    state = _state()
+    state["bear"] = DebateCase(stance="bear", status="error", failure=normalize_failure(error, stage="bear case"))
+    monkeypatch.setattr(judge_mod, "_client", lambda: _fake_openai_returning(json.dumps({"recommendation":"Hold", "confidence":80, "simple_summary":"Mixed signals."})))
+    report = (await judge_mod.judge(state))["report"]
+    assert report.degraded and report.confidence is None
+    assert "bear case" in report.analysis_warning
+    assert "Google is temporarily busy" in report.simple_summary
+    assert "PRIVATE" not in report.model_dump_json()
+    assert report.failures[0].kind == "provider_busy"

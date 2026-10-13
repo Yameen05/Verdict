@@ -26,7 +26,9 @@ from app.schemas.research import SECFinding, SECFindings
 from app.services import sec_client, vectorstore
 from app.services.chunker import Chunk, chunk_filing
 from app.services.embeddings import embed_query
-from app.services.llm import make_llm_client
+from app.services.failures import normalize_failure
+from app.services.llm import chat_generation_options, make_llm_client
+from app.services.research_events import emit_progress
 
 log = get_logger(__name__)
 
@@ -38,6 +40,11 @@ CANONICAL_QUESTIONS: list[str] = [
 ]
 
 TOP_K = 4
+
+
+class FilingRetrievalError(RuntimeError):
+    """An unavailable index/embedding service, distinct from a chat failure."""
+
 
 _STOPWORDS = {
     "about",
@@ -96,17 +103,24 @@ async def _summarize(question: str, chunks: list[str]) -> str:
                 "content": f"Question: {question}\n\nExcerpts:\n{joined}",
             },
         ],
-        temperature=0.1,
-        max_tokens=200,
+        **chat_generation_options(0.1, max_tokens=200),
     )
     record_chat(model, resp)
-    return (resp.choices[0].message.content or "").strip()
+    answer = (resp.choices[0].message.content or "").strip()
+    if not answer:
+        raise RuntimeError("Empty filing answer")
+    if question in CANONICAL_QUESTIONS:
+        emit_progress({"kind": "filing_question", "index": CANONICAL_QUESTIONS.index(question)})
+    return answer
 
 
 async def _answer_one(ticker: str, question: str) -> tuple[SECFinding, str | None]:
     """Return (finding, accession) — accession comes from the first matched chunk if any."""
-    vector = await embed_query(question)
-    matches = await vectorstore.query(ticker, vector, top_k=TOP_K)
+    try:
+        vector = await embed_query(question)
+        matches = await vectorstore.query(ticker, vector, top_k=TOP_K)
+    except Exception as e:  # noqa: BLE001 - direct SEC reading can still work
+        raise FilingRetrievalError(str(e)) from e
     answer = await _summarize(question, [m.text for m in matches])
     accession = matches[0].metadata.get("accession") if matches else None
     return (
@@ -116,11 +130,7 @@ async def _answer_one(ticker: str, question: str) -> tuple[SECFinding, str | Non
 
 
 def _terms(question: str) -> list[str]:
-    return [
-        word
-        for word in re.findall(r"[a-z]{4,}", question.lower())
-        if word not in _STOPWORDS
-    ]
+    return [word for word in re.findall(r"[a-z]{4,}", question.lower()) if word not in _STOPWORDS]
 
 
 def _select_direct_chunks(chunks: list[Chunk], question: str) -> list[str]:
@@ -171,11 +181,20 @@ async def sec_agent(state: ResearchState) -> dict:
         return {"sec": SECFindings(status="skipped", error=CRYPTO_SKIP_REASON)}
 
     try:
-        results = await asyncio.gather(
-            *(_answer_one(ticker, q) for q in CANONICAL_QUESTIONS)
-        )
+        results = await asyncio.gather(*(_answer_one(ticker, q) for q in CANONICAL_QUESTIONS))
+    except FilingRetrievalError:
+        try:
+            return {"sec": await _direct_filing_fallback(ticker)}
+        except Exception as direct_error:  # noqa: BLE001
+            return {
+                "sec": SECFindings(
+                    status="error",
+                    error=normalize_failure(direct_error, stage="filing review").message,
+                    failure=normalize_failure(direct_error, stage="filing review"),
+                )
+            }
     except Exception as e:  # noqa: BLE001
-        return {"sec": SECFindings(status="error", error=str(e))}
+        return {"sec": SECFindings(status="error", error=normalize_failure(e, stage="filing review").message, failure=normalize_failure(e, stage="filing review"))}
 
     findings = [f for f, _ in results]
     accession = next((a for _, a in results if a), None)
@@ -188,16 +207,8 @@ async def sec_agent(state: ResearchState) -> dict:
                 "sec_direct_filing_fallback_failed",
                 extra={"ticker": ticker, "reason": str(e)},
             )
-        return {
-            "sec": SECFindings(
-                status="skipped",
-                error=(
-                    "No SEC filing sections were available for this ticker. "
-                    "Verdict tried automatic indexing and a direct filing read, "
-                    "but both were unavailable."
-                ),
-            )
-        }
+            failure = normalize_failure(e, stage="filing review")
+            return {"sec": SECFindings(status="error", error=failure.message, failure=failure)}
 
     return {
         "sec": SECFindings(

@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.config import get_settings
 from app.observability.cost import record_chat
 from app.observability.logging import get_logger
-from app.services.llm import llm_key_configured, make_llm_client
+from app.services.llm import chat_generation_options, llm_key_configured, make_llm_client
 from app.services.metrics_client import (
     MetricsClientError,
     fetch_days_to_earnings,
@@ -241,7 +241,7 @@ async def _llm_assessment(
             {"role": "system", "content": _SYSTEM.format(ticker=ticker, horizon=horizon_days)},
             {"role": "user", "content": user_payload},
         ],
-        temperature=0.2,
+        **chat_generation_options(0.2),
         response_format={"type": "json_object"},
     )
     record_chat(settings.llm_model, resp)

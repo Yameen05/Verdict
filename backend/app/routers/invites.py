@@ -191,7 +191,7 @@ async def register(
         invite.used_at = utc_now()
 
     user_session, raw_token = await create_session(
-        db, request, user, mfa_verified=not settings.require_2fa
+        db, request, user
     )
     await record_audit(
         db, request, "member_registered", user_id=user.id,

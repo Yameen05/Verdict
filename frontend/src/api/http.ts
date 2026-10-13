@@ -1,3 +1,4 @@
+import type { FailureInfo } from "../lib/researchErrors";
 /** Shared HTTP core: base URL, CSRF header state, and JSON helpers. */
 
 export const BASE_URL = import.meta.env.VITE_API_URL ?? "/api";
@@ -16,6 +17,10 @@ export function requestHeaders(extra: Record<string, string> = {}): HeadersInit 
   return csrfToken ? { ...extra, "X-CSRF-Token": csrfToken } : extra;
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public failure?: FailureInfo) { super(message); }
+}
+
 export async function errorFromResponse(res: Response): Promise<Error> {
   const text = await res.text();
   let detail = text;
@@ -25,6 +30,9 @@ export async function errorFromResponse(res: Response): Promise<Error> {
       errors?: Array<{ loc?: unknown; msg?: unknown }>;
       request_id?: unknown;
     };
+    if (parsed.detail && typeof parsed.detail === "object" && "kind" in parsed.detail) {
+      return new ApiError("Request failed", res.status, parsed.detail as FailureInfo);
+    }
     if (typeof parsed.detail === "string") {
       detail = parsed.detail;
       if (detail === "Validation error" && Array.isArray(parsed.errors)) {
@@ -46,7 +54,7 @@ export async function errorFromResponse(res: Response): Promise<Error> {
   } catch {
     // Keep the original response text when it is not JSON.
   }
-  return new Error(`${res.status} ${res.statusText}: ${detail}`);
+  return new ApiError(`${res.status} ${res.statusText}: ${detail}`, res.status);
 }
 
 export async function getJson<T>(path: string): Promise<T> {
