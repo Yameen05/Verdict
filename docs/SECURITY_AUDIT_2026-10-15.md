@@ -217,7 +217,7 @@ credentials, DNS policy and actual delivery still require the operator.
 | H05 / High conditional exposure / fixed | Backend Docker context did not exclude DB/data directories or arbitrary `.env.*` variants; `COPY . .` could bake local sensitive files into an image. Git ignores are not Docker ignores. | Both build contexts now exclude env variants, DB/WAL/SQLite files, data, private keys and Git metadata. No claim that a previously built image contained real credentials; old image layers/registries require operator review if sensitive files were present. |
 | H06 / Low / fixed | Origin/host errors and centralized 500 responses could bypass the inner security-header middleware. Cross-site fetch metadata was ignored if Origin was absent. | Headers wrap all responses; cross-site writes fail. Host/origin/error-header tests and production smoke pass. Non-browser clients may omit Origin; authenticated writes still require CSRF. |
 | H07 / Medium / hardened | Model/tool/doc inputs can carry prompt injection; tool arguments were assumed to be a JSON object and any requested function name was effectively treated as filing search. | System prompts mark supplied material untrusted. Only `search_filing` is executable, query type/length is bounded, and malformed arguments fall back safely. Tools cannot browse arbitrary URLs, read files or trade. Prompt instructions cannot guarantee semantic safety; grounded output remains fallible. |
-| H08 / Medium / fixed | CI actions/base tags were mutable and Python transitive dependencies resolved anew. | Inspected action/base manifest digests pinned; Linux runtime transitive versions constrained. Dependabot remains configured. Distribution updates intentionally refresh at build time; retain reviewed release images, not only source hashes. |
+| H08 / Medium / fixed | CI actions/base tags were mutable and Python transitive dependencies resolved anew. | Inspected top-level action/base manifest digests pinned; Linux runtime transitive versions constrained. Composite actions may have their own dependencies, which still require vendor/update review. Dependabot remains configured. Distribution updates intentionally refresh at build time; retain reviewed release images, not only source hashes. |
 | H09 / Medium / fixed | `.gitleaks.toml` excluded the entire example env file, allowing a real pasted credential to bypass scanning. | Allowlist now matches only documented placeholder/boolean false-positive text in that file. Full Git history and staged changes scanned with redaction. |
 
 Two additional small boundary defects were fixed in the final review:
@@ -260,7 +260,9 @@ The initial local runtime-image scans found **668 package/advisory entries**:
 backend 538 (3 critical, 106 high, 212 medium, 214 low, 3 unknown), frontend 130
 (40 high, 62 medium, 26 low, 2 unknown). After updates/removal the frontend reports
 zero; backend reports **164: 44 high, 58 medium, 61 low, 1 unknown, zero critical**.
-All remaining entries have no fixed version in the current scanner/vendor feed.
+All remaining entries have no fixed version for the current stable distribution
+in the scanner/vendor feed. Upstream/testing releases can have fixes that are
+not yet available as supported trixie packages.
 The inventory lists each of them, not just an aggregate or severity cutoff.
 Repeated CVEs across related binary packages count as multiple entries.
 
@@ -277,6 +279,35 @@ for the rest. The full scan artifacts remain visible.
 The native local scans use Linux ARM64 images. CI builds/scans Linux AMD64.
 Architecture-specific inventories can differ; the CI artifacts are authoritative
 for its own images. Published deployment images must be scanned separately.
+
+### Primary-source review of the eight unique remaining high CVEs
+
+The 44 high package matches map to these **eight** CVEs. Debian's tracker was
+checked directly on 2026-10-15 and marks their trixie source packages vulnerable,
+with no stable fix currently available (several are categorized as minor/no-DSA
+or postponed by Debian). Scanner severity and application reachability are
+different questions. The runtime runs as UID 10001; the supported Compose setup
+also drops all capabilities, prevents privilege gain and makes the root filesystem
+read-only. The app has no request-driven shell execution, mounting, ACL-management,
+Perl archive extraction or uploaded terminfo surface.
+
+| Advisory / source package | Relevant precondition and current evidence | Status |
+| --- | --- | --- |
+| [CVE-2025-69720](https://security-tracker.debian.org/tracker/CVE-2025-69720) / ncurses | Overflow in `infocmp` analysis; the binary exists, but the app does not execute it or accept terminfo uploads. | Stable fix unavailable; no reviewed app route reaches this CLI. |
+| [CVE-2026-16742](https://security-tracker.debian.org/tracker/CVE-2026-16742) / systemd | Requires a locally logged-in homed-managed user and systemd-homed. The binary is absent at `/usr/lib/systemd/systemd-homed`; the container runs Gunicorn, not systemd. | Library/source-package match; described service precondition absent. |
+| [CVE-2026-54369](https://security-tracker.debian.org/tracker/CVE-2026-54369) / acl | A privileged caller follows attacker-controlled paths through pathname ACL functions. No reviewed app code manages ACLs or calls those functions. | Stable ABI update pending; no application exploit established. |
+| [CVE-2026-76642](https://security-tracker.debian.org/tracker/CVE-2026-76642) / util-linux | Privileged mount helper/post-hook path. Mount binaries exist, but no application shell/mount path or required privilege is provided by supported Compose. | Stable fix unavailable; privileges restricted. |
+| [CVE-2026-78408](https://security-tracker.debian.org/tracker/CVE-2026-78408) / util-linux | A privileged operator invokes `nsenter --join-cgroup` on an attacker-controlled target. `nsenter` exists but the app never calls it. | Stable fix unavailable; operator should not add this privileged workflow. |
+| [CVE-2026-78409](https://security-tracker.debian.org/tracker/CVE-2026-78409) / util-linux | Local fstab-authorized `X-mount.subdir` operation on relevant newer kernels. No mount/fstab editing endpoint or mount capability is exposed. | Stable fix unavailable; deployment/host changes could alter preconditions. |
+| [CVE-2026-78410](https://security-tracker.debian.org/tracker/CVE-2026-78410) / util-linux | Restricted privileged bind mounts with attacker-controlled source ancestors and X-mount hooks. No reviewed app path provides that operation. | Stable fix unavailable; capability/no-new-privileges controls retained. |
+| [CVE-2026-9538](https://security-tracker.debian.org/tracker/CVE-2026-9538) / perl | Memory exhaustion in Perl `Archive::Tar` parsing. The module is absent at both conventional 5.40/5.40.1 paths, and the app has no Perl archive-processing path. | Source-package advisory; described module/use preconditions not found. |
+
+These are bounded reachability observations, **not** VEX certification, exploit
+proofs, or authorization to accept risk. They do not cover an arbitrary-code
+compromise, unexpected native-library behavior, or a different deployment.
+Mixing unstable system packages into stable Debian solely to remove scanner
+entries would add compatibility/update risk; this audit kept supported stable
+updates and retained every advisory for review.
 
 ## Controls verified without needing a new fix
 
@@ -393,8 +424,8 @@ for its own images. Published deployment images must be scanned separately.
 ## Validation and runtime separation
 
 Validation commands and their current results are recorded in
-[validation.json](security-audit/validation.json); CI/PR links are added to this
-change set after the remote run completes. The meaningful local release test
+[validation.json](security-audit/validation.json); The [draft PR](https://github.com/Yameen05/Verdict/pull/46) Checks tab provides
+the remote CI results for its exact revision. The meaningful local release test
 uses only synthetic accounts and fresh disposable volumes, with no real provider
 keys and no outbound mail. It tests the reviewed source/image rather than the
 user's existing app database.
