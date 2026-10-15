@@ -146,7 +146,7 @@ async def google_login(
                     detail="This email already has an account. Use its existing sign-in method.",
                 )
         else:
-            if not await db.scalar(select(func.count(User.id))):
+            if not await db.scalar(select(func.count(User.id)).where(User.role == "owner")):
                 raise HTTPException(status_code=403, detail="The owner must finish account setup first")
             code = body.invite_code.strip()
             if code:

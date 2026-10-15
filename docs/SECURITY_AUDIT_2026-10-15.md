@@ -41,9 +41,12 @@ unavailable. Google signup already had a first-account guard.
 
 **Fix:** Password registration requires an existing owner before admitting any
 member. Existing owner/user records and the unique owner-key protection remain.
+Bootstrap/status check for an actual owner, so member rows left by the old
+pre-owner signup path can be preserved while the token holder creates the owner.
 **Validation:** A fresh database with public signup enabled returns 403 for
 registration and still reports bootstrap required; integrated production test
-then creates the owner successfully. Concurrent bootstrap remains protected by
+then creates the owner successfully. A legacy pre-owner-member regression verifies token-authorized recovery without
+deleting that member. Concurrent bootstrap remains protected by
 `users.singleton_key` uniqueness.
 
 ### S02 — Medium — password invites were not redeemed atomically — fixed

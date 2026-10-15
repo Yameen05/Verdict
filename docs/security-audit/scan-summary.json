@@ -1,10 +1,10 @@
 {
   "backend": {
     "scanner": "Trivy 0.76.0",
-    "scan_created": "2026-10-15T15:36:29.184434-04:00",
-    "image_id": "sha256:701bb4b2b85d99f0b3e9084452bc5c48388ced1c4874d480afd16ffb5d6bb1af",
+    "scan_created": "2026-10-15T15:49:27.874466-04:00",
+    "image_id": "sha256:a407c2a2ad9777f119b1fec1ae98bdf18bae28e7e8095cb1e4ed93af7d68a695",
     "image_digests": [
-      "verdict-security-backend@sha256:701bb4b2b85d99f0b3e9084452bc5c48388ced1c4874d480afd16ffb5d6bb1af"
+      "verdict-security-backend@sha256:a407c2a2ad9777f119b1fec1ae98bdf18bae28e7e8095cb1e4ed93af7d68a695"
     ],
     "os": {
       "Family": "debian",
@@ -55,6 +55,6 @@
     "container-advisories-before.csv": "14b1c931972daab6323f9b9be2939751e49ef9e18142a01fd807ac16027125ec",
     "pip-audit.json": "3590352c9e216566ef58f9f359cbe29fcd49f2850c5e1ddaafcdbbf0f12137f7",
     "container-advisories-after.csv": "bd194802fb994b773afa69dd0c8741a902eff69bbaa76e39bff4e11e55d62e70",
-    "validation.json": "989d5c8d910253ef06f146e4f72692175ccb8fb2e56fc903b7ad737af39df96f"
+    "validation.json": "4396968f58a32efbeccbf8914714bf660deaf49134a3a0e0497783d6dd6cb265"
   }
 }

@@ -45,7 +45,7 @@ class LoginRequest(BaseModel):
 
 @router.get("/status")
 async def auth_status(db: AsyncSession = Depends(session_scope)) -> dict:
-    count = await db.scalar(select(func.count(User.id)))
+    count = await db.scalar(select(func.count(User.id)).where(User.role == "owner"))
     settings = get_settings()
     return {
         "bootstrap_required": count == 0,
@@ -71,7 +71,7 @@ async def bootstrap(
         # Do not reveal whether the server has a bootstrap token configured.
         raise HTTPException(status_code=404, detail="Not found")
 
-    count = await db.scalar(select(func.count(User.id)))
+    count = await db.scalar(select(func.count(User.id)).where(User.role == "owner"))
     if count:
         raise HTTPException(status_code=404, detail="Not found")
 

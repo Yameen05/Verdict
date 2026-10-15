@@ -29,9 +29,9 @@ AUTH_BOOTSTRAP_TOKEN=YOUR_UNIQUE_RANDOM_VALUE
 Replace the example domain with your actual domain. Generate the bootstrap token
 with `openssl rand -base64 48`; put it in the environment file/secret manager,
 never a command-line argument, frontend variable, report, or Git commit. The app
-rejects insecure production settings. Bootstrap is allowed only on an empty
-account database, and the database's unique owner key prevents concurrent owner
-creation. Password or Google signup cannot precede owner setup.
+rejects insecure production settings. Bootstrap is allowed only while no owner exists, and the database's unique
+owner key prevents concurrent owner creation. Pre-owner member rows from an
+older release can be preserved while the token holder completes owner setup. Password or Google signup cannot precede owner setup.
 
 Confirm data-provider rights before enabling public access. NewsAPI's free
 Developer plan excludes staging/production (including internal production);

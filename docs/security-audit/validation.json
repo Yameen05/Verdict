@@ -2,7 +2,7 @@
   "date": "2026-10-15",
   "checked_at_utc": "2026-10-15T19:37:20.065435+00:00",
   "baseline_commit": "c8fca4045d3c807ba4c208e15831394e88dfa500",
-  "source_files_sha256": "b10ead42490c276dfaa3424eaf0819c1346354241ac3418f81524b013111100c",
+  "source_files_sha256": "b2994abda9d97c28f6202541d0620df0db1fdc075a457842a4440ed3a7ae06f9",
   "checks": [
     {
       "command": "ruff check backend/app scripts",
@@ -10,7 +10,7 @@
     },
     {
       "command": "cd backend && ../.venv/bin/python -m pytest -q",
-      "result": "373 passed in 18.28s"
+      "result": "374 passed in 18.66s"
     },
     {
       "command": "bandit -q -r backend/app -x backend/app/tests",

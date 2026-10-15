@@ -234,3 +234,22 @@ def test_startup_validation_does_not_dump_secret_configuration():
 def test_cors_origins_canonicalize_trailing_slash():
     settings = Settings(_env_file=None, **(SECURE | {"cors_origins": "https://verdict.example.com/", "app_public_url": "https://verdict.example.com/"}))
     assert settings.cors_origins_list == ["https://verdict.example.com"]
+
+
+async def test_owner_setup_recovers_pre_owner_members_without_deleting_them():
+    from app.security import hash_password
+    with TestClient(create_app()) as c:
+        async with get_sessionmaker()() as db:
+            db.add(User(email="legacy-member@example.com", password_hash=hash_password("A-legacy-test-password-123"),
+                        role="member", singleton_key=42))
+            await db.commit()
+        assert c.get("/auth/status").json()["bootstrap_required"] is True
+        response = c.post("/auth/bootstrap", headers={
+            "X-Bootstrap-Token": "test-bootstrap-token-with-at-least-32-characters",
+        }, json={"email": "owner@example.com", "password": "A-strong-test-password-123"})
+        assert response.status_code == 201
+        async with get_sessionmaker()() as db:
+            users = (await db.scalars(select(User))).all()
+            assert {u.email: u.role for u in users} == {
+                "legacy-member@example.com": "member", "owner@example.com": "owner",
+            }
