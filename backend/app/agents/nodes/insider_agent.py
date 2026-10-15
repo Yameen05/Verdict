@@ -80,7 +80,7 @@ async def insider_agent(state: ResearchState) -> dict:
     except ValueError as e:  # unknown ticker
         return {"insider": InsiderFindings(status="error", error="The insider review was unavailable.", failure=normalize_failure(e, stage="insider review"))}
     except InsiderClientError as e:
-        log.warning("insider_unavailable", extra={"ticker": ticker, "reason": str(e)})
+        log.warning("insider_unavailable", extra={"ticker": ticker, "error_type": type(e).__name__})
         return {"insider": InsiderFindings(status="skipped", error="The insider review was unavailable.", failure=normalize_failure(e, stage="insider review"))}
     except Exception as e:  # noqa: BLE001
         log.exception("insider_unexpected_failure", extra={"ticker": ticker})

@@ -276,7 +276,7 @@ async def _stats_for_horizon(
     except Exception as e:  # noqa: BLE001 - a missing window should not break chat
         log.warning(
             "ask_horizon_stats_unavailable",
-            extra={"ticker": ticker, "horizon_days": days, "reason": str(e)},
+            extra={"ticker": ticker, "horizon_days": days, "error_type": type(e).__name__},
         )
         return None
 

@@ -1,5 +1,7 @@
+import ipaddress
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,6 +12,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     openai_api_key: str = Field(default="", description="OpenAI API key")
@@ -131,7 +134,8 @@ class Settings(BaseSettings):
     # stored run within this window instead of re-running the pipeline
     # (?fresh=true bypasses). Zero LLM cost for cache hits.
     research_cache_minutes: int = Field(default=360, ge=0)
-    # Fresh (non-cached) runs allowed per user and across all users per UTC day.
+    # Fresh research, timing/day-trade assessments, chat and filing operations
+    # allowed per user and globally per UTC day. Cache hits remain free.
     # Finite personal-use ceiling; provider quotas and pacing apply separately.
     daily_runs_per_user: int = Field(default=100, ge=1)
     daily_runs_global: int = Field(default=100, ge=1)
@@ -148,6 +152,9 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="")
     smtp_from: str = Field(default="")
     smtp_starttls: bool = Field(default=True)
+    smtp_ssl: bool = Field(default=False)
+    max_concurrent_requests: int = Field(default=8, ge=1, le=64)
+    max_request_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
 
     # Reverse proxies whose X-Forwarded-For header may be believed, as a
     # comma-separated list of IPs or CIDRs. The default covers loopback and the
@@ -163,8 +170,8 @@ class Settings(BaseSettings):
     rate_limit_research: str = Field(default="30/minute")
     rate_limit_filings: str = Field(default="60/minute")
     rate_limit_auth: str = Field(default="5/minute")
-    # The day-trade desk runs a multi-agent LLM assessment per cache miss and
-    # has no daily-run quota behind it, so it gets its own tighter limit.
+    # Day-trade cache misses also reserve the shared daily operation budget;
+    # this tighter per-IP limit dampens bursts.
     rate_limit_daytrade: str = Field(default="20/minute")
     # Shared limiter storage, e.g. redis://localhost:6379/0. Blank keeps the
     # per-process in-memory backend (fine for a single worker).
@@ -176,7 +183,7 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def trusted_proxy_ips_list(self) -> list[str]:
@@ -245,16 +252,51 @@ class Settings(BaseSettings):
             ("change", "replace", "generate")
         ):
             problems.append("AUTH_BOOTSTRAP_TOKEN must contain at least 32 characters")
-        if "*" in self.cors_origins_list:
-            problems.append("CORS_ORIGINS cannot contain *")
+        def secure_origin(value: str) -> bool:
+            try:
+                parsed = urlsplit(value)
+                return bool(parsed.scheme == "https" and parsed.hostname and parsed.port != 0
+                            and not parsed.username and not parsed.password
+                            and parsed.path in ("", "/") and not parsed.query
+                            and not parsed.fragment and "*" not in value)
+            except ValueError:
+                return False
+        if not self.cors_origins_list or any(not secure_origin(o) for o in self.cors_origins_list):
+            problems.append("CORS_ORIGINS must list explicit HTTPS origins")
+        if self.app_public_url and (not secure_origin(self.app_public_url)
+                                   or self.app_public_url.rstrip("/") not in self.cors_origins_list):
+            problems.append("APP_PUBLIC_URL must be an allowed HTTPS origin")
+        if self.smtp_host.strip():
+            if not self.smtp_from.strip() or not self.app_public_url.strip():
+                problems.append("SMTP requires SMTP_FROM and APP_PUBLIC_URL")
+            if not (self.smtp_starttls or self.smtp_ssl):
+                problems.append("SMTP must encrypt password-reset links with TLS")
+            if self.smtp_ssl and self.smtp_starttls:
+                problems.append("Choose SMTP_SSL or SMTP_STARTTLS, not both")
+            if bool(self.smtp_username.strip()) != bool(self.smtp_password):
+                problems.append("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
+        for value in (self.smtp_from, self.smtp_username, self.smtp_host):
+            if "\r" in value or "\n" in value:
+                problems.append("SMTP fields cannot contain newlines")
+        for name, base in (("LLM_BASE_URL", self.llm_base_url),
+                           ("EMBEDDING_BASE_URL", self.embedding_base_url)):
+            if base:
+                try:
+                    parsed = urlsplit(base)
+                    valid = parsed.scheme == "https" and parsed.hostname and not parsed.username and not parsed.password and not parsed.query and not parsed.fragment
+                except ValueError:
+                    valid = False
+                if not valid:
+                    problems.append(f"{name} must be an HTTPS URL without credentials or query")
         # A default-route entry trusts every peer, which makes X-Forwarded-For
         # (and therefore every per-IP rate limit) client-controlled.
-        if any(
-            entry.strip() in {"0.0.0.0/0", "::/0", "*"}
-            for entry in self.trusted_proxy_ips.split(",")
-        ):
-            problems.append("TRUSTED_PROXY_IPS cannot trust every address")
-        if "*" in self.allowed_hosts_list or not self.allowed_hosts_list:
+        for entry in self.trusted_proxy_ips_list:
+            try:
+                if ipaddress.ip_network(entry, strict=False).prefixlen == 0:
+                    problems.append("TRUSTED_PROXY_IPS cannot trust every address")
+            except ValueError:
+                problems.append("TRUSTED_PROXY_IPS must contain valid IP addresses or CIDRs")
+        if any("*" in h or "://" in h or "/" in h for h in self.allowed_hosts_list) or not self.allowed_hosts_list:
             problems.append("ALLOWED_HOSTS must explicitly list deployment hosts")
         if self.docs_enabled:
             problems.append("DOCS_ENABLED must be false")

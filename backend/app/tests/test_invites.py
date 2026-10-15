@@ -66,16 +66,16 @@ def test_register_password_rules(client):
 
     with TestClient(create_app()) as friend:
         for password, message in (
-            ("Abcd1", "at least 6 characters"),
-            ("abcde1", "capital letter"),
-            ("Abcdef", "number"),
+            ("Abcd1", "at least 15 characters"),
+            ("longlowercasepassword1", "capital letter"),
+            ("Longuppercasepassword", "number"),
         ):
             rejected = _register(friend, code, password=password)
             assert rejected.status_code == 422
             assert message in rejected.text
 
-        # Six characters are enough; failed attempts leave the invite usable.
-        accepted = _register(friend, code, password="Abcde1")
+        # Fifteen characters are enough; failed attempts leave the invite usable.
+        accepted = _register(friend, code, password="A-test-pass-123")
         assert accepted.status_code == 201, accepted.text
 
 
@@ -87,7 +87,7 @@ def test_register_allows_email_name_in_password(client):
     from app.main import create_app
 
     with TestClient(create_app()) as friend:
-        accepted = _register(friend, code, password="Friend1")
+        accepted = _register(friend, code, password="Friend-long-password1")
         assert accepted.status_code == 201, accepted.text
 
 

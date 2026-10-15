@@ -126,13 +126,14 @@ def test_google_links_existing_gmail_without_replacing_password(client, google, 
     _enable_signup(monkeypatch)
     with TestClient(client.app) as visitor:
         created = visitor.post("/auth/register", json={
-            "email": "member@gmail.com", "password": "Password1",
+            "email": "member@gmail.com", "password": "A-long-Password123",
         }).json()
+        visitor.headers["X-CSRF-Token"] = created["csrf_token"]
         linked = _login(visitor, google)
         assert linked.status_code == 200, linked.text
         assert linked.json()["user"]["id"] == created["user"]["id"]
         assert visitor.post("/auth/login", json={
-            "email": "member@gmail.com", "password": "Password1",
+            "email": "member@gmail.com", "password": "A-long-Password123",
         }).status_code == 200
         # A different Google subject cannot claim this account through its email.
         assert _login(visitor, google, sub="another-subject").status_code == 409
@@ -142,7 +143,11 @@ def test_google_does_not_link_existing_third_party_email(client, google):
     with TestClient(client.app) as visitor:
         rejected = _login(visitor, google, email="owner@example.com")
         assert rejected.status_code == 409
-        # Workspace's signed hosted-domain claim proves ownership.
+        # Hosted-domain claims alone cannot link an existing password account.
+        unlinked = _login(visitor, google, email="owner@example.com", hd="example.com")
+        assert unlinked.status_code == 409
+        visitor.cookies.update(client.cookies)
+        visitor.headers["X-CSRF-Token"] = client.headers["X-CSRF-Token"]
         accepted = _login(visitor, google, email="owner@example.com", hd="example.com")
         assert accepted.status_code == 200
         assert accepted.json()["user"]["role"] == "owner"
@@ -250,3 +255,13 @@ def test_google_rejects_cross_origin_login(client, google):
     result = client.post("/auth/google", headers={"Origin": "https://attacker.example"},
                          json={"credential": google(nonce)})
     assert result.status_code == 403
+
+
+def test_google_cannot_attach_to_a_pre_registered_password_account(client, google, monkeypatch):
+    _enable_signup(monkeypatch)
+    with TestClient(client.app) as attacker:
+        assert attacker.post("/auth/register", json={
+            "email": "member@gmail.com", "password": "A-long-attacker-password-123",
+        }).status_code == 201
+    with TestClient(client.app) as actual_email_owner:
+        assert _login(actual_email_owner, google).status_code == 409

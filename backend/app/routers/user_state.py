@@ -10,11 +10,12 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence import user_state as store
-from app.persistence.db import session_scope
+from app.persistence.db import User, session_scope
 from app.security import AuthContext, require_authenticated
 
 router = APIRouter()
@@ -29,6 +30,19 @@ def _validate_ticker(raw: str) -> str:
     if not ticker or len(ticker) > 12 or not ticker.replace(".", "").replace("-", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid ticker")
     return ticker
+
+
+async def lock_user_state(session: AsyncSession, user_id: int) -> None:
+    # Serialize read/count/write caps and upserts without changing account data.
+    await session.execute(update(User).where(User.id == user_id)
+                          .values(updated_at=User.updated_at))
+
+
+async def cap_rows(session: AsyncSession, model, user_id: int, maximum: int) -> None:
+    count = await session.scalar(select(func.count()).select_from(model)
+                                 .where(model.user_id == user_id))
+    if count >= maximum:
+        raise HTTPException(400, f"This workspace is capped at {maximum} saved items")
 
 
 # ----- Watchlist -----
@@ -52,6 +66,7 @@ async def add_to_watchlist(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ) -> dict:
+    await lock_user_state(session, auth.user.id)
     ticker = _validate_ticker(body.ticker)
     current = await store.list_watchlist(session, auth.user.id)
     if ticker not in current and len(current) >= MAX_WATCHLIST:
@@ -74,10 +89,11 @@ async def remove_from_watchlist(
 
 
 class PositionBody(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
     ticker: str
     amount_usd: float = Field(gt=0, le=100_000_000)
     buy_date: str
-    buy_price: float | None = Field(default=None, gt=0)
+    buy_price: float | None = Field(default=None, gt=0, le=100_000_000)
 
 
 class PositionResponse(BaseModel):
@@ -119,6 +135,9 @@ async def save_position(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ) -> dict:
+    await lock_user_state(session, auth.user.id)
+    if await store.get_position(session, auth.user.id, _validate_ticker(body.ticker)) is None:
+        await cap_rows(session, store.Position, auth.user.id, 100)
     row = await store.upsert_position(
         session,
         auth.user.id,
@@ -203,6 +222,7 @@ async def create_alert(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ) -> dict:
+    await lock_user_state(session, auth.user.id)
     existing = await store.list_alerts(session, auth.user.id)
     if len(existing) >= MAX_ALERTS:
         raise HTTPException(status_code=400, detail=f"Alerts are capped at {MAX_ALERTS}")
@@ -264,6 +284,7 @@ async def add_level(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ) -> dict:
+    await lock_user_state(session, auth.user.id)
     ticker = _validate_ticker(body.ticker)
     current = await store.list_levels(session, auth.user.id, ticker)
     price = round(body.price, 2)
@@ -271,6 +292,8 @@ async def add_level(
         raise HTTPException(
             status_code=400, detail=f"Levels are capped at {MAX_LEVELS_PER_TICKER} per ticker"
         )
+    if price not in current:
+        await cap_rows(session, store.ChartLevel, auth.user.id, 200)
     await store.add_level(session, auth.user.id, ticker, price)
     return {"prices": await store.list_levels(session, auth.user.id, ticker)}
 
@@ -311,6 +334,9 @@ async def set_verdict_watch(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ) -> dict:
+    await lock_user_state(session, auth.user.id)
+    if await store.get_verdict_watch(session, auth.user.id, _validate_ticker(body.ticker)) is None:
+        await cap_rows(session, store.VerdictWatch, auth.user.id, 100)
     row = await store.set_verdict_watch(
         session, auth.user.id, _validate_ticker(body.ticker), body.recommendation.strip()
     )

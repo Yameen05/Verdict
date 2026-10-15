@@ -76,7 +76,7 @@ def test_research_limit_binds_across_different_tickers(capped_client, monkeypatc
         raise AssertionError("pipeline should not run in this test")
 
     monkeypatch.setattr(research, "_cached_run", instant_cache_miss)
-    monkeypatch.setattr(research, "_enforce_quota", refuse)
+    monkeypatch.setattr(research, "reserve_provider_operation", refuse)
 
     statuses = [capped_client.post(f"/research/TEST{n}").status_code for n in range(6)]
     assert 429 in statuses, statuses

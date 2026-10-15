@@ -6,3 +6,13 @@ dist
 *.log
 .env
 .env.local
+
+.env*
+!.env.example
+data/
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+.git

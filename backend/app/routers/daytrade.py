@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.config import get_settings
 from app.limiter import limiter
+from app.services.budgets import reserve_provider_operation
 from app.services.cache import TTLCache
 from app.services.daytrade import (
     DayTradeError,
@@ -47,6 +48,7 @@ async def signal(request: Request, ticker: str) -> DayTradeSignal:
     ticker = _validate_ticker(ticker)
 
     async def factory() -> DayTradeSignal:
+        await reserve_provider_operation(request.state.user_id)
         return await assess_daytrade(ticker)
 
     try:

@@ -51,7 +51,7 @@ async def metrics_agent(state: ResearchState) -> dict:
     try:
         metrics = await _cached_fetch(ticker)
     except MetricsClientError as e:
-        log.warning("metrics_unavailable", extra={"ticker": ticker, "reason": str(e)})
+        log.warning("metrics_unavailable", extra={"ticker": ticker, "error_type": type(e).__name__})
         return {"metrics": MetricsFindings(status="error", error="The financial review was unavailable.", failure=normalize_failure(e, stage="financial review"))}
     except Exception as e:  # noqa: BLE001
         log.exception("metrics_unexpected_failure", extra={"ticker": ticker})
@@ -62,7 +62,7 @@ async def metrics_agent(state: ResearchState) -> dict:
     try:
         stats = await _cached_stats(ticker, horizon)
     except MetricsClientError as e:
-        log.warning("horizon_stats_unavailable", extra={"ticker": ticker, "reason": str(e)})
+        log.warning("horizon_stats_unavailable", extra={"ticker": ticker, "error_type": type(e).__name__})
     except Exception:  # noqa: BLE001
         log.exception("horizon_stats_failure", extra={"ticker": ticker})
 

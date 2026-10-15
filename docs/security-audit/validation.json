@@ -1,0 +1,75 @@
+{
+  "date": "2026-10-15",
+  "checked_at_utc": "2026-10-15T19:37:20.065435+00:00",
+  "baseline_commit": "c8fca4045d3c807ba4c208e15831394e88dfa500",
+  "source_files_sha256": "9d792538b8b0931c50f01cbce157edcf72b64ab21a7428d6161e20e868ac454d",
+  "checks": [
+    {
+      "command": "ruff check backend/app scripts",
+      "result": "passed"
+    },
+    {
+      "command": "cd backend && ../.venv/bin/python -m pytest -q",
+      "result": "373 passed in 18.28s"
+    },
+    {
+      "command": "bandit -q -r backend/app -x backend/app/tests",
+      "result": "passed; existing nosec false-positive notices only"
+    },
+    {
+      "command": "pip-audit -r backend/requirements-dev.txt",
+      "result": "no known vulnerabilities"
+    },
+    {
+      "command": "cd frontend && npm test",
+      "result": "78 passed, 12 files"
+    },
+    {
+      "command": "cd frontend && npm run build",
+      "result": "TypeScript and Vite passed; 581 kB bundle warning"
+    },
+    {
+      "command": "cd frontend && npm audit",
+      "result": "zero vulnerabilities"
+    },
+    {
+      "command": "docker build backend and frontend",
+      "result": "both passed with updated pinned runtimes"
+    },
+    {
+      "command": "python3 scripts/verify_release.py",
+      "result": "passed production overlay, local TLS, healthy probes, cookie flags, host/origin/CSRF, account isolation, body cap, cached SSE, snapshot verification, restart persistence and logout"
+    },
+    {
+      "command": "trivy image --scanners vuln (both images)",
+      "result": "frontend 0; backend 164 entries, no critical and no available fixed versions"
+    },
+    {
+      "command": "trivy image --ignore-unfixed --exit-code 1 --severity HIGH,CRITICAL (both images)",
+      "result": "passed"
+    },
+    {
+      "command": "gitleaks git and staged scan --redact --config .gitleaks.toml",
+      "result": "passed (verified before commit)"
+    },
+    {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    {
+      "command": "pytest -q app/tests/test_invites.py (after fixture-only secret-scan false-positive correction)",
+      "result": "8 passed in 1.98s"
+    }
+  ],
+  "runtime_separation": {
+    "existing_local_containers_modified": false,
+    "live_user_database_read_or_copied": false,
+    "real_provider_calls_or_mail_sends": false,
+    "synthetic_test_volumes_removed": true
+  },
+  "limits": [
+    "Native image scans are Linux ARM64; CI separately scans AMD64.",
+    "No public target, actual provider account, real Google origin, SMTP deliverability, host-loss recovery or destructive load test was verified.",
+    "44 remaining high Debian advisories require operator review; a green CI gate is not risk acceptance."
+  ]
+}

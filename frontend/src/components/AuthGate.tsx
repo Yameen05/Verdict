@@ -33,7 +33,10 @@ export function AuthGate({ children }: Props) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
-  const [resetToken, setResetToken] = useState("");
+  const [resetToken, setResetToken] = useState(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get("reset_token") ??
+    new URLSearchParams(window.location.search).get("reset_token") ?? "",
+  );
 
   function acceptSession(next: AuthSession) {
     setCsrfToken(next.csrf_token);
@@ -43,12 +46,11 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    // A reset link (…/?reset_token=…) always lands on the new-password form.
-    // The param stays in the URL until the flow ends so the effect is
-    // idempotent (StrictMode runs it twice in dev).
-    const tokenFromLink = new URLSearchParams(window.location.search).get("reset_token");
-    if (tokenFromLink) {
-      setResetToken(tokenFromLink);
+    if (resetToken) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset_token");
+      url.hash = "";
+      window.history.replaceState({}, "", url.pathname + url.search);
       setView("reset");
       authApi.status().then((s) => !cancelled && setAuthStatus(s)).catch(() => undefined);
       return () => {
@@ -221,8 +223,8 @@ export function AuthGate({ children }: Props) {
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
-            placeholder="6+ characters, one capital letter and one number"
-            minLength={6}
+            placeholder="15+ characters, one capital letter and one number"
+            minLength={15}
           />
           <Field
             label="Confirm new password"
@@ -231,7 +233,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your new password"
-            minLength={6}
+            minLength={15}
           />
           <ErrorMessage message={error} />
           <SubmitButton busy={busy} label="Set new password" />
@@ -308,8 +310,8 @@ export function AuthGate({ children }: Props) {
           value={password}
           onChange={setPassword}
           autoComplete={needsNewPassword ? "new-password" : "current-password"}
-          placeholder={needsNewPassword ? "6+ characters, one capital letter and one number" : "Your password"}
-          minLength={needsNewPassword ? 6 : undefined}
+          placeholder={needsNewPassword ? "15+ characters, one capital letter and one number" : "Your password"}
+          minLength={needsNewPassword ? 15 : undefined}
         />
         {needsNewPassword && (
           <Field
@@ -319,7 +321,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your password"
-            minLength={6}
+            minLength={15}
           />
         )}
         {isBootstrap && (

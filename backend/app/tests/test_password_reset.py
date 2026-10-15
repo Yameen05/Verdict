@@ -178,3 +178,15 @@ def test_public_signup_still_accepts_valid_invite(client, monkeypatch):
         )
         assert good.status_code == 201
     get_settings.cache_clear()
+
+
+async def test_failed_delivery_is_recorded_and_token_retired(client, smtp_env, monkeypatch):
+    from sqlalchemy import select
+
+    from app.persistence.db import AuditEvent, PasswordResetToken, get_sessionmaker
+    monkeypatch.setattr("app.routers.password_reset.send_email", lambda *args: False)
+    assert client.post("/auth/password-reset/request", json={"email": OWNER_EMAIL}).status_code == 204
+    async with get_sessionmaker()() as db:
+        assert await db.scalar(select(PasswordResetToken)) is None
+        audit = await db.scalar(select(AuditEvent).where(AuditEvent.event == "password_reset_requested"))
+        assert audit.details["delivered"] is False

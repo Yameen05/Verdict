@@ -18,7 +18,9 @@ log = get_logger(__name__)
 
 def email_configured() -> bool:
     settings = get_settings()
-    return bool(settings.smtp_host.strip() and settings.smtp_from.strip())
+    return bool(settings.smtp_host.strip() and settings.smtp_from.strip()
+                and not (settings.smtp_username.strip() and not (settings.smtp_starttls or settings.smtp_ssl))
+                and not (settings.smtp_ssl and settings.smtp_starttls))
 
 
 def send_email(to: str, subject: str, body: str) -> bool:
@@ -35,12 +37,14 @@ def send_email(to: str, subject: str, body: str) -> bool:
     message["Subject"] = subject
     message.set_content(body)
     username = settings.smtp_username.strip()
-    if username and not settings.smtp_starttls:
+    if (username or settings.environment == "production") and not (settings.smtp_starttls or settings.smtp_ssl):
         # login() would put the password on the wire in cleartext.
         log.error("email_send_refused_cleartext_login", extra={"subject": subject})
         return False
     try:
-        with smtplib.SMTP(settings.smtp_host.strip(), settings.smtp_port, timeout=15) as smtp:
+        transport = smtplib.SMTP_SSL if settings.smtp_ssl else smtplib.SMTP
+        options = {"context": ssl.create_default_context()} if settings.smtp_ssl else {}
+        with transport(settings.smtp_host.strip(), settings.smtp_port, timeout=15, **options) as smtp:
             if settings.smtp_starttls:
                 # starttls() with no context falls back to an unverified stdlib
                 # context (check_hostname off, CERT_NONE), which would leave the

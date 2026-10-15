@@ -1,3 +1,4 @@
+import { safeExternalUrl } from "../lib/safeUrl";
 import { failedAssessment, predictionKind } from "../lib/assessment";
 import { researchError } from "../lib/researchErrors";
 import type { ResearchResponse } from "../api/client";
@@ -95,9 +96,9 @@ export function ReportPanel({ result }: Props) {
                   >
                     {h.score === null ? "·" : (h.score > 0 ? "+" : "") + h.score.toFixed(1)}
                   </span>
-                  {h.url ? (
+                  {safeExternalUrl(h.url) ? (
                     <a
-                      href={h.url}
+                      href={safeExternalUrl(h.url)}
                       target="_blank"
                       rel="noreferrer"
                       className="text-slate-300 hover:text-indigo-300 hover:underline"

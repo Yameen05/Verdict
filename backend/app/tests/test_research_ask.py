@@ -369,3 +369,40 @@ def test_empty_llm_answer_retries_with_a_nudge(client, monkeypatch):
     assert len(calls) == 2
     # The nudge is appended as the final user message of the retry.
     assert "directly now" in calls[1]["messages"][-1]["content"]
+
+
+@pytest.mark.parametrize("arguments,name", [
+    ("[]", "search_filing"), ("null", "search_filing"), ("broken", "search_filing"),
+    ('{"query":123}', "search_filing"), ('{"query":"hello"}', "unknown_tool"),
+])
+def test_tool_arguments_are_untrusted_and_execution_stays_bounded(client, monkeypatch, arguments, name):
+    searched = []
+    calls = []
+    tool_calls = [SimpleNamespace(id=f"tool{i}", function=SimpleNamespace(name=name, arguments=arguments)) for i in range(3)]
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                message = SimpleNamespace(content="", tool_calls=tool_calls, model_dump=lambda **kw: {
+                    "role": "assistant", "tool_calls": [
+                        {"id": t.id, "type": "function", "function": {"name": name, "arguments": arguments}}
+                        for t in tool_calls],
+                })
+            else:
+                message = SimpleNamespace(content="Grounded answer.")
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)],
+                                   usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1))
+    async def search(ticker, query):
+        searched.append(query)
+        return "Safe excerpt."
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())))
+    monkeypatch.setattr(research_mod, "_run_filing_search", search)
+    response = client.post("/research/ask", json={"ticker": "AAPL", "question": "Explain the largest risk"})
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assistant = next(m for m in calls[1]["messages"] if m.get("tool_calls"))
+    assert len(assistant["tool_calls"]) == 2
+    assert len([m for m in calls[1]["messages"] if m["role"] == "tool"]) == 2
+    assert searched == (["Explain the largest risk"] * 2 if name == "search_filing" else [])

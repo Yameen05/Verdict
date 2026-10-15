@@ -9,6 +9,7 @@ Reference: https://www.sec.gov/os/accessing-edgar-data
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Literal
 
@@ -23,6 +24,20 @@ TICKER_LOOKUP_URL = "https://www.sec.gov/files/company_tickers.json"
 SUBMISSIONS_URL_TEMPLATE = "https://data.sec.gov/submissions/CIK{cik}.json"
 ARCHIVE_DOC_URL_TEMPLATE = "https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_nodash}/{doc}"
 
+_last_sec_slot = 0.0
+
+
+async def _pace_sec_request() -> None:
+    # Reserve starts synchronously in the one supported event loop. Keep below
+    # SEC's ten requests/second aggregate limit, including retries/Form 4 calls.
+    global _last_sec_slot
+    now = time.monotonic()
+    slot = max(now, _last_sec_slot + 0.11)
+    _last_sec_slot = slot
+    if slot > now:
+        await asyncio.sleep(slot - now)
+
+
 _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
 
 
@@ -36,9 +51,16 @@ async def get_with_retry(
     """
     for attempt in range(attempts):
         try:
-            r = await client.get(url)
-            r.raise_for_status()
-            return r
+            await _pace_sec_request()
+            async with client.stream("GET", url) as r:
+                r.raise_for_status()
+                content = bytearray()
+                async for part in r.aiter_bytes():
+                    content.extend(part)
+                    if len(content) > 25 * 1024 * 1024:
+                        raise ValueError("SEC response exceeds the supported 25 MiB limit")
+                return httpx.Response(r.status_code, content=bytes(content),
+                                      headers=r.headers, request=r.request)
         except httpx.HTTPStatusError as e:
             if e.response.status_code not in _RETRYABLE_STATUSES or attempt == attempts - 1:
                 raise
@@ -158,7 +180,7 @@ async def _fetch_filing(ticker: str, form: FilingForm) -> Filing:
         doc_r = await get_with_retry(client, doc_url)
         raw_html = doc_r.text
 
-        text = _html_to_text(raw_html)
+        text = await asyncio.to_thread(_html_to_text, raw_html)
 
         return Filing(
             ticker=ticker,

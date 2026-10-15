@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 import time
+import traceback
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any
@@ -65,8 +67,22 @@ class JSONFormatter(logging.Formatter):
             except (TypeError, ValueError):
                 payload[k] = repr(v)
         if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
+            payload["stack"] = [{"file": frame.filename, "line": frame.lineno, "function": frame.name}
+                                for frame in traceback.extract_tb(record.exc_info[2])]
+            payload["error_type"] = record.exc_info[0].__name__
+        encoded = json.dumps(payload, default=str)
+        # Redact configured credentials even when an upstream exception or URL
+        # was supplied via an extra field. Never serialize exception messages.
+        from app.config import get_settings
+        settings = get_settings()
+        for name in type(settings).model_fields:
+            if any(part in name for part in ("api_key", "password", "bootstrap_token")):
+                value = getattr(settings, name)
+                if isinstance(value, str) and value:
+                    encoded = encoded.replace(json.dumps(value)[1:-1], "[REDACTED]")
+        encoded = re.sub(r"(?i)(apiKey|api_key|token|key|password)=([^&\s\"]+)",
+                         r"\1=[REDACTED]", encoded)
+        return encoded
 
 
 def configure_logging(level: str = "INFO") -> None:

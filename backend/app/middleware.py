@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import time
 import uuid
@@ -9,6 +10,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 from app.config import get_settings
@@ -80,7 +82,7 @@ class OriginProtectionMiddleware(BaseHTTPMiddleware):
         if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
             origin = request.headers.get("origin")
             allowed = set(get_settings().cors_origins_list)
-            if origin and origin not in allowed:
+            if (origin and origin not in allowed) or request.headers.get("sec-fetch-site") == "cross-site":
                 log.warning("origin_rejected", extra={"path": request.url.path})
                 return JSONResponse(
                     status_code=403,
@@ -128,3 +130,23 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "max-age=31536000; includeSubDomains",
             )
         return response
+
+
+class DeploymentHostMiddleware(TrustedHostMiddleware):
+    """Keep container-local liveness independent of the public hostname.
+
+    Only the fixed, non-sensitive liveness endpoint from a loopback peer is
+    exempt. Other hosts/routes still pass through Starlette's host validation.
+    """
+
+    async def __call__(self, scope, receive, send):
+        peer = (scope.get("client") or ("",))[0]
+        try:
+            local = ipaddress.ip_address(peer).is_loopback
+        except ValueError:
+            local = False
+        if (scope["type"] == "http" and local and scope.get("path") == "/health"
+                and scope.get("method") in {"GET", "HEAD"}):
+            await self.app(scope, receive, send)
+        else:
+            await super().__call__(scope, receive, send)

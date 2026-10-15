@@ -24,8 +24,15 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 256
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-2g}
+    cpus: ${BACKEND_CPU_LIMIT:-2}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -42,7 +49,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -56,6 +63,13 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 128
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:-256m}
+    cpus: ${FRONTEND_CPU_LIMIT:-1}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   verdict-db:

@@ -266,6 +266,7 @@ async def init_db() -> None:
     # Imported for its side effect: registers the user-state tables on
     # Base.metadata so create_all() below builds them.
     from app.persistence import practice, user_state  # noqa: F401
+    from app.services import budgets  # noqa: F401
 
     engine = get_engine()
     async with engine.begin() as conn:

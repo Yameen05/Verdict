@@ -18,7 +18,7 @@ The scoreboard lives in routers/scoreboard.py.
 import asyncio
 import json
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -38,15 +38,14 @@ from app.observability.cost import CostTracker, start_tracking
 from app.observability.logging import get_logger, get_request_id
 from app.persistence.db import (
     ResearchRun,
-    count_runs_since,
     latest_run_for_ticker,
     list_runs_for_ticker,
     save_run,
     session_scope,
 )
-from app.schemas.failure import FailureInfo
 from app.schemas.research import ResearchResponse
 from app.services.assessment import analysis_warning, assessment_failed, prediction_kind
+from app.services.budgets import reserve_provider_operation
 from app.services.failures import normalize_failure
 
 router = APIRouter()
@@ -116,36 +115,6 @@ async def _cached_run(session: AsyncSession, ticker: str, horizon_days: int) -> 
     if result.report.degraded:
         return None
     return row
-
-
-async def _enforce_quota(session: AsyncSession, user_id: int | None) -> None:
-    """Daily caps on FRESH runs — the free-tier kill-switch. Cache hits are free."""
-    settings = get_settings()
-    day_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    if await count_runs_since(session, day_start) >= settings.daily_runs_global:
-        raise HTTPException(
-            status_code=429,
-            detail=FailureInfo(
-                kind="app_daily_limit",
-                window="day",
-                message=f"Verdict's community limit of {settings.daily_runs_global} fresh runs today was reached. Fresh runs reset at midnight UTC; cached reports remain available.",
-                reset_at=(day_start + timedelta(days=1)).isoformat(),
-            ).model_dump(),
-        )
-    if (
-        user_id is not None
-        and await count_runs_since(session, day_start, user_id=user_id)
-        >= settings.daily_runs_per_user
-    ):
-        raise HTTPException(
-            status_code=429,
-            detail=FailureInfo(
-                kind="app_daily_limit",
-                window="day",
-                message=f"You've used your {settings.daily_runs_per_user} fresh runs today in Verdict. Fresh runs reset at midnight UTC; cached reports remain available.",
-                reset_at=(day_start + timedelta(days=1)).isoformat(),
-            ).model_dump(),
-        )
 
 
 async def _persist(
@@ -285,7 +254,7 @@ async def research(
             log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
             return _envelope_from_cache(cached, rid)
 
-    await _enforce_quota(session, request.state.user_id)
+    await reserve_provider_operation(request.state.user_id)
     log.info("research_started", extra={"ticker": ticker, "horizon": horizon})
 
     ingest_error: str | None = None
@@ -294,7 +263,7 @@ async def research(
             indexed = await _auto_ingest(ticker)
             log.info("auto_ingest_done", extra={"ticker": ticker, "chunks": indexed})
         except Exception as e:  # noqa: BLE001 - research proceeds without the filing
-            log.warning("auto_ingest_failed", extra={"ticker": ticker, "reason": str(e)})
+            log.warning("auto_ingest_failed", extra={"ticker": ticker, "error_type": type(e).__name__})
             ingest_error = f"{type(e).__name__}: could not fetch the SEC filing"
 
     prior_run = await _load_prior_run(session, ticker)
@@ -407,7 +376,7 @@ async def _sse_stream(
                 ),
             }
         except Exception as e:  # noqa: BLE001 - research proceeds without the filing
-            log.warning("auto_ingest_failed", extra={"ticker": ticker, "reason": str(e)})
+            log.warning("auto_ingest_failed", extra={"ticker": ticker, "error_type": type(e).__name__})
             yield {
                 "event": "ingest",
                 "data": json.dumps(
@@ -574,7 +543,7 @@ async def research_stream(
             log.info("research_cache_hit", extra={"ticker": ticker, "run_id": cached.id})
             return EventSourceResponse(_sse_cached(cached, rid, ticker))
 
-    await _enforce_quota(session, request.state.user_id)
+    await reserve_provider_operation(request.state.user_id)
     # Load the prior run up front (into a plain dict) so the stream generator
     # never touches this request-scoped session after the response starts.
     prior_run = await _load_prior_run(session, ticker)

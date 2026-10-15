@@ -27,6 +27,7 @@ from app.security import (
     verify_csrf,
     verify_password,
 )
+from app.services.budgets import reserve_auth_attempt
 from app.services.mailer import email_configured
 
 router = APIRouter()
@@ -34,7 +35,7 @@ router = APIRouter()
 
 class BootstrapRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=15, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -66,7 +67,7 @@ async def bootstrap(
     settings = get_settings()
     configured = settings.auth_bootstrap_token.strip()
     provided = request.headers.get("x-bootstrap-token", "")
-    if not configured or not secrets.compare_digest(provided, configured):
+    if not configured or not secrets.compare_digest(provided.encode("utf-8"), configured.encode("utf-8")):
         # Do not reveal whether the server has a bootstrap token configured.
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -104,6 +105,7 @@ async def login(
     db: AsyncSession = Depends(session_scope),
 ) -> dict:
     email = normalize_email(body.email)
+    await reserve_auth_attempt(email, "login", 10, 900)
     user = await db.scalar(select(User).where(User.email == email))
     valid = verify_password(user.password_hash if user else None, body.password)
     if user is None or not valid or not user.is_active:

@@ -18,13 +18,16 @@ from app.security import (
     as_utc,
     basic_auth_payload,
     create_session,
+    get_auth_context,
     new_token,
     normalize_email,
     record_audit,
     set_session_cookie,
     token_digest,
     utc_now,
+    verify_csrf,
 )
+from app.services.budgets import reserve_auth_attempt
 from app.services.google_sign_in import verify_google_credential
 
 router = APIRouter()
@@ -110,7 +113,7 @@ async def google_login(
 
     token_nonce = claims.get("nonce")
     subject = claims.get("sub")
-    if not isinstance(token_nonce, str) or not secrets.compare_digest(token_nonce, nonce):
+    if not isinstance(token_nonce, str) or not secrets.compare_digest(token_nonce.encode("utf-8"), nonce.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Restart Google sign-in and try again")
     if not isinstance(subject, str) or not 1 <= len(subject) <= 255:
         raise HTTPException(status_code=401, detail="Invalid Google account")
@@ -127,8 +130,17 @@ async def google_login(
             # Only Google-hosted email proves current ownership. A verified
             # third-party email may have changed owners since Google verified it.
             authoritative = email.endswith("@gmail.com") or bool(claims.get("hd"))
+            # Password signup does not verify email. A pre-registered password
+            # must not retain access after the real email owner uses Google.
+            # Linking therefore requires proof of the existing account as well.
+            try:
+                existing_auth = await get_auth_context(request, db)
+                verify_csrf(request, existing_auth)
+                same_account = existing_auth.user.id == user.id
+            except HTTPException:
+                same_account = False
             linked = await db.scalar(select(GoogleIdentity).where(GoogleIdentity.user_id == user.id))
-            if not authoritative or linked is not None:
+            if not authoritative or not same_account or linked is not None:
                 raise HTTPException(
                     status_code=409,
                     detail="This email already has an account. Use its existing sign-in method.",
@@ -143,6 +155,7 @@ async def google_login(
                     raise HTTPException(status_code=401, detail="Invalid or expired invite code")
             elif not get_settings().public_signup_enabled:
                 raise HTTPException(status_code=401, detail="An invite code is required to register")
+            await reserve_auth_attempt("global-registration", "signup", 100, 86400)
             user = User(
                 # Empty hash disables password login for Google-only accounts.
                 email=email, password_hash="", role="member", singleton_key=secrets.randbits(60)  # nosec B106

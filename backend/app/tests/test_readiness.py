@@ -11,7 +11,7 @@ async def test_ready_reports_degraded_with_no_keys(client):
     assert res.status_code == 503
     body = res.json()
     assert body["status"] == "degraded"
-    assert set(body["checks"].keys()) == {"llm", "newsapi", "vectorstore"}
+    assert set(body["checks"].keys()) == {"llm", "newsapi", "vectorstore", "database"}
     # newsapi without key is "ok skipped" (optional dep)
     assert body["checks"]["newsapi"]["ok"] is True
     # local vector backend needs no key — reports ok with a chunk count

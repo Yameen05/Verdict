@@ -17,14 +17,14 @@ services:
       - ./backend:/app
       - verdict-db:/app/data
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     environment:
       - VITE_API_URL=/api
       - BACKEND_URL=http://backend:8000

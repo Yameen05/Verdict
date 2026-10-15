@@ -25,7 +25,7 @@ async def get_json(
             resp.raise_for_status()
             return resp.json()
     except Exception as e:  # noqa: BLE001 - providers are best-effort context
-        log.info("signal_provider_failed", extra={"url": url, "reason": str(e)[:120]})
+        log.info("signal_provider_failed", extra={"url": url, "error_type": type(e).__name__})
         return None
 
 

@@ -1,0 +1,13 @@
+# Explicit production overlay: excludes backend/.env developer overrides and
+# forces secure mode. Requires Compose >=2.30 (env_file + !override support).
+services:
+  backend:
+    env_file: !override
+      - path: ${VERDICT_ENV_FILE:?Set VERDICT_ENV_FILE to an absolute production env path}
+    environment:
+      ENVIRONMENT: production
+      DOCS_ENABLED: "false"
+      SESSION_COOKIE_SECURE: "true"
+  frontend:
+    ports: !override
+      - "127.0.0.1:${APP_PORT:-8080}:8080"

@@ -1,0 +1,60 @@
+{
+  "backend": {
+    "scanner": "Trivy 0.76.0",
+    "scan_created": "2026-10-15T15:36:29.184434-04:00",
+    "image_id": "sha256:701bb4b2b85d99f0b3e9084452bc5c48388ced1c4874d480afd16ffb5d6bb1af",
+    "image_digests": [
+      "verdict-security-backend@sha256:701bb4b2b85d99f0b3e9084452bc5c48388ced1c4874d480afd16ffb5d6bb1af"
+    ],
+    "os": {
+      "Family": "debian",
+      "Name": "13.7"
+    },
+    "targets": [
+      {
+        "target": "verdict-security-backend:audit (debian 13.7)",
+        "type": "debian",
+        "counts": {
+          "LOW": 61,
+          "HIGH": 44,
+          "MEDIUM": 58,
+          "UNKNOWN": 1
+        },
+        "fixable": 0
+      },
+      {
+        "target": "Python",
+        "type": "python-pkg",
+        "counts": {},
+        "fixable": 0
+      }
+    ]
+  },
+  "frontend": {
+    "scanner": "Trivy 0.76.0",
+    "scan_created": "2026-10-15T15:33:09.371997-04:00",
+    "image_id": "sha256:fd8ac2464052408a8aafcde75eb0145ade17f7dd85682f080ee5bdf6eee974f4",
+    "image_digests": [
+      "verdict-security-frontend@sha256:fd8ac2464052408a8aafcde75eb0145ade17f7dd85682f080ee5bdf6eee974f4"
+    ],
+    "os": {
+      "Family": "alpine",
+      "Name": "3.24.2"
+    },
+    "targets": [
+      {
+        "target": "verdict-security-frontend:audit (alpine 3.24.2)",
+        "type": "alpine",
+        "counts": {},
+        "fixable": 0
+      }
+    ]
+  },
+  "artifacts_sha256": {
+    "npm-audit.json": "9661bb1d90ccd745fe53e42953c8b5e418d5aa66efde974f7eb320e43a3ed3f9",
+    "container-advisories-before.csv": "923096e69eaea6bc07fb971065f5e41eb6b963fe2546abcfefaa1ae87ad7c328",
+    "pip-audit.json": "3590352c9e216566ef58f9f359cbe29fcd49f2850c5e1ddaafcdbbf0f12137f7",
+    "container-advisories-after.csv": "28e9fe571f1ebe0f4ca3d43ffeac9480bb1b7a4d81531159ee202efb49a25f27",
+    "validation.json": "48f50c6eafbaa048026fd0979ae255cb385e02e661919e63a7d2d26f5d8ca6d2"
+  }
+}

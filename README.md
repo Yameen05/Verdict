@@ -523,8 +523,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | `CORS_ORIGINS` | No | Comma-separated browser origins |
 | `SESSION_COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
 | `RESEARCH_CACHE_MINUTES` | No | Shared report cache window; cache hits avoid fresh LLM calls |
-| `DAILY_RUNS_PER_USER` | No | Per-user fresh research quota |
-| `DAILY_RUNS_GLOBAL` | No | Global fresh research quota |
+| `DAILY_RUNS_PER_USER` | No | Per-user paid-operation quota (research, chat, timing/day-trade, filings) |
+| `DAILY_RUNS_GLOBAL` | No | Global paid-operation quota, reserved before work begins |
 | `ALERTS_CHECK_SECONDS` | No | Background alert/verdict-watch check interval; `0` disables the worker |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | No | Enables alert and password-reset emails; blank host = alerts trigger in the UI only |
 | `PUBLIC_SIGNUP_ENABLED` | No | Defaults to `true`: anyone can register without an invite |

@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -15,12 +14,14 @@ from slowapi.errors import RateLimitExceeded
 from app.config import get_settings
 from app.limiter import limiter
 from app.middleware import (
+    DeploymentHostMiddleware,
     OriginProtectionMiddleware,
     RequestIdMiddleware,
     SecurityHeadersMiddleware,
 )
 from app.observability.logging import configure_logging, get_logger
 from app.persistence.db import init_db
+from app.resource_limits import ResourceLimitsMiddleware
 from app.routers import (
     ask,
     auth,
@@ -50,7 +51,7 @@ async def lifespan(app: FastAPI):
             "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
             "auth_enabled": True,
-            "database_url": settings.database_url.split("@")[-1],  # hide creds if any
+            "database_backend": settings.database_url.partition(":")[0],
         },
     )
     await init_db()
@@ -67,6 +68,11 @@ async def lifespan(app: FastAPI):
             run_worker(worker_stop, settings.alerts_check_seconds)
         )
 
+    maintenance_task: asyncio.Task | None = None
+    if settings.environment != "test":
+        from app.services.maintenance import run_worker as run_maintenance
+        maintenance_task = asyncio.create_task(run_maintenance(worker_stop))
+
     grading_task: asyncio.Task | None = None
     if settings.environment != "test":
         from app.services.track_record import run_worker as run_grading_worker
@@ -76,6 +82,11 @@ async def lifespan(app: FastAPI):
     yield
 
     worker_stop.set()
+    if maintenance_task is not None:
+        try:
+            await asyncio.wait_for(maintenance_task, timeout=5)
+        except (TimeoutError, asyncio.CancelledError):
+            maintenance_task.cancel()
     if grading_task is not None:
         try:
             await asyncio.wait_for(grading_task, timeout=5)
@@ -107,7 +118,6 @@ def create_app() -> FastAPI:
     )
 
     # Starlette runs the last-added middleware first.
-    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(OriginProtectionMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -122,8 +132,10 @@ def create_app() -> FastAPI:
         ],
         expose_headers=["X-Request-ID", "X-Cost-USD", "X-Duration-Ms"],
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
+    app.add_middleware(DeploymentHostMiddleware, allowed_hosts=settings.allowed_hosts_list)
+    app.add_middleware(ResourceLimitsMiddleware)
     app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Rate limiter: attach to app and wire its 429 handler.
     app.state.limiter = limiter

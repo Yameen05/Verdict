@@ -46,7 +46,7 @@ async def _safe(name: str, awaitable: Awaitable[T | None]) -> T | None:
     try:
         return await awaitable
     except Exception as e:  # noqa: BLE001 - providers are optional context
-        log.info("market_signal_failed", extra={"provider": name, "reason": str(e)[:120]})
+        log.info("market_signal_failed", extra={"provider": name, "error_type": type(e).__name__})
         return None
 
 

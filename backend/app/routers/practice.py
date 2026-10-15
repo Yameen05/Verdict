@@ -14,7 +14,7 @@ from app.limiter import limiter
 from app.persistence.db import session_scope
 from app.persistence.practice import PracticeAccount, PracticeQuote, PracticeTrade, Strategy
 from app.persistence.user_state import list_watchlist
-from app.routers.user_state import _iso_utc
+from app.routers.user_state import _iso_utc, lock_user_state
 from app.schemas.practice import NotesBody, PlaceBody, QuoteBody, Rules, ScanBody
 from app.security import AuthContext, require_authenticated, utc_now
 from app.services import strategies as engine
@@ -101,6 +101,7 @@ async def save_strategy(
     auth: AuthContext = Depends(require_authenticated),
     session: AsyncSession = Depends(session_scope),
 ):
+    await lock_user_state(session, auth.user.id)
     count = await session.scalar(
         select(func.count()).select_from(Strategy).where(Strategy.user_id == auth.user.id)
     )

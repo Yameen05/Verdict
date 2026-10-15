@@ -13,6 +13,7 @@ from app.schemas.filings import (
     QueryMatch as QueryMatchSchema,
 )
 from app.services import sec_client, vectorstore
+from app.services.budgets import reserve_provider_operation
 from app.services.chunker import chunk_filing
 from app.services.embeddings import embed_query, embed_texts
 
@@ -23,6 +24,7 @@ log = get_logger(__name__)
 @router.post("/ingest", response_model=IngestResponse)
 @limiter.limit(lambda: get_settings().rate_limit_filings)
 async def ingest_filing(request: Request, req: IngestRequest) -> IngestResponse:
+    await reserve_provider_operation(request.state.user_id)
     log.info("ingest_started", extra={"ticker": req.ticker, "form": req.form})
     try:
         if req.form == "10-K":
@@ -63,6 +65,7 @@ async def ingest_filing(request: Request, req: IngestRequest) -> IngestResponse:
 @router.post("/query", response_model=QueryResponse)
 @limiter.limit(lambda: get_settings().rate_limit_filings)
 async def query_filing(request: Request, req: QueryRequest) -> QueryResponse:
+    await reserve_provider_operation(request.state.user_id)
     vector = await embed_query(req.question)
     matches = await vectorstore.query(req.ticker, vector, top_k=req.top_k)
 

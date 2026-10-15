@@ -69,9 +69,9 @@ def test_missing_header_falls_back_to_the_peer(monkeypatch):
 
 
 def test_garbage_forwarded_entries_are_not_treated_as_addresses(monkeypatch):
-    """A non-IP is untrusted, so it is returned rather than silently skipped."""
+    """A malformed hop fails closed, never becoming a client-chosen limiter key."""
     monkeypatch.setenv("TRUSTED_PROXY_IPS", "10.0.0.0/8")
-    assert client_ip(_request("10.1.2.3", "not-an-ip")) == "not-an-ip"
+    assert client_ip(_request("10.1.2.3", "not-an-ip")) == "10.1.2.3"
 
 
 def test_ports_and_brackets_are_stripped(monkeypatch):
