@@ -1,8 +1,8 @@
 {
   "date": "2026-10-15",
-  "checked_at_utc": "2026-10-15T19:37:20.065435+00:00",
+  "checked_at_utc": "2026-10-15T19:58:13.869845+00:00",
   "baseline_commit": "c8fca4045d3c807ba4c208e15831394e88dfa500",
-  "source_files_sha256": "b2994abda9d97c28f6202541d0620df0db1fdc075a457842a4440ed3a7ae06f9",
+  "source_files_sha256": "2e9853dbfe724791e033c670390dbdb39c3d29759e90e7f2e89c44d565df956e",
   "checks": [
     {
       "command": "ruff check backend/app scripts",
@@ -71,5 +71,16 @@
     "Native image scans are Linux ARM64; CI separately scans AMD64.",
     "No public target, actual provider account, real Google origin, SMTP deliverability, host-loss recovery or destructive load test was verified.",
     "44 remaining high Debian advisories require operator review; a green CI gate is not risk acceptance."
-  ]
+  ],
+  "remote_image_scan": {
+    "run_url": "https://github.com/Yameen05/Verdict/actions/runs/38797099215",
+    "source_commit": "1ebd893a3d4aa12c7a6f43fc27c4f4d145bb8e89",
+    "architecture": "linux/amd64",
+    "backend_advisories": 164,
+    "backend_high_package_matches": 44,
+    "unique_high_cves": 8,
+    "frontend_advisories": 0,
+    "fixable_advisories": 0,
+    "note": "Image checks passed; the smoke harness failed on this runner because the temporary TLS edge lacked an explicit healthcheck. That harness issue is corrected and locally revalidated in this revision; see draft PR checks for final remote status."
+  }
 }

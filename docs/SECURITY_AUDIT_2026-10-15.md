@@ -253,6 +253,10 @@ Two additional small boundary defects were fixed in the final review:
 
 ## Dependencies and remaining container advisories
 
+The CI smoke edge has its own explicit health probe, including on Compose
+versions that reject `--wait` for a disabled image health check. A first remote
+run exposed that test-harness difference; it was corrected and revalidated.
+
 Current npm audit and pip-audit report **zero known vulnerabilities** in their
 resolved dependency graphs. This is time-dependent advisory coverage, not proof
 of absence of vulnerabilities or malicious packages. Python runtime transitive

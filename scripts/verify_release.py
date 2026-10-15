@@ -61,6 +61,10 @@ REQUEST_TIMEOUT_SECONDS=15
         (folder / "key.pem").chmod(0o644)
         edge = folder / "edge.conf"
         edge.write_text('''server {
+ listen 8080;
+ location = /healthz { return 200 "ok\\n"; }
+}
+server {
  listen 8443 ssl;
  ssl_certificate /tls/cert.pem;
  ssl_certificate_key /tls/key.pem;
@@ -93,7 +97,11 @@ REQUEST_TIMEOUT_SECONDS=15
       - {folder / 'cert.pem'}:/tls/cert.pem:ro
       - {folder / 'key.pem'}:/tls/key.pem:ro
     healthcheck:
-      disable: true
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 1s
     read_only: true
     tmpfs:
       - /tmp:size=32m,mode=1777
@@ -200,6 +208,10 @@ asyncio.run(main())
             assert request("POST", "/api/auth/logout", owner=True)[0] == 204
             assert request("GET", "/api/auth/me", owner=True)[0] == 401
             print("PASS: production settings, healthy containers, TLS, secure cookies, bootstrap guard, host/origin/CSRF, user isolation, body cap, cached SSE, backup verification, restart persistence, and logout revocation")
+        except Exception:
+            subprocess.run(
+                compose + ["logs", "--tail", "100"], check=False, text=True)
+            raise
         finally:
             # Only this freshly generated project's synthetic volume is removed.
             run(compose + ["down", "--volumes", "--remove-orphans"], stdout=subprocess.DEVNULL)
