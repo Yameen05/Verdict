@@ -101,7 +101,7 @@ Day-trade/timing, chat, and direct filing ingest/query had no daily cap despite
 LLM/embedding calls. Changing ticker/cache keys made this economically relevant.
 
 **Fix:** New persistent `admission_counters` reserve global and personal slots
-atomically, before any paid operation. Failures/cancellation remain charged.
+atomically, before those LLM/embedding operations. Failures/cancellation remain charged.
 Cache hits stay free. Existing research rows seed first-use counters on upgrade.
 Counter updates commit before provider work and roll back together on a personal
 rejection. The caps remain a supported single-instance SQLite design.
@@ -242,9 +242,9 @@ Two additional small boundary defects were fixed in the final review:
 | O04 / Medium readiness / fixed | Bundled nginx overwrote edge HTTPS protocol with its internal HTTP scheme and dropped the Host port. | Preserve edge HTTPS protocol and full Host; disable Gunicorn forwarded rewriting and document edge overwrite/append requirements. Real TLS/forwarding tested through a disposable edge. Actual public edge still unconfigured/unverified. |
 | O05 / High recovery / tooling completed | Previous backup instructions only said to back up a volume, with no WAL-safe procedure/restore evidence. Added snapshot/verify CLI with consistent SQLite backup API, hashes, integrity and private permissions. | Schedule encrypted off-host backups; choose retention/RPO/RTO and exercise host-loss restoration. No live-user backup or restore was performed. |
 | O06 / Medium readiness / fixed | Readiness omitted DB access, could be repeatedly called to probe providers, left a temporary LLM client open, and did synchronous Pinecone work on the event loop. | Add DB check/throttle, close probe client, offload Pinecone call. Liveness remains deliberately cheap. No credential-free synthetic test can establish live provider readiness. |
-| O07 / Medium maintenance / fixed | Expiry cleanup existed as a helper but was not scheduled; expired auth/quote rows accumulated. | Hourly worker cleans expired authentication and quote previews. Historical users/trades/research/audits are preserved. Multiple replicas still need coordinated workers. |
+| O07 / Medium maintenance / fixed | Auth cleanup depended on the alerts worker being enabled, and expired quote previews lacked periodic cleanup. | Hourly worker cleans expired authentication and quote previews. Historical users/trades/research/audits are preserved. Multiple replicas still need coordinated workers. |
 | O08 / Medium operations / bounded | Containers had PID/capability/read-only controls, but no memory/CPU/log-rotation bounds. Dev overlay exposed ports on all host interfaces. | Added tunable memory/CPU limits, rotating Docker logs, loopback dev ports and private runtime umask. Measure capacity and monitor persistent-volume growth; no real load benchmark or disk-full incident exercise was run. |
-| O09 / High release gate / fixed | CI built images but did not scan their OS packages or exercise production Compose/TLS/persistence. | CI now retains full scans, fails on fixable high/critical findings, and runs isolated release verification. No auto-deploy/auto-merge added. |
+| O09 / High release gate / fixed | CI built images but did not scan their OS packages or exercise production Compose/TLS/persistence. | CI now retains full scans, fails on fixable high/critical findings, and runs isolated release verification. No auto-deploy/auto-merge added. Final remote review also replaced deprecated Node 20 actions with inspected Node 24 releases, disabled checkout credential persistence and pinned the runner to Ubuntu 24.04 before the announced Ubuntu 26 migration. |
 | O10 / High maintenance / partially remediated | Bases used Python 3.13.13/nginx 1.31.1 and stale OS packages. Upgraded to Python 3.13.16/nginx 1.31.7, applied distribution updates, removed backend curl/dependency tree and runtime pip, pinned base digests. | Current Debian unfixed advisories remain; see exact CSV inventory and next section. nginx's own upstream security releases were checked separately because a binary not managed by APK may escape package scanners. |
 | O11 / Low performance / noted | Frontend production JS is about 581 kB (173 kB gzip), triggering Vite's >500 kB advisory. | Build passes. This is a performance warning, not a security finding; evaluate code splitting against actual load measurements. |
 
@@ -523,8 +523,8 @@ names above describe the relevant behavior; tests provide reproduction evidence.
 - [`docker-compose.yml:27`](../docker-compose.yml#L27) — `mem_limit:`
 - [`docker-compose.yml:34`](../docker-compose.yml#L34) — `healthcheck:`
 - [`docker-compose.production.yml:3`](../docker-compose.production.yml#L3) — `services:`
-- [`.github/workflows/ci.yml:119`](../.github/workflows/ci.yml#L119) — `Scan backend runtime image`
-- [`.github/workflows/ci.yml:148`](../.github/workflows/ci.yml#L148) — `Integrated production smoke test`
+- [`.github/workflows/ci.yml:126`](../.github/workflows/ci.yml#L126) — `Scan backend runtime image`
+- [`.github/workflows/ci.yml:155`](../.github/workflows/ci.yml#L155) — `Integrated production smoke test`
 - [`scripts/verify_release.py:31`](../scripts/verify_release.py#L31) — `def main`
 - [`backend/app/tests/test_security_remediation.py:56`](../backend/app/tests/test_security_remediation.py#L56) — `async def test_daily_admission`
 - [`backend/app/tests/test_security_remediation.py:83`](../backend/app/tests/test_security_remediation.py#L83) — `async def test_concurrent_reset`

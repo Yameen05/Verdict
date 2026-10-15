@@ -43,6 +43,8 @@ Configure only the providers you need. LLM and embedding keys stay on the
 backend. Production custom provider URLs must use HTTPS, without embedded
 credentials or query parameters. Use an actual SEC contact User-Agent. Set
 billing/usage limits at providers: app operation counts are not dollar ceilings.
+Market-data fetches, readiness and background alerts/grading consume separate
+provider quotas outside the LLM/embedding operation counter.
 
 ## 2. TLS and proxy boundaries
 
