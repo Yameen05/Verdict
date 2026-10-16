@@ -57,7 +57,7 @@ export function VerdictTimeline({ runs }: { runs: HistoryEntry[] }) {
           <g key={r.id}>
             <circle cx={x(i)} cy={y(r.price_at_run as number)} r="5" fill={DOT[r.recommendation] ?? DOT.Pending}>
               <title>
-                {`${r.recommendation === "Failed" ? "Failed to assess" : r.recommendation}${r.confidence !== null ? ` (${r.confidence})` : ""} @ $${(
+                {`${r.recommendation === "Failed" ? "Failed to assess" : r.recommendation}${r.confidence !== null ? ` (AI score ${r.confidence}/100, not profit odds)` : ""} @ $${(
                   r.price_at_run as number
                 ).toFixed(2)} — ${new Date(r.created_at).toLocaleDateString()}`}
               </title>

@@ -80,7 +80,7 @@ class HorizonStat(BaseModel):
 
 
 class ConfidenceBucket(BaseModel):
-    """Calibration check: did high-confidence calls actually hit more often?"""
+    """Historical grading outcomes grouped by the recorded AI assessment score."""
 
     label: str  # e.g. "70-79"
     scored: int = 0
@@ -98,9 +98,9 @@ class BacktestSummary(BaseModel):
     avg_return_pct: float | None = None
     by_horizon: list[HorizonStat] = Field(default_factory=list)
     by_confidence: list[ConfidenceBucket] = Field(default_factory=list)
-    # Mean squared gap between stated confidence and the 0/1 outcome across
-    # matured calls. 0 is perfect; 0.25 is what always saying 50% would score.
-    brier_score: float | None = None
+    # Retrospective squared error treating score/100 as a probability solely
+    # for this diagnostic. This does not establish calibrated profit odds.
+    brier_score: float | None = Field(default=None, description="Historical squared error using assessment score/100 as a diagnostic input; not proof of calibrated profit odds")
     rule: str = GRADING_RULE
 
 
@@ -121,7 +121,7 @@ _CONFIDENCE_BUCKETS: tuple[tuple[str, int, int], ...] = (
 def _confidence_calibration(
     scored_calls: list[tuple[int, bool]],
 ) -> tuple[list[ConfidenceBucket], float | None]:
-    """Bucketed hit rates + Brier score from (confidence, hit) pairs."""
+    """Historical diagnostic, not a calibration fit or probability validation."""
     if not scored_calls:
         return [], None
     buckets: list[ConfidenceBucket] = []

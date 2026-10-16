@@ -16,7 +16,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,12 @@ from app.security import (
     utc_now,
     validate_password,
 )
+from app.services.budgets import reserve_auth_attempt
+from app.services.legal_agreements import (
+    LegalAcceptance,
+    record_acceptance,
+    require_current_acceptance,
+)
 
 router = APIRouter()
 
@@ -48,11 +54,12 @@ class InviteCreateRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    legal_acceptance: LegalAcceptance | None = None
     # Optional when PUBLIC_SIGNUP_ENABLED=true; required (and validated)
     # whenever a code is supplied.
     invite_code: str | None = Field(default=None, min_length=8, max_length=128)
     email: str = Field(min_length=3, max_length=254)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=15, max_length=128)
 
 
 def _invite_status(invite: Invite) -> str:
@@ -152,6 +159,8 @@ async def register(
     db: AsyncSession = Depends(session_scope),
 ) -> dict:
     settings = get_settings()
+    if not await db.scalar(select(func.count(User.id)).where(User.role == "owner")):
+        raise HTTPException(status_code=403, detail="The owner must finish account setup first")
     code = (body.invite_code or "").strip()
     invite: Invite | None = None
     if code:
@@ -167,9 +176,11 @@ async def register(
         await db.commit()
         raise HTTPException(status_code=401, detail="An invite code is required to register")
 
+    require_current_acceptance(body.legal_acceptance)
     email = normalize_email(body.email)
     validate_password(body.password)
 
+    await reserve_auth_attempt("global-registration", "signup", 100, 86400)
     user = User(
         email=email,
         password_hash=hash_password(body.password),
@@ -187,9 +198,17 @@ async def register(
         ) from exc
 
     if invite is not None:
-        invite.used_by = user.id
-        invite.used_at = utc_now()
+        redeemed = await db.execute(
+            update(Invite).where(
+                Invite.id == invite.id, Invite.used_at.is_(None), Invite.expires_at > utc_now(),
+            ).values(used_by=user.id, used_at=utc_now())
+            .execution_options(synchronize_session=False)
+        )
+        if redeemed.rowcount != 1:
+            await db.rollback()
+            raise HTTPException(status_code=401, detail="Invalid or expired invite code")
 
+    await record_acceptance(db, request, user.id)
     user_session, raw_token = await create_session(
         db, request, user
     )

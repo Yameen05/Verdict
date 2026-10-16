@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.services.legal_agreements import current_legal_acceptance
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +29,11 @@ def _isolated_env(monkeypatch, tmp_path):
     # key in backend/.env, which pytest (run from backend/) would otherwise load
     # and then make live API calls (e.g. the readiness probe's models.list()).
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    for name in ("EMBEDDING_API_KEY", "PINECONE_API_KEY", "NEWS_API_KEY", "SMTP_HOST",
+                 "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM", "EMBEDDING_BASE_URL"):
+        monkeypatch.setenv(name, "")
+    monkeypatch.setenv("SMTP_STARTTLS", "true")
+    monkeypatch.setenv("SMTP_SSL", "false")
     # Also isolate from a dev's LLM provider config in backend/.env (e.g. a
     # Gemini base URL), so tests run deterministically against OpenAI defaults.
     monkeypatch.setenv("LLM_BASE_URL", "")
@@ -64,10 +70,10 @@ def client():
             headers={
                 "X-Bootstrap-Token": "test-bootstrap-token-with-at-least-32-characters"
             },
-            json={
+            json=dict({
                 "email": "owner@example.com",
                 "password": "A-strong-test-password-123",
-            },
+            }, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201, created.text
         c.headers.update({"X-CSRF-Token": created.json()["csrf_token"]})

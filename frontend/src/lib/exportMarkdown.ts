@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION } from "./confidence";
 import { failedAssessment, normalizeResearch, predictionKind } from "./assessment";
 import type { DebateCase, ResearchResponse } from "../api/client";
 
@@ -19,11 +20,14 @@ export function researchToMarkdown(
   const { report, metrics, news, insider, signals, evidence } = result;
   const lines: string[] = [
     `# Verdict — ${report.ticker}: ${failed ? "Failed to assess" : report.recommendation}` +
-      (report.confidence !== null ? ` (confidence ${report.confidence}/100)` : ""),
+      (report.confidence !== null ? ` (AI assessment score ${report.confidence}/100)` : ""),
     "",
     `_Generated ${new Date().toISOString().slice(0, 10)} by Verdict. Not investment advice._`,
     "",
     ...(incomplete ? [`Prediction source: ${result.report.prediction_kind}`, `Confidence: ${failed ? "Failed to assess" : "Not assessed — analysis incomplete"}`, result.report.analysis_warning ?? "", ""] : []),
+    CONFIDENCE_EXPLANATION,
+    "Hold is not a validated 50/50 outcome. General stock research does not determine a suitable personal trade.",
+    "",
     report.justification,
   ];
 

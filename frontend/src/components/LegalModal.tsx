@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import manifest from "../lib/legalManifest.json";
+import { useEffect, useRef, useState } from "react";
 import { LEGAL_DOCS, type LegalDoc } from "../lib/legal";
 
 interface Props {
@@ -8,20 +9,30 @@ interface Props {
 
 /** Overlay with the Risk & Data Disclosure, Terms of Use, and Privacy Policy. */
 export function LegalModal({ initialDoc = "risk", onClose }: Props) {
+  const modal = useRef<HTMLDivElement>(null);
   const [docId, setDocId] = useState<LegalDoc["id"]>(initialDoc);
   const doc = LEGAL_DOCS.find((d) => d.id === docId) ?? LEGAL_DOCS[0];
 
   useEffect(() => {
+    const prior = document.activeElement as HTMLElement | null;
+    modal.current?.querySelector<HTMLButtonElement>("button")?.focus();
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
+      if (event.key === "Tab" && modal.current) {
+        const controls = Array.from(modal.current.querySelectorAll<HTMLElement>('button, [tabindex="0"]'));
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => { window.removeEventListener("keydown", onKey); prior?.focus(); };
   }, [onClose]);
 
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4 backdrop-blur-xs"
+      ref={modal}
       role="dialog"
       aria-modal="true"
       aria-label={doc.title}
@@ -36,6 +47,7 @@ export function LegalModal({ initialDoc = "risk", onClose }: Props) {
             {LEGAL_DOCS.map((d) => (
               <button
                 key={d.id}
+                aria-pressed={d.id === docId}
                 type="button"
                 onClick={() => setDocId(d.id)}
                 className={`rounded-full px-3 py-1.5 font-medium transition ${
@@ -57,12 +69,12 @@ export function LegalModal({ initialDoc = "risk", onClose }: Props) {
             Close
           </button>
         </div>
-        <div className="overflow-y-auto px-6 py-5">
+        <div className="overflow-y-auto px-6 py-5" tabIndex={0} aria-label={`Read ${doc.title}`}>
           <h2 className="font-display text-xl font-medium tracking-tight text-slate-50">
             {doc.title}
           </h2>
           <p className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
-            Last updated {doc.updated}
+            Last updated {doc.updated} · Version {manifest.versions[doc.id]}
           </p>
           {doc.sections.map((section) => (
             <section key={section.heading} className="mt-5">

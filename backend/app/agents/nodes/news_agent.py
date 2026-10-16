@@ -69,7 +69,7 @@ async def news_agent(state: ResearchState) -> dict:
                 return {"news": NewsFindings(status="error", error=normalize_failure(e, stage="news review").message, failure=normalize_failure(e, stage="news review"))}
             log.warning(
                 "company_lookup_failed_news_fallback",
-                extra={"ticker": ticker, "reason": str(e)},
+                extra={"ticker": ticker, "error_type": type(e).__name__},
             )
             company_name = ticker
 
@@ -92,7 +92,7 @@ async def news_agent(state: ResearchState) -> dict:
         aggregate, scored, summary = await score_and_summarize(company_name, articles)
     except SentimentError as e:
         # Headlines are still usable evidence even without scores.
-        log.warning("sentiment_scoring_failed", extra={"ticker": ticker, "reason": str(e)})
+        log.warning("sentiment_scoring_failed", extra={"ticker": ticker, "error_type": type(e).__name__})
         return {
             "news": NewsFindings(
                 status="ok",

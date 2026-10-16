@@ -1,4 +1,6 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { legalDocumentsCurrent } from "../api/auth";
+import { ApiError } from "../api/http";
 import {
   authApi,
   setCsrfToken,
@@ -7,6 +9,7 @@ import {
 } from "../api/client";
 import { LegalModal } from "./LegalModal";
 import { GoogleSignIn } from "./GoogleSignIn";
+import { SignupAgreement } from "./SignupAgreement";
 
 type View =
   | "loading"
@@ -29,11 +32,16 @@ export function AuthGate({ children }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [agreementMode, setAgreementMode] = useState<"google" | null>(null);
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
-  const [resetToken, setResetToken] = useState("");
+  const [resetToken, setResetToken] = useState(() =>
+    new URLSearchParams(window.location.hash.slice(1)).get("reset_token") ??
+    new URLSearchParams(window.location.search).get("reset_token") ?? "",
+  );
 
   function acceptSession(next: AuthSession) {
     setCsrfToken(next.csrf_token);
@@ -43,12 +51,11 @@ export function AuthGate({ children }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    // A reset link (…/?reset_token=…) always lands on the new-password form.
-    // The param stays in the URL until the flow ends so the effect is
-    // idempotent (StrictMode runs it twice in dev).
-    const tokenFromLink = new URLSearchParams(window.location.search).get("reset_token");
-    if (tokenFromLink) {
-      setResetToken(tokenFromLink);
+    if (resetToken) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("reset_token");
+      url.hash = "";
+      window.history.replaceState({}, "", url.pathname + url.search);
       setView("reset");
       authApi.status().then((s) => !cancelled && setAuthStatus(s)).catch(() => undefined);
       return () => {
@@ -87,12 +94,18 @@ export function AuthGate({ children }: Props) {
       setError("Passwords do not match.");
       return;
     }
+    if (view === "bootstrap" || view === "register") {
+      if (!agreementAccepted || !legalDocumentsCurrent(authStatus?.legal_manifest)) {
+        setError("Explicit agreement to the current documents is required.");
+        return;
+      }
+    }
     setBusy(true);
     try {
       if (view === "bootstrap") {
-        acceptSession(await authApi.bootstrap(email, password, bootstrapToken));
+        acceptSession(await authApi.bootstrap(email, password, bootstrapToken, agreementAccepted));
       } else if (view === "register") {
-        acceptSession(await authApi.register(inviteCode.trim(), email, password));
+        acceptSession(await authApi.register(inviteCode.trim(), email, password, agreementAccepted));
         setInviteCode("");
       } else {
         acceptSession(await authApi.login(email, password));
@@ -129,12 +142,21 @@ export function AuthGate({ children }: Props) {
     setNotice("");
     setBusy(true);
     try {
-      acceptSession(await authApi.googleLogin(credential, inviteCode.trim()));
+      const accepted = view === "register" && agreementAccepted &&
+        legalDocumentsCurrent(authStatus?.legal_manifest);
+      acceptSession(await authApi.googleLogin(credential, inviteCode.trim(), accepted));
       setInviteCode("");
       setPassword("");
       setConfirmPassword("");
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 428) {
+        setView("register");
+        setAgreementMode("google");
+        setAgreementAccepted(false);
+        setNotice("No account created yet. Agree below to continue with Google.");
+      } else {
+        setError((e as Error).message);
+      }
       throw e;
     } finally {
       setBusy(false);
@@ -221,8 +243,8 @@ export function AuthGate({ children }: Props) {
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
-            placeholder="6+ characters, one capital letter and one number"
-            minLength={6}
+            placeholder="15+ characters, one capital letter and one number"
+            minLength={15}
           />
           <Field
             label="Confirm new password"
@@ -231,7 +253,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your new password"
-            minLength={6}
+            minLength={15}
           />
           <ErrorMessage message={error} />
           <SubmitButton busy={busy} label="Set new password" />
@@ -252,12 +274,38 @@ export function AuthGate({ children }: Props) {
     );
   }
 
+  if (agreementMode === "google" && view === "register") {
+    const current = legalDocumentsCurrent(authStatus?.legal_manifest);
+    return (
+      <AuthShell compact title="Finish creating your account" subtitle="One last step before continuing with Google.">
+        <div className="space-y-4">
+          <NoticeMessage message={notice} />
+          <SignupAgreement checked={agreementAccepted} current={current} onChange={setAgreementAccepted} />
+          <ErrorMessage message={error} />
+          {authStatus?.google_client_id && (
+            <GoogleSignIn key="agreed-google-signup" clientId={authStatus.google_client_id}
+              disabled={busy || !agreementAccepted || !current} signup showDivider={false}
+              onCredential={signInWithGoogle} />
+          )}
+          <button type="button" disabled={busy} onClick={() => {
+            setAgreementMode(null);
+            setAgreementAccepted(false);
+            setError("");
+            setNotice("");
+          }} className="w-full text-xs text-slate-300 underline underline-offset-4">Back to signup</button>
+        </div>
+      </AuthShell>
+    );
+  }
+
   const isBootstrap = view === "bootstrap";
   const isRegister = view === "register";
   const publicSignup = authStatus?.public_signup_enabled ?? false;
   const needsNewPassword = isBootstrap || isRegister;
+  const currentDocuments = legalDocumentsCurrent(authStatus?.legal_manifest);
   return (
     <AuthShell
+      compact={needsNewPassword}
       title={
         isBootstrap
           ? "Create the owner account"
@@ -269,10 +317,10 @@ export function AuthGate({ children }: Props) {
       }
       subtitle={
         isBootstrap
-          ? "This one-time setup closes permanently after the first account is created."
+          ? "Set up your private owner access."
           : isRegister
           ? publicSignup
-            ? "Free to join. Research runs are shared and daily quotas keep things fair."
+            ? "Stock research. A workspace of your own."
             : "Paste the invite code you received to create your account."
           : authStatus?.google_client_id
           ? "Sign in with Google or your email to access your research."
@@ -291,7 +339,8 @@ export function AuthGate({ children }: Props) {
           />
         )}
         {!isBootstrap && authStatus?.google_client_id && (
-          <GoogleSignIn clientId={authStatus.google_client_id} disabled={busy}
+          <GoogleSignIn clientId={authStatus.google_client_id} signup={isRegister}
+            disabled={busy || (isRegister && (!agreementAccepted || !currentDocuments))}
             onCredential={signInWithGoogle} />
         )}
         <Field
@@ -308,8 +357,8 @@ export function AuthGate({ children }: Props) {
           value={password}
           onChange={setPassword}
           autoComplete={needsNewPassword ? "new-password" : "current-password"}
-          placeholder={needsNewPassword ? "6+ characters, one capital letter and one number" : "Your password"}
-          minLength={needsNewPassword ? 6 : undefined}
+          placeholder={needsNewPassword ? "15+ characters, a capital and a number" : "Your password"}
+          minLength={needsNewPassword ? 15 : undefined}
         />
         {needsNewPassword && (
           <Field
@@ -319,7 +368,7 @@ export function AuthGate({ children }: Props) {
             onChange={setConfirmPassword}
             autoComplete="new-password"
             placeholder="Repeat your password"
-            minLength={6}
+            minLength={15}
           />
         )}
         {isBootstrap && (
@@ -332,15 +381,19 @@ export function AuthGate({ children }: Props) {
             placeholder="From AUTH_BOOTSTRAP_TOKEN"
           />
         )}
+        {needsNewPassword && (
+          <SignupAgreement checked={agreementAccepted} current={currentDocuments} onChange={setAgreementAccepted} />
+        )}
         <ErrorMessage message={error} />
         <NoticeMessage message={notice} />
         <SubmitButton
           busy={busy}
+          disabled={needsNewPassword && (!agreementAccepted || !currentDocuments)}
           label={
             isBootstrap
               ? "Create owner account"
               : isRegister
-              ? "Create my account"
+              ? "Create account"
               : "Continue securely"
           }
         />
@@ -362,6 +415,8 @@ export function AuthGate({ children }: Props) {
             type="button"
             onClick={() => {
               setView(isRegister ? "login" : "register");
+              setAgreementMode(null);
+              setAgreementAccepted(false);
               setError("");
               setNotice("");
             }}
@@ -383,14 +438,18 @@ function AuthShell({
   title,
   subtitle,
   children,
+  compact = false,
 }: {
   title: string;
   subtitle: string;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   const [legalOpen, setLegalOpen] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, [title]);
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12 text-slate-100">
+    <main className={`grid min-h-screen place-items-center bg-slate-950 text-slate-100 ${compact ? "px-4 py-6 sm:py-10" : "px-6 py-12"}`}>
       <section className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-full border border-indigo-400/50 bg-indigo-500/10 pb-0.5 font-display text-lg italic leading-none text-indigo-300">
@@ -398,9 +457,9 @@ function AuthShell({
           </span>
           <span className="font-display text-2xl tracking-tight text-slate-50">Verdict</span>
         </div>
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-7 shadow-2xl shadow-slate-950/60">
-          <div className="mb-6">
-            <h1 className="font-display text-2xl font-medium tracking-tight text-slate-50">
+        <div className={`rounded-3xl border border-slate-800 bg-slate-900/70 shadow-2xl shadow-slate-950/60 ${compact ? "p-6 sm:p-7" : "p-7"}`}>
+          <div className={compact ? "mb-5" : "mb-6"}>
+            <h1 ref={heading} tabIndex={-1} className="auth-heading font-display text-2xl font-medium tracking-tight text-slate-50">
               {title}
             </h1>
             <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{subtitle}</p>
@@ -410,17 +469,17 @@ function AuthShell({
         <p className="mt-5 text-center text-[11px] italic text-slate-500">
           Every stock gets a trial.
         </p>
-        <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
-          Educational research tool — not investment advice. By continuing you accept the{" "}
+        {!compact && <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400">
+          General research · AI scores are not profit odds. Read the{" "}
           <button
             type="button"
             onClick={() => setLegalOpen(true)}
             className="underline decoration-slate-600 underline-offset-2 hover:text-slate-300"
           >
-            terms, privacy policy, and risk disclosure
+            Terms of Service, Privacy Notice, and Risk & Data Disclosure
           </button>
           .
-        </p>
+        </p>}
         {legalOpen && <LegalModal onClose={() => setLegalOpen(false)} />}
       </section>
     </main>
@@ -477,10 +536,10 @@ function NoticeMessage({ message }: { message: string }) {
   ) : null;
 }
 
-function SubmitButton({ busy, label }: { busy: boolean; label: string }) {
+function SubmitButton({ busy, label, disabled = false }: { busy: boolean; label: string; disabled?: boolean }) {
   return (
     <button
-      disabled={busy}
+      disabled={busy || disabled}
       className="w-full rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-950/50 transition hover:bg-indigo-500 disabled:opacity-50"
       type="submit"
     >

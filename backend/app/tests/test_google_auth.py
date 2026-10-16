@@ -15,6 +15,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.persistence.db import GoogleIdentity, GoogleLoginNonce, User, get_sessionmaker
 from app.security import token_digest, utc_now
+from app.services.legal_agreements import current_legal_acceptance
 
 CLIENT_ID = "test-client.apps.googleusercontent.com"
 
@@ -60,15 +61,15 @@ def _enable_signup(monkeypatch):
 
 def _login(visitor, google, *, invite_code="", **claims):
     nonce = visitor.get("/auth/google/nonce").json()["nonce"]
-    return visitor.post("/auth/google", json={
+    return visitor.post("/auth/google", json=dict({
         "credential": google(nonce, **claims), "invite_code": invite_code,
-    })
+    }, legal_acceptance=current_legal_acceptance()))
 
 
 def test_google_disabled_by_default(client):
     assert client.get("/auth/status").json()["google_client_id"] is None
     assert client.get("/auth/google/nonce").status_code == 503
-    assert client.post("/auth/google", json={"credential": "anything"}).status_code == 503
+    assert client.post("/auth/google", json=dict({"credential": "anything"}, legal_acceptance=current_legal_acceptance())).status_code == 503
 
 
 def test_google_signup_and_session(client, google, monkeypatch):
@@ -125,14 +126,15 @@ def test_google_existing_account_keeps_identity_after_email_change(client, googl
 def test_google_links_existing_gmail_without_replacing_password(client, google, monkeypatch):
     _enable_signup(monkeypatch)
     with TestClient(client.app) as visitor:
-        created = visitor.post("/auth/register", json={
-            "email": "member@gmail.com", "password": "Password1",
-        }).json()
+        created = visitor.post("/auth/register", json=dict({
+            "email": "member@gmail.com", "password": "A-long-Password123",
+        }, legal_acceptance=current_legal_acceptance())).json()
+        visitor.headers["X-CSRF-Token"] = created["csrf_token"]
         linked = _login(visitor, google)
         assert linked.status_code == 200, linked.text
         assert linked.json()["user"]["id"] == created["user"]["id"]
         assert visitor.post("/auth/login", json={
-            "email": "member@gmail.com", "password": "Password1",
+            "email": "member@gmail.com", "password": "A-long-Password123",
         }).status_code == 200
         # A different Google subject cannot claim this account through its email.
         assert _login(visitor, google, sub="another-subject").status_code == 409
@@ -142,7 +144,11 @@ def test_google_does_not_link_existing_third_party_email(client, google):
     with TestClient(client.app) as visitor:
         rejected = _login(visitor, google, email="owner@example.com")
         assert rejected.status_code == 409
-        # Workspace's signed hosted-domain claim proves ownership.
+        # Hosted-domain claims alone cannot link an existing password account.
+        unlinked = _login(visitor, google, email="owner@example.com", hd="example.com")
+        assert unlinked.status_code == 409
+        visitor.cookies.update(client.cookies)
+        visitor.headers["X-CSRF-Token"] = client.headers["X-CSRF-Token"]
         accepted = _login(visitor, google, email="owner@example.com", hd="example.com")
         assert accepted.status_code == 200
         assert accepted.json()["user"]["role"] == "owner"
@@ -167,14 +173,14 @@ def test_google_rejects_tampered_signature_and_replay(client, google, monkeypatc
         token = google(nonce)
         parts = token.split(".")
         parts[2] = ("A" if parts[2][0] != "A" else "B") + parts[2][1:]
-        assert visitor.post("/auth/google", json={"credential": ".".join(parts)}).status_code == 401
-        assert visitor.post("/auth/google", json={"credential": token}).status_code == 403
+        assert visitor.post("/auth/google", json=dict({"credential": ".".join(parts)}, legal_acceptance=current_legal_acceptance())).status_code == 401
+        assert visitor.post("/auth/google", json=dict({"credential": token}, legal_acceptance=current_legal_acceptance())).status_code == 403
         nonce = visitor.get("/auth/google/nonce").json()["nonce"]
         raw_cookie = visitor.cookies.get("verdict_google_nonce")
         body = {"credential": google(nonce)}
-        assert visitor.post("/auth/google", json=body).status_code == 200
+        assert visitor.post("/auth/google", json=dict(body, legal_acceptance=current_legal_acceptance())).status_code == 200
         visitor.cookies.set("verdict_google_nonce", raw_cookie)
-        assert visitor.post("/auth/google", json=body).status_code == 403
+        assert visitor.post("/auth/google", json=dict(body, legal_acceptance=current_legal_acceptance())).status_code == 403
 
 
 def test_google_rejects_missing_and_wrong_browser_cookie(client, google, monkeypatch):
@@ -182,9 +188,9 @@ def test_google_rejects_missing_and_wrong_browser_cookie(client, google, monkeyp
     with TestClient(client.app) as visitor:
         nonce = visitor.get("/auth/google/nonce").json()["nonce"]
         visitor.cookies.clear()
-        assert visitor.post("/auth/google", json={"credential": google(nonce)}).status_code == 403
+        assert visitor.post("/auth/google", json=dict({"credential": google(nonce)}, legal_acceptance=current_legal_acceptance())).status_code == 403
         visitor.cookies.set("verdict_google_nonce", "wrong-browser")
-        assert visitor.post("/auth/google", json={"credential": google(nonce)}).status_code == 403
+        assert visitor.post("/auth/google", json=dict({"credential": google(nonce)}, legal_acceptance=current_legal_acceptance())).status_code == 403
 
 
 async def test_google_expired_nonce(client, google, monkeypatch):
@@ -195,7 +201,7 @@ async def test_google_expired_nonce(client, google, monkeypatch):
             row = await db.get(GoogleLoginNonce, nonce)
             row.expires_at = utc_now() - timedelta(seconds=1)
             await db.commit()
-        assert visitor.post("/auth/google", json={"credential": google(nonce)}).status_code == 403
+        assert visitor.post("/auth/google", json=dict({"credential": google(nonce)}, legal_acceptance=current_legal_acceptance())).status_code == 403
 
 
 async def test_google_inactive_account_cannot_sign_in(client, google, monkeypatch):
@@ -248,5 +254,78 @@ def test_google_nonce_cookie_is_secure_in_production(client, google, monkeypatch
 def test_google_rejects_cross_origin_login(client, google):
     nonce = client.get("/auth/google/nonce").json()["nonce"]
     result = client.post("/auth/google", headers={"Origin": "https://attacker.example"},
-                         json={"credential": google(nonce)})
+                         json=dict({"credential": google(nonce)}, legal_acceptance=current_legal_acceptance()))
     assert result.status_code == 403
+
+
+def test_google_cannot_attach_to_a_pre_registered_password_account(client, google, monkeypatch):
+    _enable_signup(monkeypatch)
+    with TestClient(client.app) as attacker:
+        assert attacker.post("/auth/register", json=dict({
+            "email": "member@gmail.com", "password": "A-long-attacker-password-123",
+        }, legal_acceptance=current_legal_acceptance())).status_code == 201
+    with TestClient(client.app) as actual_email_owner:
+        assert _login(actual_email_owner, google).status_code == 409
+
+
+@pytest.mark.parametrize("mode", ["public", "invite"])
+@pytest.mark.parametrize("case", ["omitted", "false", "stale_terms", "stale_risk", "stale_privacy", "stale_content"])
+def test_new_google_account_requires_current_agreement(client, google, monkeypatch, mode, case):
+    from app.persistence.agreements import LegalAcceptanceRecord
+    from app.tests.test_legal_agreements import invalid_acceptance
+    invite = client.post("/auth/invites", json={"note": "Google agreement"}).json()
+    if mode == "public":
+        _enable_signup(monkeypatch)
+    with TestClient(client.app) as visitor:
+        nonce = visitor.get("/auth/google/nonce").json()["nonce"]
+        body = {"credential": google(nonce), **invalid_acceptance(case)}
+        if mode == "invite":
+            body["invite_code"] = invite["code"]
+        assert visitor.post("/auth/google", json=body).status_code == 428
+        assert visitor.get("/auth/me").status_code == 401
+        # The rejected credential/challenge still cannot be replayed with consent added.
+        assert visitor.post("/auth/google", json={**body, "legal_acceptance": current_legal_acceptance()}).status_code == 403
+        async def inspect_rejection():
+            async with get_sessionmaker()() as db:
+                assert await db.scalar(select(User).where(User.email == "member@gmail.com")) is None
+                assert await db.get(GoogleIdentity, "google-subject") is None
+                assert len((await db.scalars(select(LegalAcceptanceRecord))).all()) == 1
+        visitor.portal.call(inspect_rejection)
+        # A fresh challenge and explicit agreement succeeds; the invite was not consumed.
+        nonce = visitor.get("/auth/google/nonce").json()["nonce"]
+        accepted = visitor.post("/auth/google", json={**body, "credential": google(nonce),
+                                "legal_acceptance": current_legal_acceptance()})
+        assert accepted.status_code == 200, accepted.text
+        user_id = accepted.json()["user"]["id"]
+        async def inspect_acceptance():
+            async with get_sessionmaker()() as db:
+                row = await db.get(LegalAcceptanceRecord, user_id)
+                assert row is not None
+                assert row.content_sha256 == current_legal_acceptance()["content_sha256"]
+                assert row.terms_version == current_legal_acceptance()["terms_version"]
+                assert row.risk_version == current_legal_acceptance()["risk_version"]
+                assert row.privacy_version == current_legal_acceptance()["privacy_version"]
+                assert row.accepted_at is not None
+        visitor.portal.call(inspect_acceptance)
+
+
+def test_legacy_google_link_and_login_do_not_create_agreement(client, google, monkeypatch):
+    from app.persistence.agreements import LegalAcceptanceRecord
+    # Simulate an account created before this feature. Link only with its authenticated session.
+    async def legacy():
+        async with get_sessionmaker()() as db:
+            owner = await db.scalar(select(User).where(User.email == "owner@example.com"))
+            record = await db.get(LegalAcceptanceRecord, owner.id)
+            await db.delete(record)
+            await db.commit()
+    client.portal.call(legacy)
+    nonce = client.get("/auth/google/nonce").json()["nonce"]
+    linked = client.post("/auth/google", json={"credential": google(nonce, email="owner@example.com", hd="example.com")})
+    assert linked.status_code == 200
+    with TestClient(client.app) as visitor:
+        nonce = visitor.get("/auth/google/nonce").json()["nonce"]
+        assert visitor.post("/auth/google", json={"credential": google(nonce, email="owner@example.com", hd="example.com")}).status_code == 200
+    async def no_fabrication():
+        async with get_sessionmaker()() as db:
+            assert (await db.scalars(select(LegalAcceptanceRecord))).all() == []
+    client.portal.call(no_fabrication)

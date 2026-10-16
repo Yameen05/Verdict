@@ -107,3 +107,18 @@ def test_no_send_when_smtp_is_unconfigured(monkeypatch, smtp):
     _configure(monkeypatch, SMTP_HOST="")
     assert mailer.send_email("user@example.com", "Subject", "Body") is False
     assert smtp.instances == []
+
+
+def test_implicit_tls_checks_certificates_and_does_not_starttls(monkeypatch):
+    class FakeSSL(_FakeSMTP):
+        def __init__(self, *args, context=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.ssl_context = context
+    _FakeSMTP.instances = []
+    _configure(monkeypatch, SMTP_STARTTLS="false", SMTP_SSL="true")
+    monkeypatch.setattr(mailer.smtplib, "SMTP_SSL", FakeSSL)
+    assert mailer.send_email("user@example.com", "Subject", "Body") is True
+    connection = _FakeSMTP.instances[0]
+    assert connection.ssl_context.verify_mode == ssl.CERT_REQUIRED
+    assert connection.ssl_context.check_hostname
+    assert not connection.starttls_called

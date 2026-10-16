@@ -1,3 +1,4 @@
+import { safeExternalUrl } from "../lib/safeUrl";
 import { useMemo, useState } from "react";
 import type { DebateCase, EvidenceItem } from "../api/client";
 
@@ -82,9 +83,9 @@ function CaseColumn({
                         {ev?.label ?? id}
                       </span>
                       {ev?.content ?? "Evidence not found in the ledger."}
-                      {ev?.url && (
+                      {safeExternalUrl(ev?.url) && (
                         <a
-                          href={ev.url}
+                          href={safeExternalUrl(ev?.url)}
                           target="_blank"
                           rel="noreferrer"
                           className="ml-1 text-indigo-400 hover:underline"

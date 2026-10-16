@@ -170,6 +170,7 @@ export interface ResearchReport {
   financial_health: string;
   key_risks: string[];
   news_summary: string | null;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number | null;
   scores: DimensionScores | null;
   falsifiers: string[];
@@ -302,6 +303,7 @@ export interface HistoryEntry {
   recommendation: "Buy" | "Hold" | "Sell" | "Pending" | "Failed";
   justification: string;
   sentiment_score: number | null;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number | null;
   price_at_run: number | null;
   duration_ms: number | null;
@@ -315,6 +317,7 @@ export interface ScoreboardEntry {
   id: number;
   ticker: string;
   recommendation: string;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number | null;
   model: string | null;
   horizon_days: number | null;
@@ -371,6 +374,7 @@ export interface BacktestEntry {
   id: number;
   ticker: string;
   recommendation: string;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number | null;
   horizon_days: number | null;
   created_at: string;
@@ -450,6 +454,7 @@ export interface TimingAssessment {
   horizon_days: number;
   action: TimingAction;
   action_label: string;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number;
   summary: string;
   rationale: string[];
@@ -520,6 +525,7 @@ export interface DayTradeSignal {
   ticker: string;
   action: DayTradeAction;
   action_label: string;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number;
   session: string;
   session_note: string;
@@ -544,6 +550,7 @@ export interface DayTradeScanRow {
   ticker: string;
   action: DayTradeAction;
   action_label: string;
+  /** Recorded model/rule assessment score; not verified odds of profit. */
   confidence: number;
   close: number;
   score: number;

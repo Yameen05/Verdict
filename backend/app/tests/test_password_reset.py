@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.services.legal_agreements import current_legal_acceptance
 
 OWNER_EMAIL = "owner@example.com"
 OWNER_PASSWORD = "A-strong-test-password-123"
@@ -122,7 +123,7 @@ def test_public_signup_disabled_requires_invite(client):
     with TestClient(create_app()) as visitor:
         res = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
+            json=dict({"email": "new@example.com", "password": "A-strong-member-pass-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert res.status_code == 401
 
@@ -136,7 +137,7 @@ def test_public_signup_enabled_registers_without_invite(client, monkeypatch):
         assert visitor.get("/auth/status").json()["public_signup_enabled"] is True
         res = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
+            json=dict({"email": "new@example.com", "password": "A-strong-member-pass-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert res.status_code == 201, res.text
         assert res.json()["user"]["role"] == "member"
@@ -144,7 +145,7 @@ def test_public_signup_enabled_registers_without_invite(client, monkeypatch):
         # Duplicate email still rejected.
         dup = visitor.post(
             "/auth/register",
-            json={"email": "new@example.com", "password": "A-strong-member-pass-123"},
+            json=dict({"email": "new@example.com", "password": "A-strong-member-pass-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert dup.status_code == 409
     get_settings.cache_clear()
@@ -160,21 +161,33 @@ def test_public_signup_still_accepts_valid_invite(client, monkeypatch):
         # A supplied code is still validated even with signup open.
         bad = visitor.post(
             "/auth/register",
-            json={
+            json=dict({
                 "invite_code": "not-a-real-code",
                 "email": "a@example.com",
                 "password": "A-strong-member-pass-123",
-            },
+            }, legal_acceptance=current_legal_acceptance()),
         )
         assert bad.status_code == 401
 
         good = visitor.post(
             "/auth/register",
-            json={
+            json=dict({
                 "invite_code": code,
                 "email": "b@example.com",
                 "password": "A-strong-member-pass-123",
-            },
+            }, legal_acceptance=current_legal_acceptance()),
         )
         assert good.status_code == 201
     get_settings.cache_clear()
+
+
+async def test_failed_delivery_is_recorded_and_token_retired(client, smtp_env, monkeypatch):
+    from sqlalchemy import select
+
+    from app.persistence.db import AuditEvent, PasswordResetToken, get_sessionmaker
+    monkeypatch.setattr("app.routers.password_reset.send_email", lambda *args: False)
+    assert client.post("/auth/password-reset/request", json={"email": OWNER_EMAIL}).status_code == 204
+    async with get_sessionmaker()() as db:
+        assert await db.scalar(select(PasswordResetToken)) is None
+        audit = await db.scalar(select(AuditEvent).where(AuditEvent.event == "password_reset_requested"))
+        assert audit.details["delivered"] is False

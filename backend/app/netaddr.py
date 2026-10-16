@@ -76,7 +76,14 @@ def client_ip(request: Request) -> str:
     forwarded = request.headers.get("x-forwarded-for") or ""
     for entry in reversed(forwarded.split(",")):
         candidate = _normalize_host(entry)
-        if candidate and not _is_trusted(candidate, networks):
-            return candidate
+        if not candidate:
+            continue
+        try:
+            address = ipaddress.ip_address(candidate)
+        except ValueError:
+            # Fail closed at this hop; skipping it would trust a forged prefix.
+            return peer
+        if not _is_trusted(str(address), networks):
+            return str(address)
     # Every hop was a trusted proxy (or the header was absent).
     return peer

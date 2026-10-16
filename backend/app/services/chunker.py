@@ -45,6 +45,8 @@ def chunk_filing(
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
 ) -> list[Chunk]:
+    if len(filing.raw_text) > 2_000_000:
+        raise ValueError("Filing exceeds the supported indexing size")
     cleaned = _clean(filing.raw_text)
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
@@ -53,6 +55,8 @@ def chunk_filing(
     )
     pieces = splitter.split_text(cleaned)
 
+    if len(pieces) > 2500:
+        raise ValueError("Filing exceeds the supported chunk count")
     chunks: list[Chunk] = []
     for i, piece in enumerate(pieces):
         chunks.append(

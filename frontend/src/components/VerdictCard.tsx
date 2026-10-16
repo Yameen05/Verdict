@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION } from "../lib/confidence";
 import { failedAssessment, normalizeResearch, predictionKind } from "../lib/assessment";
 import { useState } from "react";
 import type { MetricsFindings, ResearchResponse } from "../api/client";
@@ -83,7 +84,7 @@ function ConfidenceGauge({ value, color }: { value: number; color: string }) {
   const half = Math.PI * 44;
   const filled = (Math.max(0, Math.min(100, value)) / 100) * half;
   return (
-    <svg viewBox="0 0 110 62" className="w-36" role="img" aria-label={`Confidence ${value} out of 100`}>
+    <svg viewBox="0 0 110 62" className="w-36" role="img" aria-label={`AI assessment score ${value} out of 100. ${CONFIDENCE_EXPLANATION}`}>
       <path
         d="M 11 55 A 44 44 0 0 1 99 55"
         fill="none"
@@ -103,7 +104,7 @@ function ConfidenceGauge({ value, color }: { value: number; color: string }) {
         {value}
       </text>
       <text x="55" y="59" textAnchor="middle" className="fill-slate-500" fontSize="8" letterSpacing="1.5">
-        CONFIDENCE
+        AI SCORE
       </text>
     </svg>
   );
@@ -155,6 +156,7 @@ export function VerdictCard({ result, meta, onExport }: Props) {
           {!incomplete && report.confidence !== null && (
             <ConfidenceGauge value={report.confidence} color={style.gauge} />
           )}
+          <p title={CONFIDENCE_EXPLANATION} className="text-center text-[10px] leading-4 text-slate-400">AI assessment score, not verified odds of profit.</p>
           {meta && (
             <span className="text-[10px] text-slate-500">
               {(meta.duration_ms / 1000).toFixed(1)}s · ${meta.cost_usd.toFixed(4)}

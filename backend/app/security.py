@@ -68,8 +68,8 @@ def normalize_email(email: str) -> str:
 
 
 def validate_password(password: str) -> None:
-    if len(password) < 6:
-        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+    if len(password) < 15:
+        raise HTTPException(status_code=422, detail="Password must be at least 15 characters")
     if len(password) > 128:
         raise HTTPException(status_code=422, detail="Password must be at most 128 characters")
     if not re.search(r"[A-Z]", password):
@@ -229,7 +229,7 @@ def verify_csrf(request: Request, context: AuthContext) -> None:
     if request.method.upper() in _SAFE_METHODS:
         return
     provided = request.headers.get("x-csrf-token") or ""
-    if not secrets.compare_digest(provided, context.session.csrf_token):
+    if not secrets.compare_digest(provided.encode("utf-8"), context.session.csrf_token.encode("utf-8")):
         raise HTTPException(status_code=403, detail="CSRF validation failed")
 
 
@@ -238,6 +238,10 @@ async def require_authenticated(
     context: Annotated[AuthContext, Depends(get_auth_context)],
 ) -> AuthContext:
     verify_csrf(request, context)
+    from app.services.budgets import reserve_auth_attempt
+    read = request.method.upper() in _SAFE_METHODS
+    await reserve_auth_attempt(str(context.user.id), "api-read" if read else "api-write",
+                               240 if read else 120, 60)
     return context
 
 

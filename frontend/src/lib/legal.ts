@@ -18,20 +18,21 @@ export const LEGAL_DOCS: LegalDoc[] = [
     id: "risk",
     label: "Risk & data",
     title: "Risk & Data Disclosure",
-    updated: "July 13, 2026",
+    updated: "October 15, 2026",
     sections: [
       {
-        heading: "Verdict is not investment advice",
+        heading: "General research, not a personal trading plan",
         body: [
-          "Verdict is an educational research tool and software demonstration. Nothing it produces — verdicts, confidence scores, day-trade signals, entries, stops, targets, return ranges, chat answers, or anything else — is investment, financial, trading, tax, or legal advice, or a recommendation to buy, sell, or hold any security or digital asset.",
-          "The operator of this deployment is not a registered investment adviser, broker-dealer, or financial planner, and no adviser-client or fiduciary relationship is created by using the app.",
+          "Verdict publishes general stock-level Buy/Hold/Sell research assessments for educational use. These assessments do not determine whether a trade is suitable for you. The app does not accept investment deposits, hold investment funds, or place real trades; practice trades use pretend money.",
+          "Verdict does not assess your finances, goals, taxes or risk tolerance to choose a trade or allocation for you. Educational labeling and disclaimers do not determine the legal status of a deployment or remove liability.",
           "Reports are generated in part by large language models. AI output can be wrong, out of date, or confidently misleading. Treat every claim as unverified and do your own research or consult a licensed professional before risking money.",
         ],
       },
       {
         heading: "Markets are risky",
         body: [
-          "Stocks and cryptocurrencies can lose value quickly, including all of the money you put in. Day trading in particular results in losses for most participants.",
+          "Stocks and cryptocurrencies can lose value quickly, including all of the money you put in. Day trading can amplify losses through volatility, leverage and transaction costs.",
+          "An AI assessment score of 70/100 is the model's reading of evidence, not a verified 70% chance of profit or a guaranteed accuracy rate. Hold does not mean a validated 50/50 outcome.",
           "Past performance, backtests, hit rates, and scoreboard statistics do not predict future results. Hypothetical or simulated results have inherent limitations and do not represent real trading.",
         ],
       },
@@ -39,14 +40,14 @@ export const LEGAL_DOCS: LegalDoc[] = [
         heading: "Where the data comes from",
         body: [
           "Verdict aggregates data from third-party sources, which may include SEC EDGAR, Yahoo Finance (via the yfinance library), NewsAPI, Alpha Vantage, Finnhub, Polygon, Tiingo, Stooq, FRED, Reddit, and StockTwits, plus an LLM provider you configure.",
-          "Market data may be delayed, incomplete, adjusted, or simply wrong, and is provided for personal, non-commercial, informational use only. Each source's own terms govern its data; this app does not grant you any license to redistribute, resell, or commercially exploit third-party data, and you are responsible for complying with those terms.",
+          "Market data may be delayed, incomplete, adjusted, or simply wrong, and must be used within each provider's applicable license and terms. Each source's own terms govern its data; this app does not grant you any license to redistribute, resell, or commercially exploit third-party data, and you are responsible for complying with those terms.",
           "Verdict is not affiliated with, endorsed by, or sponsored by any of these providers.",
         ],
       },
       {
         heading: "No warranty",
         body: [
-          "The app is provided \"as is\" and \"as available\", without warranties of any kind. Quotes can be stale, alerts can fail to send, and analysis can be wrong. Never rely on this app as your only source for a financial decision.",
+          "To the extent permitted by applicable law, the app is provided \"as is\" and \"as available\" without warranties. Non-waivable statutory rights remain protected. Quotes can be stale, alerts can fail to send, and analysis can be wrong. Never rely on this app as your only source for a financial decision.",
         ],
       },
     ],
@@ -54,13 +55,13 @@ export const LEGAL_DOCS: LegalDoc[] = [
   {
     id: "terms",
     label: "Terms",
-    title: "Terms of Use",
-    updated: "July 13, 2026",
+    title: "Terms of Service",
+    updated: "October 15, 2026",
     sections: [
       {
         heading: "Acceptance",
         body: [
-          "By creating an account or using this deployment of Verdict, you agree to these Terms of Use, the Privacy Policy, and the Risk & Data Disclosure. If you do not agree, do not use the app.",
+          "Creating a new Verdict account requires an affirmative agreement to these Terms of Service, acknowledgement of the investment risks and acknowledgement that you have been provided the Privacy Notice. The agreement step identifies the document versions being recorded. If you do not agree, do not create an account. This step is not consent to marketing or unrelated data use.",
           "Verdict is open-source software released under the MIT license. Each deployment is run by its own operator; these terms are between you and the operator of the instance you are using.",
         ],
       },
@@ -68,28 +69,28 @@ export const LEGAL_DOCS: LegalDoc[] = [
         heading: "Eligibility and accounts",
         body: [
           "You must be at least 18 years old (or the age of majority where you live) to use the app.",
-          "You are responsible for keeping your password secure, and for all activity on your account. Provide a real email address you control — it is used for account recovery and alert emails.",
+          "Keep your password and session secure and do not share access or impersonate another person. Provide a real email address you control — it is used for account recovery and alert emails.",
         ],
       },
       {
         heading: "Acceptable use",
         body: [
-          "Do not attempt to break, overload, or probe the service; do not evade rate limits or daily run quotas; do not scrape or bulk-export third-party data through the app; do not use the app for any unlawful purpose or in violation of any data provider's terms.",
-          "Research runs consume shared, rate-limited resources. The operator may throttle, suspend, or remove accounts that abuse the service, and may revoke access or discontinue the service at any time.",
+          "Use the service lawfully. Do not access other accounts without authorization, interfere with security or availability, evade limits, or scrape or redistribute data beyond the rights granted by its providers. Authorized security testing must stay within the permission given by the operator.",
+          "Research runs consume shared, rate-limited resources. The operator may restrict abusive access or change or discontinue features, subject to applicable law. Provider outages, stale data and quota limits can affect availability.",
         ],
       },
       {
         heading: "Your decisions are yours",
         body: [
-          "Any trade or investment you make after reading the app's output is your own decision and your own risk. To the maximum extent permitted by law, the operator and contributors are not liable for trading losses or for any indirect, incidental, special, consequential, or punitive damages arising from your use of the app.",
-          "To the extent liability cannot be excluded, the total aggregate liability of the operator for all claims relating to the app is limited to the greater of the amount you paid to use it (typically zero) or fifty US dollars.",
+          "You are responsible for your own investment decisions, including checking information and deciding whether to seek qualified professional advice. Using a Buy/Hold/Sell label, score, chat answer, chart or alert does not guarantee a profit or prevent a loss. You can lose all money invested; the app does not place or manage a real trade for you. To the extent permitted by applicable law, the operator and contributors disclaim liability for investment losses and indirect or consequential damages arising from reliance on the service. Nothing here excludes liability or waives rights that cannot lawfully be excluded or waived.",
+          "Disclaimers and these template terms do not guarantee immunity from claims. The deployment operator must obtain appropriate legal review for the actual service, jurisdiction, users and business model before public launch.",
         ],
       },
       {
         heading: "Content and license",
         body: [
-          "Reports, charts, and other output generated for you may be used for your personal, non-commercial purposes. Underlying third-party data remains subject to its own licenses and may not be redistributed.",
-          "These terms may be updated as the software evolves; continued use after a change constitutes acceptance. Material changes will be reflected in the \"last updated\" date above.",
+          "Access to reports and charts does not grant rights to underlying third-party data. Sharing, redistribution and commercial use depend on the applicable provider licenses and deployment terms.",
+          "Document changes are identified by their version and last-updated date. New-account acceptance applies only to the versions presented and recorded at that time; the software does not fabricate later acceptance for existing users.",
         ],
       },
     ],
@@ -98,13 +99,13 @@ export const LEGAL_DOCS: LegalDoc[] = [
     id: "privacy",
     label: "Privacy",
     title: "Privacy Policy",
-    updated: "October 11, 2026",
+    updated: "October 15, 2026",
     sections: [
       {
         heading: "What is stored",
         body: [
           "Account data: your email address, an Argon2id hash if you set a password (never the password itself), your Google account identifier if you use Google sign-in, and hashes of invites, sessions, and password-reset tokens.",
-          "Workspace data: your watchlist, positions, price alerts, chart levels, verdict watches, and the research runs you trigger (research runs for a ticker are shared across accounts on this deployment).",
+          "Workspace data: your watchlist, entered positions, price alerts, chart levels, verdict watches, saved strategies, and practice quotes, trades and journal notes. New-account agreement records store document versions, a fingerprint of the legal-copy source and the server-recorded acceptance time; a security audit event also associates the acknowledgement with the account and request. Stored research runs and their track record are shared across accounts on this deployment; they are not private journals.",
           "Security log: authentication events (login, logout, resets, failures) with IP address and browser user-agent, kept to detect abuse.",
         ],
       },
@@ -117,16 +118,17 @@ export const LEGAL_DOCS: LegalDoc[] = [
       {
         heading: "What leaves the server",
         body: [
-          "To generate research, the app sends ticker symbols and derived research context (filing excerpts, headlines, metrics — never your password or personal details) to the configured LLM provider, and ticker symbols to market-data providers. Those providers process that data under their own privacy policies.",
+          "Research and filing search send ticker-related context, filing excerpts, headlines, metrics and search text to the configured AI/embedding providers. Chat can send your free-text question, recent conversation history and supplied report context to the configured AI provider. Personal details you type into those fields may therefore leave this server. Do not enter passwords, account credentials or other sensitive personal information into chat.",
+          "Market-data requests send ticker/query information to configured data providers. AI, data, hosting and authentication providers process requests under their own policies; their retention, training and regional processing settings depend on the operator's actual accounts and configuration, which this app does not establish.",
           "If the operator has configured email (SMTP), your email address is used to deliver alert and password-reset messages through that mail service.",
-          "Your data is never sold or shared for advertising.",
+          "The built-in app has no advertising, analytics-tracking or data-sale integration. This does not establish the separate practices of a deployment operator or its hosting/provider services; those require deployment-specific disclosure.",
         ],
       },
       {
         heading: "Retention and deletion",
         body: [
-          "Data is kept while your account exists. To delete your account and its data, contact the operator of this deployment — deletion removes your account, workspace state, and personal identifiers from the active database.",
-          "This is self-hosted software: the operator of each instance is the data controller for that instance, and this policy describes the app's built-in behavior.",
+          "This version has no self-service account deletion or implemented deletion-request channel. Workspace and research history are not automatically deleted when a session expires. The operator must publish an actual contact/request process and retention policy before public launch; this template supplies neither a contact address nor a retention period.",
+          "Deleting an account is not implemented as a user-facing workflow here. Shared research, security records, backups and copies processed by providers require separate retention/deletion decisions; the app cannot promise immediate deletion of all copies. This policy describes built-in software behavior, and must be completed for the actual deployment.",
         ],
       },
     ],
@@ -135,4 +137,4 @@ export const LEGAL_DOCS: LegalDoc[] = [
 
 export const FOOTER_DISCLAIMER =
   "Verdict is an educational research tool, not investment advice. Markets involve risk of loss. " +
-  "Market data comes from third-party sources, may be delayed or inaccurate, and is for personal, non-commercial use only.";
+  "AI assessment scores are not verified odds of profit. Market data may be delayed or inaccurate and remains subject to provider terms.";

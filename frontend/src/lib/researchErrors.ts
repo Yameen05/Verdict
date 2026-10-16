@@ -10,7 +10,7 @@ export interface FailureInfo {
 }
 
 const messages: Record<FailureInfo["kind"], string> = {
-  app_daily_limit: "Verdict's daily limit for fresh reports was reached. Fresh reports reset at midnight UTC; cached reports remain available.",
+  app_daily_limit: "Verdict's daily limit for fresh reports and AI requests was reached. The limit resets at midnight UTC; cached reports remain available.",
   provider_rate_limit: "Google's requests-per-minute limit was reached. Wait briefly before trying again; cached reports remain available.",
   provider_daily_limit: "Google's daily AI quota was reached. Retrying shortly is unlikely to help. No reset time was confirmed.",
   provider_token_limit: "Google's AI token quota was reached.",

@@ -13,7 +13,7 @@ account.
 import asyncio
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +37,7 @@ from app.security import (
     utc_now,
     validate_password,
 )
+from app.services.budgets import reserve_auth_attempt
 from app.services.mailer import email_configured, send_email
 
 router = APIRouter()
@@ -48,7 +49,7 @@ class ResetRequest(BaseModel):
 
 class ResetConfirm(BaseModel):
     token: str = Field(min_length=32, max_length=256)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=15, max_length=128)
 
 
 def _reset_email_body(link: str, minutes: int) -> str:
@@ -70,10 +71,23 @@ def _reset_email_body(link: str, minutes: int) -> str:
 async def request_password_reset(
     request: Request,
     body: ResetRequest,
-    db: AsyncSession = Depends(session_scope),
+    background_tasks: BackgroundTasks,
 ) -> Response:
-    settings = get_settings()
     email = normalize_email(body.email)
+    await reserve_auth_attempt(email, "reset", 3, 3600)
+    background_tasks.add_task(_deliver_reset, email, request)
+    return Response(status_code=204)
+
+
+async def _deliver_reset(email: str, request: Request) -> None:
+    from app.persistence.db import get_sessionmaker
+
+    async with get_sessionmaker()() as db:
+        await _deliver_reset_with_session(email, request, db)
+
+
+async def _deliver_reset_with_session(email: str, request: Request, db: AsyncSession) -> None:
+    settings = get_settings()
     user = await db.scalar(select(User).where(User.email == email))
 
     # Same response whether or not the account exists (no enumeration).
@@ -83,7 +97,7 @@ async def request_password_reset(
             details={"delivered": False},
         )
         await db.commit()
-        return Response(status_code=204)
+        return
 
     await db.execute(
         delete(PasswordResetToken).where(PasswordResetToken.user_id == user.id)
@@ -97,20 +111,25 @@ async def request_password_reset(
             + timedelta(minutes=settings.password_reset_token_minutes),
         )
     )
-    await record_audit(
-        db, request, "password_reset_requested",
-        user_id=user.id, details={"delivered": True},
-    )
     await db.commit()
 
-    link = f"{settings.password_reset_link_base}/?reset_token={raw_token}"
-    await asyncio.to_thread(
+    link = f"{settings.password_reset_link_base}/#reset_token={raw_token}"
+    delivered = await asyncio.to_thread(
         send_email,
         user.email,
         "Reset your Verdict password",
         _reset_email_body(link, settings.password_reset_token_minutes),
     )
-    return Response(status_code=204)
+    await record_audit(
+        db, request, "password_reset_requested", user_id=user.id,
+        details={"delivered": delivered},
+    )
+    if not delivered:
+        await db.execute(delete(PasswordResetToken).where(
+            PasswordResetToken.token_hash == token_digest(raw_token)
+        ))
+    await db.commit()
+
 
 
 @router.post(
@@ -140,6 +159,17 @@ async def confirm_password_reset(
         raise HTTPException(status_code=401, detail="Invalid or expired reset link")
 
     validate_password(body.password)
+    # Claim before hashing/changing credentials. A concurrent request that read
+    # the same token must lose; rollback restores it if the transaction fails.
+    consumed = await db.execute(
+        delete(PasswordResetToken).where(
+            PasswordResetToken.token_hash == token_digest(body.token),
+            PasswordResetToken.expires_at > utc_now(),
+        ).returning(PasswordResetToken.token_hash).execution_options(synchronize_session=False)
+    )
+    if consumed.scalar_one_or_none() is None:
+        await db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid or expired reset link")
     user.password_hash = hash_password(body.password)
 
     # Revoke everything that could still authenticate as this user.

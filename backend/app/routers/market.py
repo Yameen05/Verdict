@@ -6,13 +6,14 @@ import asyncio
 from typing import Literal, cast
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.persistence.db import list_recent_runs, session_scope
 from app.services.assets import asset_capabilities
 from app.services.backtest import BacktestResponse, compute_backtest
+from app.services.budgets import reserve_provider_operation
 from app.services.cache import TTLCache
 from app.services.metrics_client import (
     PRICE_HISTORY_INTERVALS,
@@ -232,12 +233,13 @@ async def latest_price(ticker: str, interval: str = "1M") -> LatestPriceResponse
 
 
 @router.get("/{ticker}/timing", response_model=TimingAssessment)
-async def timing(ticker: str, horizon: int = 14) -> TimingAssessment:
+async def timing(request: Request, ticker: str, horizon: int = 14) -> TimingAssessment:
     """Read the chart + news and suggest whether to buy now, wait, or accumulate."""
     ticker = _validate_ticker(ticker)
     horizon = min(max(horizon, 1), 365)
 
     async def factory() -> TimingAssessment:
+        await reserve_provider_operation(request.state.user_id)
         return await assess_timing(ticker, horizon)
 
     try:

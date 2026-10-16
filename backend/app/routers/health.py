@@ -5,15 +5,17 @@
                        503 otherwise, with a per-dependency breakdown.
 """
 
-from __future__ import annotations
-
 import asyncio
+from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.limiter import limiter
 from app.observability.logging import get_logger
+from app.persistence.db import get_sessionmaker
 from app.security import AuthContext, require_authenticated
 
 router = APIRouter(tags=["health"])
@@ -33,7 +35,10 @@ async def _check_llm() -> tuple[bool, str]:
         from app.services.llm import make_llm_client
 
         client = make_llm_client(timeout=5.0)
-        await client.models.list()
+        try:
+            await client.models.list()
+        finally:
+            await client.close()
         return True, "reachable"
     except Exception as e:  # noqa: BLE001
         return False, type(e).__name__
@@ -46,7 +51,7 @@ async def _check_vectorstore() -> tuple[bool, str]:
             from pinecone import Pinecone
 
             pc = Pinecone(api_key=settings.pinecone_api_key)
-            names = pc.list_indexes().names()
+            names = await asyncio.to_thread(lambda: pc.list_indexes().names())
             return True, f"pinecone reachable ({len(names)} indexes)"
         except Exception as e:  # noqa: BLE001
             return False, type(e).__name__
@@ -76,15 +81,27 @@ async def _check_newsapi() -> tuple[bool, str]:
         return False, type(e).__name__
 
 
+async def _check_database() -> tuple[bool, str]:
+    try:
+        async with get_sessionmaker()() as db:
+            await db.execute(text("SELECT 1"))
+        return True, "reachable"
+    except Exception as exc:
+        return False, type(exc).__name__
+
+
 @router.get("/health/ready")
+@limiter.limit("5/minute")
 async def ready(
+    request: Request,
     response: Response,
     _auth: AuthContext = Depends(require_authenticated),
 ) -> dict:
-    llm_ok, news_ok, vs_ok = await asyncio.gather(
-        _check_llm(), _check_newsapi(), _check_vectorstore()
+    llm_ok, news_ok, vs_ok, db_ok = await asyncio.gather(
+        _check_llm(), _check_newsapi(), _check_vectorstore(), _check_database()
     )
     checks = {
+        "database": {"ok": db_ok[0], "detail": db_ok[1]},
         "llm": {"ok": llm_ok[0], "detail": llm_ok[1]},
         "newsapi": {"ok": news_ok[0], "detail": news_ok[1]},
         "vectorstore": {"ok": vs_ok[0], "detail": vs_ok[1]},
@@ -112,7 +129,7 @@ async def config_status(
     }
     provider = "openai"
     if settings.llm_base_url.strip():
-        provider = settings.llm_base_url.strip().split("//")[-1].split("/")[0]
+        provider = urlsplit(settings.llm_base_url.strip()).hostname or "custom"
     vectorstore = "pinecone" if settings.pinecone_api_key.strip() else "local"
     return {
         "environment": settings.environment,

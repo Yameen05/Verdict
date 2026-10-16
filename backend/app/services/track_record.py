@@ -26,7 +26,7 @@ async def daily_history(ticker: str) -> list[PriceBar]:
             bars, _ = await asyncio.to_thread(fetch_price_history, ticker, "5Y", "1D")
             return bars
         except MetricsClientError as exc:
-            log.warning("track_record_price_failed", extra={"ticker": ticker, "reason": str(exc)})
+            log.warning("track_record_price_failed", extra={"ticker": ticker, "error_type": type(exc).__name__})
             return []
 
     return await _history_cache.get_or_set(ticker.upper(), factory)

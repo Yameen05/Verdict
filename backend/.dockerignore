@@ -10,3 +10,13 @@ venv
 .gitignore
 .DS_Store
 *.log
+
+.env*
+!.env.example
+data/
+*.db
+*.db-*
+*.sqlite*
+*.pem
+*.key
+.git

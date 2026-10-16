@@ -1,5 +1,5 @@
 # Development Dockerfile: hot-reload via uvicorn --reload, no gunicorn.
-FROM python:3.13.13-slim-trixie
+FROM python:3.13.16-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,7 +12,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt requirements-dev.txt ./
+COPY requirements.txt requirements-dev.txt constraints.txt ./
 RUN pip install -r requirements-dev.txt
 
 COPY . .

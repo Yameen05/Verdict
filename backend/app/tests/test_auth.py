@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.persistence.db import User, UserSession, get_sessionmaker
+from app.services.legal_agreements import current_legal_acceptance
 
 BOOTSTRAP_TOKEN = "test-bootstrap-token-with-at-least-32-characters"
 OWNER = {
@@ -29,14 +30,14 @@ def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
         rejected = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": "wrong"},
-            json=OWNER,
+            json=dict(OWNER, legal_acceptance=current_legal_acceptance()),
         )
         assert rejected.status_code == 404
 
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json=OWNER,
+            json=dict(OWNER, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201
         assert created.json()["user"]["email"] == OWNER["email"]
@@ -46,7 +47,7 @@ def test_bootstrap_is_one_time_and_requires_server_token(monkeypatch):
         duplicate = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json={"email": "other@example.com", "password": "Another-strong-password-123"},
+            json=dict({"email": "other@example.com", "password": "Another-strong-password-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert duplicate.status_code == 404
 
@@ -59,7 +60,7 @@ def test_password_login_for_legacy_accounts(monkeypatch, previously_enrolled):
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json=OWNER,
+            json=dict(OWNER, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201
         assert "requires_2fa_setup" not in created.json()
@@ -107,7 +108,7 @@ def test_state_changing_route_rejects_missing_csrf(monkeypatch):
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json=OWNER,
+            json=dict(OWNER, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201
         blocked = client.post("/research/AAPL")

@@ -1,0 +1,6 @@
+{
+  "origin": "disposable local TLS instance",
+  "email_flow": "PASS: compact single signup card, linked readable modals with focus/keyboard checks, initially unchecked and disabled action, modal access does not accept, credentials preserved across documents and Back, Back clears acceptance and creates nothing, desktop/mobile fit, accepted signup returns 201 and authenticated session",
+  "google_flow": "PASS with local GIS/API doubles: unknown login 428 opens a compact unchecked agreement card; Google is inert and its callback is blocked until acceptance. Fresh challenge/current versions are sent after acceptance. Regular signup also keeps credentials through documents and blocks Google until checked. Real Google login not attempted; backend separately tests locally signed JWTs.",
+  "live_google_verified": false
+}

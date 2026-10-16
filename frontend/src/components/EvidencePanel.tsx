@@ -1,3 +1,4 @@
+import { safeExternalUrl } from "../lib/safeUrl";
 import type { EvidenceItem } from "../api/client";
 
 const SOURCE_STYLE: Record<EvidenceItem["source"], { label: string; chip: string }> = {
@@ -34,9 +35,9 @@ export function EvidencePanel({ evidence }: { evidence: EvidenceItem[] }) {
                 <div className="font-medium text-slate-300">{e.label}</div>
                 <div className="text-slate-400">
                   {e.content}
-                  {e.url && (
+                  {safeExternalUrl(e.url) && (
                     <a
-                      href={e.url}
+                      href={safeExternalUrl(e.url)}
                       target="_blank"
                       rel="noreferrer"
                       className="ml-1 text-indigo-400 hover:underline"

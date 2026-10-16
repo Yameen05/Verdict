@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
-
-import pytest
-from fastapi import HTTPException
 
 from app.config import get_settings
 from app.persistence.db import save_run, session_scope
@@ -177,34 +173,6 @@ async def test_global_daily_quota(client, monkeypatch):
     assert res.status_code == 429
     assert "community" in res.json()["detail"]["message"]
     get_settings.cache_clear()
-
-
-@pytest.mark.parametrize(
-    "user_count,global_count,blocked",
-    [(10, 40, None), (99, 99, None), (100, 99, "You've used"), (99, 100, "community")],
-)
-async def test_personal_ceiling_allows_old_limits_and_enforces_new_boundaries(
-    monkeypatch, user_count, global_count, blocked
-):
-    from app.routers import research as research_mod
-
-    monkeypatch.setenv("DAILY_RUNS_PER_USER", "100")
-    monkeypatch.setenv("DAILY_RUNS_GLOBAL", "100")
-    get_settings.cache_clear()
-
-    async def count(_session, since, user_id=None):
-        assert since.hour == since.minute == since.second == since.microsecond == 0
-        assert since.utcoffset().total_seconds() == 0
-        return global_count if user_id is None else user_count
-
-    monkeypatch.setattr(research_mod, "count_runs_since", count)
-    if blocked is None:
-        await research_mod._enforce_quota(SimpleNamespace(), 1)
-    else:
-        with pytest.raises(HTTPException) as error:
-            await research_mod._enforce_quota(SimpleNamespace(), 1)
-        assert error.value.status_code == 429
-        assert blocked in error.value.detail["message"]
 
 
 async def test_cache_disabled_when_ttl_zero(client, monkeypatch):

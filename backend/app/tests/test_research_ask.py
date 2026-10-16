@@ -140,7 +140,7 @@ def test_investment_question_returns_simple_dollar_windows_without_llm(
         "/research/ask",
         json={
             "ticker": "NVDA",
-            "question": "If I invest 200 dollars right now, what should I get in 1 week, what about 2 weeks and on?",
+            "question": "Apply historical 1 week and 2 weeks moves to a hypothetical investment of $200, and what about other windows?",
             "context": _research_context("Sell"),
             "history": [],
         },
@@ -150,16 +150,18 @@ def test_investment_question_returns_simple_dollar_windows_without_llm(
     body = resp.json()
     answer = body["answer"]
     assert body["cost_usd"] == 0
-    assert "If you put $200 into NVDA right now" in answer
-    assert "you would own about 4.0000 shares" in answer
-    assert "Plain answer: the report says Sell for 2 weeks" in answer
-    assert "1 week: usually about $194-$206" in answer
-    assert "2 weeks: usually about $184-$216" in answer
+    assert "hypothetical $200" in answer
+    assert "4.0000 hypothetical shares" in answer
+    assert "1 week: historical volatility illustration" in answer
+    assert "$194-$206" in answer
+    assert "$184-$216" in answer
     assert "1 month:" in answer
-    assert "Nobody can know the exact future number" in answer
+    assert "not forecasts" in answer
+    assert "Plain answer" not in answer
+    assert "How long:" not in answer
 
 
-def test_past_investment_question_returns_current_return_and_hold_guidance(
+def test_personal_holding_request_is_redirected_without_llm(
     client, monkeypatch
 ):
     monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("LLM was called"))
@@ -177,15 +179,13 @@ def test_past_investment_question_returns_current_return_and_hold_guidance(
 
     assert resp.status_code == 200
     answer = resp.json()["answer"]
-    assert "it would be about $102 right now" in answer
-    assert "$2 gain (+2.00%)" in answer
-    assert "Plain answer: the report says Sell for 2 weeks" in answer
-    assert "How long: this report does not support holding longer" in answer
-    assert "If you keep holding from today's estimated value" in answer
-    assert "1 week: usually about $98.94-$105.06" in answer
+    assert "cannot choose a trade" in answer
+    assert "holding longer" not in answer
+    assert "estimated value" not in answer
+    assert resp.json()["cost_usd"] == 0
 
 
-def test_sell_or_hold_question_without_amount_still_gets_plain_guidance(
+def test_sell_or_hold_question_without_amount_gets_research_boundary(
     client, monkeypatch
 ):
     monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("LLM was called"))
@@ -207,9 +207,8 @@ def test_sell_or_hold_question_without_amount_still_gets_plain_guidance(
 
     assert resp.status_code == 200
     answer = resp.json()["answer"]
-    assert "Plain answer: the report says Sell for 2 weeks" in answer
-    assert "How long: this report does not support holding longer" in answer
-    assert "I need the dollar amount and when you bought to calculate your return" in answer
+    assert "cannot choose a trade" in answer
+    assert "dollar amount and when you bought" not in answer
 
 
 def test_ask_rejects_blank_question(client, monkeypatch):
@@ -368,4 +367,66 @@ def test_empty_llm_answer_retries_with_a_nudge(client, monkeypatch):
     assert resp.json()["answer"] == "Here is the direct answer."
     assert len(calls) == 2
     # The nudge is appended as the final user message of the retry.
-    assert "directly now" in calls[1]["messages"][-1]["content"]
+    assert "personal-guidance and forecasting boundaries" in calls[1]["messages"][-1]["content"]
+
+
+@pytest.mark.parametrize("arguments,name", [
+    ("[]", "search_filing"), ("null", "search_filing"), ("broken", "search_filing"),
+    ('{"query":123}', "search_filing"), ('{"query":"hello"}', "unknown_tool"),
+])
+def test_tool_arguments_are_untrusted_and_execution_stays_bounded(client, monkeypatch, arguments, name):
+    searched = []
+    calls = []
+    tool_calls = [SimpleNamespace(id=f"tool{i}", function=SimpleNamespace(name=name, arguments=arguments)) for i in range(3)]
+    class Completions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                message = SimpleNamespace(content="", tool_calls=tool_calls, model_dump=lambda **kw: {
+                    "role": "assistant", "tool_calls": [
+                        {"id": t.id, "type": "function", "function": {"name": name, "arguments": arguments}}
+                        for t in tool_calls],
+                })
+            else:
+                message = SimpleNamespace(content="Grounded answer.")
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)],
+                                   usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1))
+    async def search(ticker, query):
+        searched.append(query)
+        return "Safe excerpt."
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=Completions())))
+    monkeypatch.setattr(research_mod, "_run_filing_search", search)
+    response = client.post("/research/ask", json={"ticker": "AAPL", "question": "Explain the largest risk"})
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assistant = next(m for m in calls[1]["messages"] if m.get("tool_calls"))
+    assert len(assistant["tool_calls"]) == 2
+    assert len([m for m in calls[1]["messages"] if m["role"] == "tool"]) == 2
+    assert searched == (["Explain the largest risk"] * 2 if name == "search_filing" else [])
+
+
+@pytest.mark.parametrize("question,history", [
+    ("Should I buy AAPL with my savings?", []),
+    ("What should I do next?", [{"role": "user", "content": "Should I sell to pay rent?"}]),
+])
+def test_personal_guidance_is_stopped_before_provider_and_spend(client, monkeypatch, question, history):
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: pytest.fail("personal request reached provider"))
+    async def no_spend(*args):
+        pytest.fail("personal request consumed a paid-operation slot")
+    monkeypatch.setattr(research_mod, "reserve_provider_operation", no_spend)
+    response = client.post("/research/ask", json={"ticker": "AAPL", "question": question, "history": history})
+    assert response.status_code == 200
+    assert "cannot choose a trade" in response.json()["answer"]
+    assert response.json()["cost_usd"] == 0
+
+
+def test_model_output_personal_instruction_is_replaced(client, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-" + "x" * 40)
+    get_settings.cache_clear()
+    monkeypatch.setattr(research_mod, "_ask_client", lambda: _fake_ask_client("You should buy 100 shares now."))
+    response = client.post("/research/ask", json={"ticker": "AAPL", "question": "Explain the strongest evidence"})
+    assert response.status_code == 200
+    assert "100 shares" not in response.json()["answer"]
+    assert "cannot choose a trade" in response.json()["answer"]

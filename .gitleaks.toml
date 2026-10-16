@@ -2,10 +2,11 @@
 [extend]
 useDefault = true
 
-# .env.example is documentation: every value is a blank or a placeholder like
-# STOCKTWITS_ENABLED=true. The generic-api-key rule false-positives on
-# adjacent KEY= lines there. Real credentials live in .env, which is
-# git-ignored and additionally guarded by the pre-commit gitleaks hook.
-[allowlist]
-description = "Placeholder-only example environment file"
-paths = ['''\.env\.example$''']
+# Allow only the documented bootstrap placeholder, not the entire example file.
+# A real credential accidentally pasted into .env.example must still fail CI.
+[[allowlists]]
+description = "Documented bootstrap placeholder"
+condition = "AND"
+paths = ['''(^|/)\.env\.example$''']
+regexTarget = "secret"
+regexes = ['''^replace-me-with-a-random-one-time-bootstrap-token$''', '''^STOCKTWITS_ENABLED(?:=true)?$''']

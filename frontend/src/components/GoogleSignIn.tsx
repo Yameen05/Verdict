@@ -12,7 +12,7 @@ interface GoogleAccounts {
     type: "standard";
     theme: "outline";
     size: "large";
-    text: "signin_with";
+    text: "signin_with" | "signup_with";
     shape: "pill";
     width: number;
   }) => void;
@@ -52,8 +52,10 @@ function loadGoogle(): Promise<GoogleAccounts> {
   return scriptPromise;
 }
 
-export function GoogleSignIn({ clientId, disabled, onCredential }: {
+export function GoogleSignIn({ clientId, disabled, onCredential, signup = false, showDivider = true }: {
   clientId: string;
+  signup?: boolean;
+  showDivider?: boolean;
   disabled: boolean;
   onCredential: (credential: string) => Promise<void>;
 }) {
@@ -66,6 +68,10 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
   const [attempt, setAttempt] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (container.current) container.current.inert = disabled || loading;
+  }, [disabled, loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +99,7 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
         });
         google.renderButton(container.current, {
           type: "standard", theme: "outline", size: "large",
-          text: "signin_with", shape: "pill",
+          text: signup ? "signup_with" : "signin_with", shape: "pill",
           width: Math.min(400, container.current.clientWidth),
         });
         setLoading(false);
@@ -106,12 +112,12 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
     }
     void prepare();
     return () => { cancelled = true; };
-  }, [clientId, attempt]);
+  }, [clientId, attempt, signup]);
 
   return (
     <div className="space-y-3">
       {loading && <p className="text-center text-xs text-slate-400" role="status">Loading Google sign-in…</p>}
-      <div ref={container} aria-busy={disabled || loading}
+      <div ref={container} aria-busy={loading} aria-disabled={disabled}
         className={disabled ? "pointer-events-none opacity-60" : ""} />
       {error && (
         <div className="text-center text-xs text-slate-400" role="alert">
@@ -120,9 +126,9 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
             className="mt-2 underline hover:text-slate-200">Try Google again</button>
         </div>
       )}
-      <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
+      {showDivider && <div className="flex items-center gap-3 text-xs text-slate-500" aria-hidden="true">
         <span className="h-px flex-1 bg-slate-800" />or use email<span className="h-px flex-1 bg-slate-800" />
-      </div>
+      </div>}
     </div>
   );
 }

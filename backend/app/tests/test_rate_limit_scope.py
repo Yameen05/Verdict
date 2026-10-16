@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.limiter import limiter
+from app.services.legal_agreements import current_legal_acceptance
 
 BOOTSTRAP_TOKEN = "test-bootstrap-token-with-at-least-32-characters"
 
@@ -28,7 +29,7 @@ def capped_client(monkeypatch):
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json={"email": "owner@example.com", "password": "A-strong-test-password-123"},
+            json=dict({"email": "owner@example.com", "password": "A-strong-test-password-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201, created.text
         client.headers.update({"X-CSRF-Token": created.json()["csrf_token"]})
@@ -76,7 +77,7 @@ def test_research_limit_binds_across_different_tickers(capped_client, monkeypatc
         raise AssertionError("pipeline should not run in this test")
 
     monkeypatch.setattr(research, "_cached_run", instant_cache_miss)
-    monkeypatch.setattr(research, "_enforce_quota", refuse)
+    monkeypatch.setattr(research, "reserve_provider_operation", refuse)
 
     statuses = [capped_client.post(f"/research/TEST{n}").status_code for n in range(6)]
     assert 429 in statuses, statuses

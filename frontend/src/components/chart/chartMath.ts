@@ -235,7 +235,7 @@ export function verdictMarkers(
     if (Number.isNaN(t) || t < first || t > last) continue;
     // Snap to the first bar at/after the verdict time.
     const snapped = barTimes.find((bt) => bt >= t) ?? last;
-    const conf = run.confidence != null ? ` ${run.confidence}` : "";
+    const conf = run.confidence != null ? ` · AI score ${run.confidence}/100` : "";
     markers.push({
       time: snapped as UTCTimestamp,
       position: style.position,

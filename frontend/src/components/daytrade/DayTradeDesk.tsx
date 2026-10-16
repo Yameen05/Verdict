@@ -1,3 +1,4 @@
+import { SETUP_SCORE_EXPLANATION } from "../../lib/confidence";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DayTradeAgentView, type DayTradeSignal } from "../../api/client";
 
@@ -109,8 +110,7 @@ function PositionSizer({ signal }: { signal: DayTradeSignal }) {
         </div>
       </div>
       <p className="mt-2 text-[10px] text-slate-500">
-        Size from the stop, never from conviction. If the stop hits, you lose ~{riskPct}% — that
-        must be survivable ten times in a row.
+        Hypothetical sizing arithmetic only. A stop price does not guarantee a fill or limit losses; gaps and costs can change the result.
       </p>
     </div>
   );
@@ -216,9 +216,10 @@ export function DayTradeDesk({ ticker }: { ticker: string }) {
             </span>
             <div className="text-xs text-slate-400">
               <div>
-                Confidence{" "}
-                <span className="font-semibold text-slate-200">{signal.confidence}%</span> ·{" "}
+                Setup score{" "}
+                <span className="font-semibold text-slate-200">{signal.confidence}/100</span> ·{" "}
                 {signal.source === "llm" ? "AI head trader + desk" : "deterministic desk"}
+                <p className="mt-1 text-[10px] text-slate-400">{SETUP_SCORE_EXPLANATION}</p>
               </div>
               <div className="mt-0.5">
                 <span className="rounded-full border border-slate-700 bg-slate-950/60 px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">

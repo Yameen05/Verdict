@@ -1,6 +1,6 @@
 # Environment
-.env
-.env.local
+.env*
+!.env.example
 *.env.local
 
 # Python
@@ -53,3 +53,9 @@ data/
 .roomodes
 .mcp.json
 CLAUDE.md
+
+# Local recovery artifacts contain sensitive account data
+backups/
+*.backup
+*.sqlite-wal
+*.sqlite-shm
