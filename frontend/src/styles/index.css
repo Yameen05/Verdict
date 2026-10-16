@@ -587,3 +587,8 @@ body {
   border-radius: 8px;
   border: 2px solid rgb(var(--palette-slate-950));
 }
+
+/* Route announcements keep focus semantics without decorating a static title. */
+.auth-heading[tabindex="-1"]:focus-visible {
+  outline: none;
+}

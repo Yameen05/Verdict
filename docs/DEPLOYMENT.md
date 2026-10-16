@@ -266,7 +266,7 @@ is not a complete scaling solution.
 
 New-account creation now requires explicit agreement to current Terms of Service,
 understanding of the Risk & Data Disclosure and receipt of the Privacy Notice.
-The separate signup step applies to owner bootstrap, public/invite email signup
+The compact signup agreement applies to owner bootstrap, public/invite email signup
 and first-time Google signup. A Google login for an unknown identity with no
 agreement returns HTTP 428 without creating an account; its single-use nonce is
 still consumed. Review the documents and restart Google with a fresh challenge.
@@ -318,8 +318,9 @@ python3 scripts/verify_release.py --browser-check
 ```
 
 It creates a synthetic email account in the disposable TLS instance, verifies the
-unchecked/disabled agreement step, readable inline/modal documents, Back/reset
-behavior and mobile width, and captures `security-audit/signup-agreement.png`.
+unchecked/disabled agreement control, readable linked modal documents, preserved
+form values, Back/reset behavior and desktop/mobile width. It captures
+`security-audit/signup-agreement.png` and `security-audit/signup-mobile.png`.
 The Google UI handoff uses local GIS/API test doubles; backend JWT tests cover
 first-time agreement and challenge replay. Neither verifies live Google login or
 uses the user's Chrome profile/credentials.

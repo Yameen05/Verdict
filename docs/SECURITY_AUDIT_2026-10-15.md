@@ -569,8 +569,9 @@ checks in `security-audit/followup-validation.json`.
   and Hold is not a validated 50/50. Existing statistics/formulas and stored scores
   are preserved; a Brier-style diagnostic using score/100 does not establish
   probability calibration or validate future performance.
-- Added an initially unchecked, separate agreement step with readable Terms,
-  Risk & Data Disclosure and Privacy Policy, prominent possible-loss notice and
+- Added an initially unchecked agreement control in a compact signup form with
+  links to readable Terms, Risk & Data Disclosure and Privacy Policy, a short
+  possible-loss notice and
   qualified liability language preserving non-waivable rights. No marketing or
   unrelated processing consent, arbitrary liability cap, billing/arbitration
   scheme, legal entity or governing jurisdiction was invented.
@@ -595,8 +596,15 @@ and data licenses remain public-launch inputs alongside the operational/security
 gates already documented.
 
 Actual local-browser evidence is separately identified in
-`security-audit/signup-flow-validation.json`, with a clean agreement screenshot.
-A real synthetic email signup is exercised against the disposable production
+`security-audit/signup-flow-validation.json`, with clean desktop/mobile signup screenshots.
+The final presentation uses one compact form rather than inline legal text and
+a lengthy separate agreement screen. Modal access never changes acceptance, and
+entered credentials survive document access and Back navigation. The static
+heading retains programmatic focus without a decorative outline; keyboard focus
+indicators on interactive controls remain visible. Both regular Google signup
+and unknown-login handoff block their callback until current acceptance. The
+legal documents and versions are unchanged by the presentation redesign. A real synthetic
+email signup is exercised against the disposable production
 instance; Google UI uses local test doubles and backend tests use locally signed
 JWTs. Live Google and user credentials are not part of this verification.
 

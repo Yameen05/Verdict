@@ -1,32 +1,44 @@
-import { useEffect, useRef, useState } from "react";
-import { LEGAL_DOCS } from "../lib/legal";
-import manifest from "../lib/legalManifest.json";
+import { useState } from "react";
 import { LegalModal } from "./LegalModal";
 
-export function SignupAgreement({ checked, onChange, current }: {
-  checked: boolean; onChange: (value: boolean) => void; current: boolean;
-}) {
-  const heading = useRef<HTMLHeadingElement>(null);
+interface Props {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  current: boolean;
+}
+
+/** Compact signup consent; complete versioned documents stay in the modal. */
+export function SignupAgreement({ checked, onChange, current }: Props) {
   const [openDoc, setOpenDoc] = useState<"terms" | "risk" | "privacy" | null>(null);
-  useEffect(() => { heading.current?.focus(); }, []);
-  return <section aria-labelledby="signup-agreement-heading" className="space-y-4">
-    <h2 ref={heading} tabIndex={-1} id="signup-agreement-heading" className="text-lg font-semibold text-slate-100">Review before creating an account</h2>
-    <div id="signup-risk-notice" className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-sm leading-6 text-amber-100">
-      <strong>Investment decisions and losses are your responsibility.</strong> AI Buy/Hold/Sell assessments and scores can be wrong. They are general research, not a personal trading plan, verified profit odds or a guarantee of performance. You can lose all money invested. Verdict does not hold investment funds or execute real-money trades; practice trades use pretend money.
-      <p className="mt-2">Liability limitations apply only to the extent permitted by law. Rights that cannot lawfully be waived are preserved.</p>
-    </div>
-    {LEGAL_DOCS.map(doc => <details key={doc.id} open={doc.id === "terms" ? true : undefined} className="rounded-lg border border-slate-700 bg-slate-950/50 p-3">
-      <summary className="cursor-pointer text-sm font-semibold text-slate-200">{doc.title} · {manifest.versions[doc.id]}</summary>
-      <div className="mt-3 max-h-64 space-y-4 overflow-y-auto text-xs leading-6 text-slate-400" tabIndex={0} aria-label={`Read ${doc.title}`}>
-        {doc.sections.map(section => <section key={section.heading}><h3 className="font-semibold text-slate-200">{section.heading}</h3>{section.body.map(paragraph=><p key={paragraph} className="mt-1">{paragraph}</p>)}</section>)}
+  const linkClass = "rounded-sm text-slate-200 underline decoration-slate-500 underline-offset-2 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-400";
+
+  return (
+    <section aria-label="Account agreement" className="space-y-3 border-t border-slate-800 pt-4">
+      <p id="signup-risk-notice" className="text-xs leading-5 text-slate-300">
+        AI research can be wrong. Scores aren’t verified profit odds. Investing carries risk of loss;
+        liability limits apply only as law permits.
+      </p>
+      <div className="flex items-start gap-3">
+        <input id="signup-agreement" type="checkbox" checked={checked}
+          onChange={event => onChange(event.target.checked)} disabled={!current}
+          aria-describedby="signup-risk-notice signup-consent-purpose"
+          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-3 focus-visible:outline-indigo-400 disabled:cursor-not-allowed" />
+        <div className="min-w-0 text-xs leading-5 text-slate-300">
+          <label htmlFor="signup-agreement" className="cursor-pointer">
+            I agree to the Terms, understand the investment risks and acknowledge the Privacy Notice.
+          </label>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <button type="button" className={linkClass} onClick={() => setOpenDoc("terms")}>Terms of Service</button>
+            <button type="button" className={linkClass} onClick={() => setOpenDoc("risk")}>Risk Disclosure</button>
+            <button type="button" className={linkClass} onClick={() => setOpenDoc("privacy")}>Privacy Notice</button>
+          </div>
+          <p id="signup-consent-purpose" className="mt-1 text-[11px] text-slate-400">No marketing or unrelated data-use consent.</p>
+        </div>
       </div>
-      <button type="button" onClick={()=>setOpenDoc(doc.id)} className="mt-2 text-xs text-indigo-300 underline">Open {doc.title} in full</button>
-    </details>)}
-    {!current && <p role="alert" className="text-sm text-rose-300">The legal documents have changed or cannot be verified. Refresh the app before creating an account.</p>}
-    <label className="flex items-start gap-3 rounded-lg border border-slate-600 p-3 text-sm leading-6 text-slate-200">
-      <input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)} disabled={!current} aria-describedby="signup-risk-notice" className="mt-1 h-5 w-5 shrink-0 accent-indigo-500" />
-      <span>I agree to the Terms of Service, understand the Risk &amp; Data Disclosure, and acknowledge the Privacy Notice. This does not consent to marketing or unrelated data use.</span>
-    </label>
-    {openDoc && <LegalModal initialDoc={openDoc} onClose={()=>setOpenDoc(null)} />}
-  </section>;
+      {!current && (
+        <p role="alert" className="text-xs leading-5 text-rose-300">The documents have changed or cannot be verified. Refresh the app before creating an account.</p>
+      )}
+      {openDoc && <LegalModal initialDoc={openDoc} onClose={() => setOpenDoc(null)} />}
+    </section>
+  );
 }

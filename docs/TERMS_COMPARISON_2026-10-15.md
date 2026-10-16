@@ -20,10 +20,12 @@ Verdict has the same licenses, regulatory status or enforceable contract.
 - `frontend/src/lib/legal.ts` contains the original Terms of Service, Risk & Data
   Disclosure and Privacy Policy. The signup checkbox acknowledges receipt of the
   privacy notice; it does not manufacture marketing or unrelated processing consent.
-- `SignupAgreement` presents a separate account-agreement screen, initially
-  unchecked, with visible investment-loss risk and the full readable documents.
-  Creation requires the checkbox and current document versions. Back creates no
-  account and clears acceptance. Modal documents support keyboard focus and Escape.
+- `SignupAgreement` sits inside a compact signup form: a short risk notice, an
+  initially unchecked agreement control, and links to complete readable documents
+  in a modal. Creation requires the checkbox and current document versions.
+  Opening documents preserves credentials and never accepts terms. Back creates
+  no account and clears acceptance. Modals support focus, keyboard navigation
+  and Escape. Unknown Google identities get a matching compact agreement card.
 - `backend/app/legal_manifest.json` and the matching frontend manifest identify
   each document version and SHA-256 of the legal-copy source. New email/invite,
   owner and first-time Google accounts require explicit current acceptance.

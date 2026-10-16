@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { legalDocumentsCurrent } from "../api/auth";
 import { ApiError } from "../api/http";
 import {
@@ -32,9 +32,8 @@ export function AuthGate({ children }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [inviteCode, setInviteCode] = useState("");
-  const [agreementMode, setAgreementMode] = useState<"email" | "google" | null>(null);
+  const [agreementMode, setAgreementMode] = useState<"google" | null>(null);
   const [agreementAccepted, setAgreementAccepted] = useState(false);
-  const [googleAgreed, setGoogleAgreed] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -96,11 +95,6 @@ export function AuthGate({ children }: Props) {
       return;
     }
     if (view === "bootstrap" || view === "register") {
-      if (agreementMode !== "email") {
-        setAgreementAccepted(false);
-        setAgreementMode("email");
-        return;
-      }
       if (!agreementAccepted || !legalDocumentsCurrent(authStatus?.legal_manifest)) {
         setError("Explicit agreement to the current documents is required.");
         return;
@@ -148,8 +142,8 @@ export function AuthGate({ children }: Props) {
     setNotice("");
     setBusy(true);
     try {
-      const accepted = agreementMode === "google" && agreementAccepted &&
-        googleAgreed && legalDocumentsCurrent(authStatus?.legal_manifest);
+      const accepted = view === "register" && agreementAccepted &&
+        legalDocumentsCurrent(authStatus?.legal_manifest);
       acceptSession(await authApi.googleLogin(credential, inviteCode.trim(), accepted));
       setInviteCode("");
       setPassword("");
@@ -159,8 +153,7 @@ export function AuthGate({ children }: Props) {
         setView("register");
         setAgreementMode("google");
         setAgreementAccepted(false);
-        setGoogleAgreed(false);
-        setError("No account was created. Review the documents, then agree and restart Google signup.");
+        setNotice("No account created yet. Agree below to continue with Google.");
       } else {
         setError((e as Error).message);
       }
@@ -281,35 +274,26 @@ export function AuthGate({ children }: Props) {
     );
   }
 
-  if (agreementMode && (view === "register" || view === "bootstrap")) {
+  if (agreementMode === "google" && view === "register") {
     const current = legalDocumentsCurrent(authStatus?.legal_manifest);
     return (
-      <AuthShell title="Account agreement" subtitle="Step 2 of 2 · Account creation requires your explicit agreement.">
-        <form className="space-y-4" onSubmit={agreementMode === "email" ? submitCredentials : event => {
-          event.preventDefault();
-          if (agreementAccepted && current) setGoogleAgreed(true);
-        }}>
-          <SignupAgreement checked={agreementAccepted} current={current} onChange={value => {
-            setAgreementAccepted(value);
-            setGoogleAgreed(false);
-          }} />
+      <AuthShell compact title="Finish creating your account" subtitle="One last step before continuing with Google.">
+        <div className="space-y-4">
+          <NoticeMessage message={notice} />
+          <SignupAgreement checked={agreementAccepted} current={current} onChange={setAgreementAccepted} />
           <ErrorMessage message={error} />
-          {agreementMode === "google" && googleAgreed && authStatus?.google_client_id ? (
+          {authStatus?.google_client_id && (
             <GoogleSignIn key="agreed-google-signup" clientId={authStatus.google_client_id}
-              disabled={busy || !agreementAccepted || !current} signup onCredential={signInWithGoogle} />
-          ) : (
-            <SubmitButton busy={busy} disabled={!agreementAccepted || !current} label={
-              agreementMode === "google" ? "I agree — continue to Google signup" :
-              view === "bootstrap" ? "I agree — create owner account" : "I agree — create my account"
-            } />
+              disabled={busy || !agreementAccepted || !current} signup showDivider={false}
+              onCredential={signInWithGoogle} />
           )}
           <button type="button" disabled={busy} onClick={() => {
             setAgreementMode(null);
             setAgreementAccepted(false);
-            setGoogleAgreed(false);
             setError("");
-          }} className="w-full text-xs text-slate-400 underline">Back without creating an account</button>
-        </form>
+            setNotice("");
+          }} className="w-full text-xs text-slate-300 underline underline-offset-4">Back to signup</button>
+        </div>
       </AuthShell>
     );
   }
@@ -318,8 +302,10 @@ export function AuthGate({ children }: Props) {
   const isRegister = view === "register";
   const publicSignup = authStatus?.public_signup_enabled ?? false;
   const needsNewPassword = isBootstrap || isRegister;
+  const currentDocuments = legalDocumentsCurrent(authStatus?.legal_manifest);
   return (
     <AuthShell
+      compact={needsNewPassword}
       title={
         isBootstrap
           ? "Create the owner account"
@@ -331,10 +317,10 @@ export function AuthGate({ children }: Props) {
       }
       subtitle={
         isBootstrap
-          ? "Owner setup requires the bootstrap token and explicit account agreement."
+          ? "Set up your private owner access."
           : isRegister
           ? publicSignup
-            ? "Free to join. Research runs are shared and daily quotas keep things fair."
+            ? "Stock research. A workspace of your own."
             : "Paste the invite code you received to create your account."
           : authStatus?.google_client_id
           ? "Sign in with Google or your email to access your research."
@@ -353,8 +339,9 @@ export function AuthGate({ children }: Props) {
           />
         )}
         {!isBootstrap && authStatus?.google_client_id && (
-          isRegister ? <button type="button" disabled={busy} onClick={()=>{setAgreementMode("google");setAgreementAccepted(false);setGoogleAgreed(false);setError("");}} className="w-full rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200">Continue with Google signup</button>
-          : <GoogleSignIn clientId={authStatus.google_client_id} disabled={busy} onCredential={signInWithGoogle} />
+          <GoogleSignIn clientId={authStatus.google_client_id} signup={isRegister}
+            disabled={busy || (isRegister && (!agreementAccepted || !currentDocuments))}
+            onCredential={signInWithGoogle} />
         )}
         <Field
           label="Email"
@@ -370,7 +357,7 @@ export function AuthGate({ children }: Props) {
           value={password}
           onChange={setPassword}
           autoComplete={needsNewPassword ? "new-password" : "current-password"}
-          placeholder={needsNewPassword ? "15+ characters, one capital letter and one number" : "Your password"}
+          placeholder={needsNewPassword ? "15+ characters, a capital and a number" : "Your password"}
           minLength={needsNewPassword ? 15 : undefined}
         />
         {needsNewPassword && (
@@ -394,15 +381,19 @@ export function AuthGate({ children }: Props) {
             placeholder="From AUTH_BOOTSTRAP_TOKEN"
           />
         )}
+        {needsNewPassword && (
+          <SignupAgreement checked={agreementAccepted} current={currentDocuments} onChange={setAgreementAccepted} />
+        )}
         <ErrorMessage message={error} />
         <NoticeMessage message={notice} />
         <SubmitButton
           busy={busy}
+          disabled={needsNewPassword && (!agreementAccepted || !currentDocuments)}
           label={
             isBootstrap
-              ? "Review owner account agreement"
+              ? "Create owner account"
               : isRegister
-              ? "Review account agreement"
+              ? "Create account"
               : "Continue securely"
           }
         />
@@ -424,7 +415,8 @@ export function AuthGate({ children }: Props) {
             type="button"
             onClick={() => {
               setView(isRegister ? "login" : "register");
-              setAgreementMode(null); setAgreementAccepted(false); setGoogleAgreed(false);
+              setAgreementMode(null);
+              setAgreementAccepted(false);
               setError("");
               setNotice("");
             }}
@@ -446,14 +438,18 @@ function AuthShell({
   title,
   subtitle,
   children,
+  compact = false,
 }: {
   title: string;
   subtitle: string;
   children?: ReactNode;
+  compact?: boolean;
 }) {
   const [legalOpen, setLegalOpen] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, [title]);
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 px-6 py-12 text-slate-100">
+    <main className={`grid min-h-screen place-items-center bg-slate-950 text-slate-100 ${compact ? "px-4 py-6 sm:py-10" : "px-6 py-12"}`}>
       <section className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-full border border-indigo-400/50 bg-indigo-500/10 pb-0.5 font-display text-lg italic leading-none text-indigo-300">
@@ -461,9 +457,9 @@ function AuthShell({
           </span>
           <span className="font-display text-2xl tracking-tight text-slate-50">Verdict</span>
         </div>
-        <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-7 shadow-2xl shadow-slate-950/60">
-          <div className="mb-6">
-            <h1 className="font-display text-2xl font-medium tracking-tight text-slate-50">
+        <div className={`rounded-3xl border border-slate-800 bg-slate-900/70 shadow-2xl shadow-slate-950/60 ${compact ? "p-6 sm:p-7" : "p-7"}`}>
+          <div className={compact ? "mb-5" : "mb-6"}>
+            <h1 ref={heading} tabIndex={-1} className="auth-heading font-display text-2xl font-medium tracking-tight text-slate-50">
               {title}
             </h1>
             <p className="mt-1.5 text-xs leading-relaxed text-slate-400">{subtitle}</p>
@@ -473,7 +469,7 @@ function AuthShell({
         <p className="mt-5 text-center text-[11px] italic text-slate-500">
           Every stock gets a trial.
         </p>
-        <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
+        {!compact && <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400">
           General research · AI scores are not profit odds. Read the{" "}
           <button
             type="button"
@@ -483,7 +479,7 @@ function AuthShell({
             Terms of Service, Privacy Notice, and Risk & Data Disclosure
           </button>
           .
-        </p>
+        </p>}
         {legalOpen && <LegalModal onClose={() => setLegalOpen(false)} />}
       </section>
     </main>

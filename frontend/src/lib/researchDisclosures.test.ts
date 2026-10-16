@@ -58,16 +58,18 @@ import { authApi, explicitLegalAcceptance, legalDocumentsCurrent } from "../api/
 import legalManifest from "./legalManifest.json";
 import { vi } from "vitest";
 
-it("presents readable documents with an unchecked agreement and non-waivable rights", () => {
+it("presents compact linked documents and an unchecked, associated agreement control", () => {
   const html = renderToStaticMarkup(createElement(SignupAgreement,{checked:false,onChange:()=>undefined,current:true}));
   expect(html).toContain("Terms of Service");
-  expect(html).toContain("Risk &amp; Data Disclosure");
-  expect(html).toContain("What leaves the server");
-  expect(html).toContain("Investment decisions and losses are your responsibility");
-  expect(html).toContain("Rights that cannot lawfully be waived are preserved");
+  expect(html).toContain("Risk Disclosure");
+  expect(html).not.toContain("What leaves the server");
+  expect(html).not.toContain("<details");
+  expect(html).toContain('for="signup-agreement"');
+  expect(html).toContain("AI research can be wrong");
+  expect(html).toContain("liability limits apply only as law permits");
   expect(html).toContain('type="checkbox"');
   expect(html).not.toContain('checked=""');
-  expect(html).toContain("does not consent to marketing");
+  expect(html).toContain("No marketing or unrelated data-use consent");
 });
 
 it("blocks stale-document acceptance and compares every version plus the content fingerprint", () => {
