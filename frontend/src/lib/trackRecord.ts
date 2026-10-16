@@ -56,5 +56,5 @@ export const predictionTypeLabel = { ai:"Complete AI", partial_ai:"Partial AI", 
 export function confidenceLabel(entry: ScoreboardEntry): string {
   if (entry.recommendation === "Failed") return "Confidence: Failed to assess";
   if (entry.analysis_status === "incomplete" || entry.prediction_kind === "partial_ai" || entry.prediction_kind === "rules_based") return "Confidence: Not assessed";
-  return entry.confidence === null ? "Confidence not recorded" : `${entry.confidence}% confidence`;
+  return entry.confidence === null ? "Confidence not recorded" : `${entry.confidence}/100 AI assessment score`;
 }

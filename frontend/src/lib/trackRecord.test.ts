@@ -41,5 +41,5 @@ it("keeps confidence unavailable for partial AI and rules-based predictions", as
   for (const prediction_kind of ["partial_ai","rules_based"] as const) {
     expect(confidenceLabel({recommendation:"Sell",confidence:80,analysis_status:"incomplete",prediction_kind} as ScoreboardEntry)).toBe("Confidence: Not assessed");
   }
-  expect(confidenceLabel({recommendation:"Sell",confidence:80,prediction_kind:"ai",analysis_status:"complete"} as ScoreboardEntry)).toBe("80% confidence");
+  expect(confidenceLabel({recommendation:"Sell",confidence:80,prediction_kind:"ai",analysis_status:"complete"} as ScoreboardEntry)).toBe("80/100 AI assessment score");
 });

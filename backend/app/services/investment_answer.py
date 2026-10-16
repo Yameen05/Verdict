@@ -1,19 +1,21 @@
-"""Deterministic answers for "what happens to my $X?" chat questions.
+"""Historical hypothetical arithmetic for stock-research chat questions.
 
-The /research/ask endpoint short-circuits money questions here BEFORE any LLM
-call: the answer is computed from stored horizon stats, so it is exact,
-grounded, and free. Returns None when the question isn't money-shaped, which
-tells the router to fall through to the LLM.
+The /research/ask endpoint checks personal-guidance boundaries before this
+calculator or any LLM call. Illustrations apply historical horizon statistics
+to a hypothetical amount; they do not predict account returns. Returns None
+when the question needs a general evidence explanation instead of arithmetic.
 """
 
 # NOTE: no `from __future__ import annotations` — mirrors routers/ask.py.
 
 import asyncio
+import math
 import re
 
 from app.observability.logging import get_logger
 from app.schemas.research import ResearchResponse
 from app.services.metrics_client import HorizonStats, fetch_horizon_stats
+from app.services.research_policy import research_boundary_answer
 
 log = get_logger(__name__)
 
@@ -33,7 +35,7 @@ _NUMBER_WORDS = {
     "twelve": 12,
 }
 _MONEY_WORDS = re.compile(
-    r"\b(invest|invested|investing|bought|buy|put|worth|value|return|gain|"
+    r"\b(invest|investment|invested|investing|arithmetic|illustration|swings|bought|buy|put|worth|value|return|gain|"
     r"gaining|lose|losing|loss|profit|sell|hold|holding)\b",
     re.IGNORECASE,
 )
@@ -101,6 +103,8 @@ def _looks_like_money_question(question: str, amount: float | None) -> bool:
     question, which reads as the analyst refusing to answer. Those go to the
     LLM, which has the report's justification and dissent.
     """
+    if amount is not None and re.search(r"\b(hypothetical|arithmetic|illustration)\b", question, re.I):
+        return True
     if _EXPLANATION_WORDS.search(question):
         return False
     if amount is not None and _MONEY_WORDS.search(question):
@@ -281,41 +285,9 @@ async def _stats_for_horizon(
         return None
 
 
-def _recommendation_line(recommendation: str, report_days: int | None) -> str:
-    window = _label_days(report_days)
-    if recommendation == "Buy":
-        return (
-            f"Plain answer: the report says Buy for {window}, so it leans toward "
-            "holding/gaining for that window."
-        )
-    if recommendation == "Sell":
-        return (
-            f"Plain answer: the report says Sell for {window}, so it leans toward "
-            "selling/avoiding the hold instead of waiting longer."
-        )
-    if recommendation == "Hold":
-        return (
-            f"Plain answer: the report says Hold for {window}, so there is no clear "
-            "edge; it could go either way."
-        )
-    return "Plain answer: the report does not have enough confidence to call Buy, Hold, or Sell."
-
-
-def _hold_length_line(recommendation: str, report_days: int | None) -> str:
-    window = _label_days(report_days)
-    if recommendation == "Buy":
-        return f"How long: use {window} as the checkpoint, then rerun the report."
-    if recommendation == "Sell":
-        return "How long: this report does not support holding longer; if you keep it, check again soon."
-    if recommendation == "Hold":
-        return f"How long: there is no strong signal, so reassess around {window} or sooner if news/price changes."
-    return "How long: rerun the report when there is enough data for a clear verdict."
-
-
-def _future_window_line(
+def _historical_window_line(
     days: int,
     base_amount: float,
-    original_amount: float,
     stats: HorizonStats | None,
 ) -> str:
     label = _label_days(days)
@@ -325,21 +297,21 @@ def _future_window_line(
     parts: list[str] = []
     if stats.typical_swing_pct is not None:
         swing = abs(stats.typical_swing_pct)
-        low = base_amount * (1 - swing / 100)
+        low = max(0, base_amount * (1 - swing / 100))
         high = base_amount * (1 + swing / 100)
-        parts.append(f"usually about {_fmt_money(low)}-{_fmt_money(high)}")
+        parts.append(f"historical volatility illustration (+/−{swing:g}%): {_fmt_money(low)}-{_fmt_money(high)}")
 
     if stats.recent_return_pct is not None:
         repeat_value = base_amount * (1 + stats.recent_return_pct / 100)
         parts.append(
-            f"if the latest {label} move repeated: {_fmt_money(repeat_value)} "
-            f"({_fmt_delta(repeat_value - original_amount)} vs your original amount)"
+            f"applying the observed latest {label} move: {_fmt_money(repeat_value)} "
+            f"({_fmt_delta(repeat_value - base_amount)} from the hypothetical starting amount)"
         )
 
     if stats.best_window_pct is not None and stats.worst_window_pct is not None:
         worst = base_amount * (1 + stats.worst_window_pct / 100)
         best = base_amount * (1 + stats.best_window_pct / 100)
-        parts.append(f"past-year rough extreme: {_fmt_money(worst)}-{_fmt_money(best)}")
+        parts.append(f"observed historical extremes applied to the same amount: {_fmt_money(worst)}-{_fmt_money(best)}")
 
     return f"{label}: " + "; ".join(parts) + "."
 
@@ -347,75 +319,34 @@ def _future_window_line(
 async def investment_answer(
     ticker: str, question: str, context: ResearchResponse | None
 ) -> str | None:
+    boundary = research_boundary_answer(question)
+    if boundary is not None:
+        return boundary
     amount = _parse_amount(question)
     if not _looks_like_money_question(question, amount):
         return None
+    if amount is None or not math.isfinite(amount) or not 0 < amount <= 100_000_000:
+        return "Use a finite hypothetical amount between $0 and $100 million for historical arithmetic."
     if context is None:
-        return (
-            "I don't have a fresh report for this one yet. Pick the stock, choose "
-            "how long you'd hold it, and hit Analyze first."
-        )
+        return "Run Analyze first for historical stock data to use in a hypothetical calculation."
 
     report_days = context.report.horizon_days or context.metrics.horizon_days or 14
-    recommendation = context.report.recommendation
+    horizons = _extract_requested_horizons(question, report_days)
     past_days = _extract_past_days(question)
-    horizons = _extract_requested_horizons(question, report_days) if amount is not None else []
     stats_by_day = {
         days: await _stats_for_horizon(ticker, context, days)
         for days in sorted(set(horizons + ([past_days] if past_days else [])))
     }
-
-    lines: list[str] = []
-    current_value = amount
-    if amount is not None:
-        if past_days:
-            stats = stats_by_day.get(past_days)
-            if stats and stats.recent_return_pct is not None:
-                current_value = amount * (1 + stats.recent_return_pct / 100)
-                lines.append(
-                    f"Assuming you invested {_fmt_money(amount)} in {ticker} "
-                    f"{_label_days(past_days)} ago, it would be about "
-                    f"{_fmt_money(current_value)} right now: "
-                    f"{_fmt_delta(current_value - amount)} ({_fmt_pct(stats.recent_return_pct)})."
-                )
-            else:
-                lines.append(
-                    f"Assuming you invested {_fmt_money(amount)} in {ticker} "
-                    f"{_label_days(past_days)} ago, I cannot calculate the current return "
-                    "from the available price history."
-                )
-        else:
-            price = context.metrics.current_price
-            share_text = ""
-            if price and price > 0:
-                share_text = (
-                    f" at about {_fmt_money(price)}/share, you would own about "
-                    f"{amount / price:.4f} shares"
-                )
-            lines.append(f"If you put {_fmt_money(amount)} into {ticker} right now{share_text}.")
-
-    lines.append(_recommendation_line(recommendation, report_days))
-    lines.append(_hold_length_line(recommendation, report_days))
-
-    if amount is not None:
-        base_for_future = current_value if past_days and current_value is not None else amount
-        heading = (
-            "If you keep holding from today's estimated value:"
-            if past_days
-            else "What the next windows could look like:"
-        )
-        lines.append(heading)
-        for days in horizons:
-            lines.append(
-                _future_window_line(
-                    days,
-                    base_for_future,
-                    amount,
-                    stats_by_day.get(days),
-                )
-            )
-    else:
-        lines.append("I need the dollar amount and when you bought to calculate your return.")
-
-    lines.append("Nobody can know the exact future number; these are past swing ranges, not promises.")
+    lines = [f"Historical arithmetic for a hypothetical {_fmt_money(amount)} in {ticker}."]
+    price = context.metrics.current_price
+    if price and math.isfinite(price) and price > 0:
+        lines.append(f"At the report price of {_fmt_money(price)} per share, amount ÷ price = {amount / price:.4f} hypothetical shares (before costs).")
+    if past_days:
+        stats = stats_by_day.get(past_days)
+        if stats and stats.recent_return_pct is not None:
+            value = amount * (1 + stats.recent_return_pct / 100)
+            lines.append(f"Applying the observed latest {_label_days(past_days)} return ({_fmt_pct(stats.recent_return_pct)}) gives {_fmt_money(value)}: {_fmt_delta(value - amount)}. This is not your actual account return.")
+    for days in horizons:
+        lines.append(_historical_window_line(days, amount, stats_by_day.get(days)))
+    lines.append("These examples apply historical data to a hypothetical amount; they are not forecasts, expected returns, probability intervals or limits on future losses. Fees, taxes, dividends and actual execution prices are not included.")
     return "\n".join(lines)

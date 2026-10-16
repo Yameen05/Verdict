@@ -155,7 +155,7 @@ describe("verdictMarkers", () => {
     const markers = verdictMarkers([entry("2026-01-03T12:00:00Z", "Buy")], bars);
     expect(markers.length).toBe(1);
     expect(markers[0].time).toBe(toTimestamp("2026-01-04T00:00:00Z"));
-    expect(markers[0].text).toBe("Buy 80");
+    expect(markers[0].text).toBe("Buy · AI score 80/100");
   });
 
   it("drops verdicts outside the visible range and skips Pending", () => {
@@ -171,6 +171,6 @@ describe("verdictMarkers", () => {
       [entry("2026-01-08T00:00:00Z", "Sell"), entry("2026-01-02T00:00:00Z", "Buy")],
       bars,
     );
-    expect(markers.map((m) => m.text)).toEqual(["Buy 80", "Sell 80"]);
+    expect(markers.map((m) => m.text)).toEqual(["Buy · AI score 80/100", "Sell · AI score 80/100"]);
   });
 });

@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.services.legal_agreements import current_legal_acceptance
 
 
 @pytest.fixture(autouse=True)
@@ -69,10 +70,10 @@ def client():
             headers={
                 "X-Bootstrap-Token": "test-bootstrap-token-with-at-least-32-characters"
             },
-            json={
+            json=dict({
                 "email": "owner@example.com",
                 "password": "A-strong-test-password-123",
-            },
+            }, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201, created.text
         c.headers.update({"X-CSRF-Token": created.json()["csrf_token"]})

@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-15",
+  "checked_at_utc": "2026-10-16T00:30:33.451395+00:00",
+  "parent_audit_commit": "93afd4d25c7eb5c883a5f2abfc32376ad85e5947",
+  "source_files_sha256": "7402a74ae064bdb3305002a6351c4deb5876df23839fc3b6980f1b0981a9920d",
+  "checks": {
+    "backend_tests": "430 passed in 22.61s",
+    "frontend_tests": "85 passed, 13 files",
+    "ruff": "passed",
+    "bandit": "passed; existing nosec notices only",
+    "pip_audit": "no known vulnerabilities",
+    "npm_audit": "zero vulnerabilities",
+    "frontend_build": "TypeScript + Vite passed; 590 kB bundle warning",
+    "container_builds": "both passed",
+    "image_fixable_high_critical_gate": "zero fixable advisories in either current image",
+    "release_smoke": "passed including real local TLS, agreement evidence, backup verification and restart persistence",
+    "browser_flow": "passed; see signup-flow-validation.json and signup-agreement.png",
+    "gitleaks_worktree": "passed",
+    "git_diff_check": "passed"
+  },
+  "images": {
+    "backend": {
+      "image_id": "sha256:5779ca1afc26cbf18244b32566784c082bda9a3e2909d68b71c1f4d45715a4cb",
+      "scan_created": "2026-10-15T20:29:35.653942-04:00",
+      "architecture": "linux/arm64",
+      "advisories": 164,
+      "severity_counts": {
+        "LOW": 61,
+        "HIGH": 44,
+        "MEDIUM": 58,
+        "UNKNOWN": 1
+      },
+      "unique_high_cves": 8,
+      "fixable_advisories": 0,
+      "raw_scan_sha256": "78f58edc15c027d05d55978872a34380efbe95de3f8defcbc0630789a175dbc4"
+    },
+    "frontend": {
+      "image_id": "sha256:107d576930db1294b7e577e8ccd2f045d6c1512b029882a36b19a01548eb5e92",
+      "scan_created": "2026-10-15T20:29:36.078749-04:00",
+      "architecture": "linux/arm64",
+      "advisories": 0,
+      "severity_counts": {},
+      "unique_high_cves": 0,
+      "fixable_advisories": 0,
+      "raw_scan_sha256": "2e6265501c9853ad7adaf08419e00b4e5424cb0b6b2b1fd1c9a1f4b36b3b8726"
+    }
+  },
+  "legal_manifest": {
+    "versions": {
+      "terms": "2026-10-15.1",
+      "risk": "2026-10-15.1",
+      "privacy": "2026-10-15.1"
+    },
+    "content_sha256": "d05959bcde0dc4be45020dd2a58ace315a71be70152f20c7ec698607014faaf3"
+  },
+  "screenshot_sha256": "fee3ecdf1f30309750de9f71bbf16ea6ab7ad732d623cc3acd07415b23b6b803",
+  "limits": [
+    "Runtime OS advisory inventory is unchanged: 44 high package matches across 8 unique high CVEs, no available vendor fixes; not risk acceptance. CI separately scans AMD64.",
+    "Live Google, public TLS/domain, real provider accounts/entitlements, SMTP deliverability and off-host restoration are not verified.",
+    "Legal classification/enforceability depend on actual operator, jurisdiction, users and business model; template copy and safeguards do not establish exemption or immunity.",
+    "Browser Google handoff uses local GIS/API doubles; backend agreement routes use locally signed test JWTs."
+  ],
+  "runtime_separation": {
+    "existing_local_app_or_data_modified": false,
+    "user_browser_profile_used": false,
+    "live_credentials_used": false,
+    "real_mail_sent": false,
+    "synthetic_containers_and_volumes_removed": true
+  }
+}

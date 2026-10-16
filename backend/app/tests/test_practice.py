@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.schemas.practice import Rules
 from app.services import strategies as engine
+from app.services.legal_agreements import current_legal_acceptance
 from app.services.metrics_client import PriceBar
 
 
@@ -286,11 +287,11 @@ def test_ownership_auth_and_csrf(client, market):
         assert other.get("/me/strategies").status_code == 401
         registered = other.post(
             "/auth/register",
-            json={
+            json=dict({
                 "invite_code": invite,
                 "email": "other@example.com",
                 "password": "Test-password-123",
-            },
+            }, legal_acceptance=current_legal_acceptance()),
         )
         assert registered.status_code == 201
         assert (

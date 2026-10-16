@@ -29,12 +29,18 @@ from app.security import (
 )
 from app.services.budgets import reserve_auth_attempt
 from app.services.google_sign_in import verify_google_credential
+from app.services.legal_agreements import (
+    LegalAcceptance,
+    record_acceptance,
+    require_current_acceptance,
+)
 
 router = APIRouter()
 NONCE_TTL_SECONDS = 600
 
 
 class GoogleLoginRequest(BaseModel):
+    legal_acceptance: LegalAcceptance | None = None
     credential: str = Field(min_length=1, max_length=16384)
     invite_code: str = Field(default="", max_length=256)
 
@@ -155,6 +161,7 @@ async def google_login(
                     raise HTTPException(status_code=401, detail="Invalid or expired invite code")
             elif not get_settings().public_signup_enabled:
                 raise HTTPException(status_code=401, detail="An invite code is required to register")
+            require_current_acceptance(body.legal_acceptance)
             await reserve_auth_attempt("global-registration", "signup", 100, 86400)
             user = User(
                 # Empty hash disables password login for Google-only accounts.
@@ -184,6 +191,8 @@ async def google_login(
 
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="This account is inactive")
+    if new_account:
+        await record_acceptance(db, request, user.id)
     user.last_login_at = utc_now()
     user_session, raw_session = await create_session(db, request, user)
     await record_audit(

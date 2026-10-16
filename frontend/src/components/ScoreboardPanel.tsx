@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION, TRACK_RECORD_EXPLANATION } from "../lib/confidence";
 import { useEffect, useRef, useState } from "react";
 import { api, type ScoreboardEntry, type ScoreboardResponse } from "../api/client";
 import { confidenceLabel, dateTime, matchesOutcomeFilter, predictionTypeLabel, money, outcomeLabel, progressPercent, returnLabel, timeRemaining, utcDate, type OutcomeFilter } from "../lib/trackRecord";
@@ -87,6 +88,7 @@ export function ScoreboardPanel({ refreshKey }: { refreshKey: number }) {
     <div>
       <h2 className="text-xl font-semibold text-slate-100">Results at the end of each holding period</h2>
       <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">Issued predictions stay in progress until their original deadline, including partial analyses. Model changes keep older predictions eligible. Partial AI and rules-based predictions are labeled and can be filtered separately. {summary.rule}</p>
+      <p className="mt-2 max-w-4xl text-xs leading-5 text-slate-500">{CONFIDENCE_EXPLANATION} {TRACK_RECORD_EXPLANATION}</p>
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <StatCard label="Tracked prediction hit rate" value={hitRate === null ? "—" : `${(hitRate * 100).toFixed(0)}%`} hint={finished.length ? `${hits} hits out of ${finished.length} graded predictions · ${source === "all" ? "all prediction types" : predictionTypeLabel[source as keyof typeof predictionTypeLabel]}` : "No completed outcomes in this selection"} />

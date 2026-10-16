@@ -41,7 +41,7 @@ serif display face for the big moments, and a matching warm-paper light mode.
 
 | Research | Trading | Accountability |
 | --- | --- | --- |
-| SEC filings, news, fundamentals, insiders, and optional market signals | Live charts, timing checks, alerts, position planning, and a five-agent intraday desk | Bull/bear debate, citable evidence, dissent, history, backtests, and confidence calibration |
+| SEC filings, news, fundamentals, insiders, and optional market signals | Live charts, timing checks, alerts, position planning, and a five-agent intraday desk | Bull/bear debate, citable evidence, dissent, history, backtests, and score/outcome diagnostics |
 
 ## Product Tour
 
@@ -222,9 +222,8 @@ rebuilds them).
   decision lines for support/resistance, entry zones, analyst targets, and
   historical risk bands.
 - Plain-English investment planner: enter an amount, purchase date, and
-  optional buy price to see current gain/loss, shares, whether the latest read
-  says hold/sell/add, and what the same amount could look like over future
-  holding windows.
+  optional buy price to see current gain/loss, shares, general stock research alongside transparent historical arithmetic. The
+  tracker does not choose a trade for the owner or forecast account returns.
 - Account-synced workspace: watchlist, positions, price alerts, chart levels,
   and verdict watches live in the database, scoped per user (`/me` routes).
   Data saved by earlier localStorage-only versions migrates to the account
@@ -232,9 +231,11 @@ rebuilds them).
 - Server-side alerting: a background worker checks pending price alerts and
   verdict watches on an interval (`ALERTS_CHECK_SECONDS`), marks crossings,
   and emails the owner of the alert when SMTP is configured (`SMTP_*`).
-- Self-calibration: matured verdicts produce a Brier score and
+- Historical score diagnostics: matured verdicts produce a Brier score and
   hit-rate-by-confidence buckets, and every run records the LLM model that
-  issued it so track records stay comparable across model swaps.
+  issued it so track records stay comparable across model swaps. Scores are AI
+  assessments of evidence, not calibrated profit probabilities. These historical
+  diagnostics do not certify future accuracy or profitability.
 - Layered market data: Yahoo Finance is primary, with automatic fallback to
   Polygon, Tiingo, and Stooq for daily/weekly history — the chart, return
   ranges, backtests, and chat calculator all survive a Yahoo outage.
@@ -270,7 +271,7 @@ rebuilds them).
 - Streams per-node progress and mid-debate events to the browser over SSE.
 - Persists completed runs (with price-at-verdict) in SQLite for history,
   verdict-drift timelines, the self-grading scoreboard, and horizon backtests.
-- Shows calibration, disagreement, source quality, API/config status, skipped
+- Shows score/outcome diagnostics, disagreement, source quality, API/config status, skipped
   source explanations, and rate-limit/quota-friendly cache status in the UI.
 - Tracks prompt, completion, embedding, and estimated USD cost per request.
 
@@ -286,7 +287,7 @@ the whole graph — the judge rules on whatever evidence survives.
 React + TypeScript + Vite
   five pages: research (picker, live chart, timing, planner, trial),
   day trading (desk, scanner, position sizer), analyst chat,
-  verdict history, scoreboard + backtests + calibration
+  verdict history, scoreboard + backtests + score diagnostics
         |
         | REST + Server-Sent Events
         v

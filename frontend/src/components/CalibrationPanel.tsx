@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION, TRACK_RECORD_EXPLANATION } from "../lib/confidence";
 import { useEffect, useMemo, useState } from "react";
 import { api, type BacktestResponse, type ResearchResponse } from "../api/client";
 import { InfoTip } from "./InfoTip";
@@ -39,12 +40,13 @@ export function CalibrationPanel({
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-950/70 p-4">
       <h3 className="text-sm font-semibold text-slate-100">
-        Confidence calibration
-        <InfoTip label="Confidence calibration">
+        Confidence & historical outcomes
+        <InfoTip label="Confidence & historical outcomes">
           This checks matured past verdicts at the same holding window. Small samples
           are useful context, not proof the next call will be right.
         </InfoTip>
       </h3>
+      <p className="mt-2 text-xs leading-5 text-slate-400">{CONFIDENCE_EXPLANATION} {TRACK_RECORD_EXPLANATION}</p>
       {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
       {data && (
         <div className="mt-3 grid gap-3 sm:grid-cols-4">
@@ -74,9 +76,9 @@ export function CalibrationPanel({
             hint="matured calls only"
           />
           <Card
-            label="Brier score"
+            label="Score/outcome diagnostic"
             value={data.summary.brier_score == null ? "—" : data.summary.brier_score.toFixed(3)}
-            hint="0 = perfectly calibrated; 0.25 = coin flip"
+            hint="Historical squared error using score ÷ 100; does not establish calibration"
           />
         </div>
       )}
@@ -84,11 +86,10 @@ export function CalibrationPanel({
       {data && data.summary.by_confidence.length > 0 && (
         <div className="mt-3">
           <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Hit rate by stated confidence
-            <InfoTip label="Hit rate by stated confidence">
-              If the app is well calibrated, higher-confidence calls should hit
-              more often. Big gaps mean the confidence number should be trusted
-              less.
+            Historical hits by AI score band
+            <InfoTip label="Historical hits by AI score band">
+              These are observed grading outcomes grouped by the original AI score.
+              They do not turn that score into verified odds of profit.
             </InfoTip>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -106,7 +107,7 @@ export function CalibrationPanel({
           </div>
         </div>
       )}
-      <p className="mt-3 text-xs text-slate-500">Outcome statistics include issued complete, partial AI, and rules-based predictions. Confidence calibration uses assessed confidence only.</p>
+      <p className="mt-3 text-xs text-slate-500">Outcome statistics include issued complete, partial AI, and rules-based predictions. The score diagnostic uses assessed scores only and does not calibrate future predictions.</p>
       {report && (
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
           Current call:{" "}
@@ -114,7 +115,7 @@ export function CalibrationPanel({
             {report.report.recommendation === "Failed" ? "Failed to assess" : report.report.recommendation}
           </span>{" "}
           for a {horizonLabel(horizon)} hold
-          {report.report.confidence !== null ? ` at ${report.report.confidence}/100 confidence.` : report.report.assessment_status === "incomplete" ? ". Analysis incomplete; confidence not assessed." : "."}
+          {report.report.confidence !== null ? ` at ${report.report.confidence}/100 AI assessment score.` : report.report.assessment_status === "incomplete" ? ". Analysis incomplete; confidence not assessed." : "."}
         </p>
       )}
     </section>

@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION } from "../lib/confidence";
 import { useEffect, useState } from "react";
 import { api, type HistoryEntry } from "../api/client";
 import { VerdictTimeline } from "./VerdictTimeline";
@@ -84,8 +85,8 @@ export function HistoryPanel({ ticker, refreshKey }: Props) {
                 {r.prediction_kind && ["partial_ai", "rules_based"].includes(r.prediction_kind) && <span className="text-xs text-amber-200">{r.prediction_kind === "rules_based" ? "Rules-based · limited" : "Partial AI"} · Confidence: Not assessed</span>}
                 {r.recommendation === "Failed" && <span className="text-xs text-amber-200">Confidence: Failed to assess</span>}
                 {r.recommendation !== "Failed" && r.confidence !== null && (
-                  <span className="rounded-sm bg-slate-800 px-1 py-px text-[9px] text-slate-400">
-                    {r.confidence}/100
+                  <span title={CONFIDENCE_EXPLANATION} className="rounded-sm bg-slate-800 px-1 py-px text-[9px] text-slate-400">
+                    AI score {r.confidence}/100
                   </span>
                 )}
                 {r.price_at_run !== null && (

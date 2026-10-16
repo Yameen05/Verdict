@@ -29,24 +29,13 @@ function money(value: number): string {
 
 function actionText(
   research: ResearchResponse | null,
-  timing: TimingAssessment | null,
+  _timing: TimingAssessment | null,
 ): string {
   const rec = research?.report.recommendation;
-  const timingAction = timing?.action;
   const horizon = horizonLabel(research?.report.horizon_days ?? null);
-  if (rec === "Sell" || timingAction === "avoid") {
-    return `Leans sell/avoid right now. If you already own it, consider trimming or exiting unless you have a separate long-term reason to hold. Re-check before holding past ${horizon}.`;
-  }
-  if (timingAction === "wait_pullback") {
-    return `If you already own it, holding can be reasonable; for new money, the timing read says wait for a better entry. Reassess around ${horizon}.`;
-  }
-  if (rec === "Buy" || timingAction === "buy_now" || timingAction === "accumulate") {
-    return `Leans hold/add carefully for this setup. Do not add all at once; reassess around ${horizon} or if the verdict changes.`;
-  }
-  if (rec === "Hold" || timingAction === "wait_watch") {
-    return `Leans hold/watch. The app does not see enough edge to add aggressively or sell urgently. Reassess around ${horizon}.`;
-  }
-  return "Run Analyze and the timing check to get a sell/hold/add read for this position.";
+  return rec && rec !== "Failed"
+    ? `General stock research: ${rec} over ${horizon}. This does not choose whether to buy, sell, hold or add to your position.`
+    : "Run Analyze to view the general stock research alongside this arithmetic.";
 }
 
 export function PositionTracker({
@@ -149,7 +138,7 @@ export function PositionTracker({
       <div className="mb-3">
         <h3 className="text-base font-semibold text-slate-100">What I already own</h3>
         <p className="mt-1 text-sm leading-6 text-slate-400">
-          Enter what you paid to see today's value, gain or loss, and the current hold/sell/add read.
+          Enter a purchase amount and price for position arithmetic using the available market data. This is not a brokerage balance or a trade instruction.
         </p>
       </div>
 
@@ -206,8 +195,7 @@ export function PositionTracker({
       {calc?.datePredatesHistory && (
         <p className="mt-2 text-[11px] text-amber-300/90">
           Your buy date is older than the price history available here, so the
-          derived buy price uses the oldest close we have. Enter your actual buy
-          price for exact numbers.
+          derived buy price uses the oldest close we have. Enter a purchase price to change the arithmetic; fees, taxes and actual execution details are not included.
         </p>
       )}
 

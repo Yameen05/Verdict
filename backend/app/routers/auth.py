@@ -28,12 +28,19 @@ from app.security import (
     verify_password,
 )
 from app.services.budgets import reserve_auth_attempt
+from app.services.legal_agreements import (
+    LEGAL_MANIFEST,
+    LegalAcceptance,
+    record_acceptance,
+    require_current_acceptance,
+)
 from app.services.mailer import email_configured
 
 router = APIRouter()
 
 
 class BootstrapRequest(BaseModel):
+    legal_acceptance: LegalAcceptance | None = None
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=15, max_length=128)
 
@@ -49,6 +56,7 @@ async def auth_status(db: AsyncSession = Depends(session_scope)) -> dict:
     settings = get_settings()
     return {
         "bootstrap_required": count == 0,
+        "legal_manifest": LEGAL_MANIFEST,
         "public_signup_enabled": settings.public_signup_enabled,
         # The forgot-password flow only works when the server can send email.
         "password_reset_available": email_configured(),
@@ -75,6 +83,7 @@ async def bootstrap(
     if count:
         raise HTTPException(status_code=404, detail="Not found")
 
+    require_current_acceptance(body.legal_acceptance)
     email = normalize_email(body.email)
     validate_password(body.password)
     user = User(email=email, password_hash=hash_password(body.password), role="owner")
@@ -90,6 +99,7 @@ async def bootstrap(
         request,
         user,
     )
+    await record_acceptance(db, request, user.id)
     await record_audit(db, request, "owner_bootstrapped", user_id=user.id)
     await db.commit()
     set_session_cookie(response, raw_token)

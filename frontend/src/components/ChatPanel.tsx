@@ -12,31 +12,16 @@ type ThreadEntry =
   | { kind: "error"; message: string };
 
 const SUGGESTED_PROMPT_GROUPS = [
-  {
-    label: "Money",
-    prompts: [
-      "If I put $200 in today, what could it be worth in 1 week and 2 weeks?",
-      "I bought $100 last week. Am I up or down right now?",
-      "If I hold another 2 weeks, what return range should I expect?",
-    ],
-  },
-  {
-    label: "Buy / sell",
-    prompts: [
-      "Should I buy now, wait, or avoid it for a 2-week hold?",
-      "If I already own it, should I sell today or keep holding?",
-      "What price move would make you change the call?",
-    ],
-  },
-  {
-    label: "Understand it",
-    prompts: [
-      "Explain the verdict like I am new to stocks.",
-      "Why this call and not the opposite? What's the other side?",
-      "What is the biggest risk that could make it drop?",
-      "What would have to happen for you to change the call?",
-    ],
-  },
+  { label: "Historical examples", prompts: [
+    "Apply the historical 1-week and 2-week swings to a hypothetical $200. Show the arithmetic, not a forecast.",
+    "What does the AI assessment score mean?",
+  ] },
+  { label: "Stock research", prompts: [
+    "What evidence supports the Buy/Hold/Sell assessment?",
+    "What price move or new evidence would change the call?",
+    "Explain the verdict like I am new to stocks.",
+    "What is the strongest opposing argument and the biggest risk?",
+  ] },
 ];
 
 export function ChatPanel({ ticker, research }: Props) {
@@ -207,7 +192,7 @@ export function ChatPanel({ ticker, research }: Props) {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={`Ask anything about ${ticker}…`}
+              placeholder={`Ask about ${ticker}'s research…`}
               disabled={busy}
               className="flex-1 rounded-full border border-slate-700 bg-slate-950 px-4 py-2 text-sm placeholder-slate-600 focus:border-indigo-500 focus:outline-hidden focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
             />
@@ -220,8 +205,7 @@ export function ChatPanel({ ticker, research }: Props) {
             </button>
           </form>
           <p className="mt-2 text-[10px] text-slate-500">
-            Informational only · not investment advice · estimates use the metrics
-            already on screen.
+            General research and hypothetical arithmetic only. Questions and recent chat may be sent to the configured AI provider; do not enter sensitive personal information.
           </p>
         </>
       )}

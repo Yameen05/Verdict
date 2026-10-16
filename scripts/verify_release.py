@@ -32,19 +32,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend-image", default="verdict-security-backend:audit")
     parser.add_argument("--frontend-image", default="verdict-security-frontend:audit")
+    parser.add_argument("--browser-check", action="store_true", help="Also verify signup in isolated local Chrome")
     args = parser.parse_args()
     project = "verdict-release-" + secrets.token_hex(4)
     with tempfile.TemporaryDirectory(prefix=project) as folder:
         folder = Path(folder)
         http_port, https_port = unused_port(), unused_port()
         token = secrets.token_urlsafe(48)
+        manifest = json.loads((ROOT / "backend/app/legal_manifest.json").read_text())
+        acceptance = {"accepted": True, "content_sha256": manifest["content_sha256"],
+                      **{f"{key}_version": value for key, value in manifest["versions"].items()}}
         env = folder / "test.env"
         env.write_text(f'''ENVIRONMENT=production
 SESSION_COOKIE_SECURE=true
 AUTH_BOOTSTRAP_TOKEN={token}
 ALLOWED_HOSTS=verdict.test
-CORS_ORIGINS=https://verdict.test
-APP_PUBLIC_URL=https://verdict.test
+CORS_ORIGINS=https://verdict.test:{https_port}
+APP_PUBLIC_URL=https://verdict.test:{https_port}
 DOCS_ENABLED=false
 PUBLIC_SIGNUP_ENABLED=true
 ALERTS_CHECK_SECONDS=0
@@ -149,9 +153,15 @@ server {
             assert request("GET", "/api/auth/me")[0] == 401
             assert request("GET", "/api/auth/status", headers={"Host": "evil.example"})[0] == 400
             assert request("POST", "/api/auth/register", {"email": "early@example.com", "password": "A-long-password-123"})[0] == 403
+            for invalid in (None, {**acceptance, "accepted": False}, {**acceptance, "terms_version": "old"}):
+                body = {"email": "owner@example.com", "password": "A-long-test-password-123"}
+                if invalid is not None:
+                    body["legal_acceptance"] = invalid
+                assert request("POST", "/api/auth/bootstrap", body, headers={"X-Bootstrap-Token": token})[0] == 428
             status, headers, raw = request("POST", "/api/auth/bootstrap", {
                 "email": "owner@example.com", "password": "A-long-test-password-123",
-            }, headers={"X-Bootstrap-Token": token, "Origin": "https://verdict.test"})
+                "legal_acceptance": acceptance,
+            }, headers={"X-Bootstrap-Token": token, "Origin": f"https://verdict.test:{https_port}"})
             assert status == 201, f"bootstrap status {status}"
             cookie = headers["set-cookie"]
             assert all(value in cookie for value in ("__Host-verdict_session", "Secure", "HttpOnly", "SameSite=strict", "Path=/"))
@@ -170,7 +180,9 @@ server {
             assert api_headers["x-frame-options"] == "DENY"
             assert "Strict-Transport-Security".lower() in api_headers
             assert request("POST", "/api/auth/register", {"email": "member@example.com",
-                           "password": "A-long-member-password-123"})[0] == 201
+                           "password": "A-long-member-password-123", "legal_acceptance": acceptance})[0] == 201
+            if args.browser_check:
+                run(["node", str(ROOT / "scripts/verify_signup_flow.mjs"), f"https://verdict.test:{https_port}"], cwd=ROOT)
             # A member cannot read the owner's position even with its valid session.
             _, member_headers, _ = request("POST", "/api/auth/login", {
                 "email": "member@example.com", "password": "A-long-member-password-123"})
@@ -185,9 +197,15 @@ server {
 from app.persistence.db import session_scope, save_run
 from app.schemas.research import ResearchResponse, ResearchReport, SECFindings, NewsFindings, MetricsFindings, InsiderFindings
 from app.config import get_settings
+from app.persistence.agreements import LegalAcceptanceRecord
+from app.services.legal_agreements import LEGAL_MANIFEST
+from sqlalchemy import select
 async def main():
  p = ResearchResponse(ticker="TEST",sec=SECFindings(status="skipped"),news=NewsFindings(status="skipped"),metrics=MetricsFindings(status="ok",current_price=10),insider=InsiderFindings(status="skipped"),report=ResearchReport(ticker="TEST",recommendation="Buy",justification="Synthetic release-test fixture",confidence=70,company_overview="",financial_health=""))
  async for db in session_scope():
+  records = (await db.scalars(select(LegalAcceptanceRecord))).all()
+  assert len(records) >= 2
+  assert all(r.content_sha256 == LEGAL_MANIFEST["content_sha256"] and r.accepted_at for r in records)
   await save_run(db,ticker="TEST",recommendation="Buy",justification="Synthetic release-test fixture",sentiment_score=None,payload=p.model_dump(),horizon_days=14,llm_model=get_settings().llm_model)
   break
 asyncio.run(main())
@@ -207,7 +225,7 @@ asyncio.run(main())
             assert status == 200 and json.loads(raw)["position"]["amount_usd"] == 100
             assert request("POST", "/api/auth/logout", owner=True)[0] == 204
             assert request("GET", "/api/auth/me", owner=True)[0] == 401
-            print("PASS: production settings, healthy containers, TLS, secure cookies, bootstrap guard, host/origin/CSRF, user isolation, body cap, cached SSE, backup verification, restart persistence, and logout revocation")
+            print("PASS: production settings, healthy containers, TLS, secure cookies, bootstrap guard, current-document signup enforcement and persisted agreement evidence, host/origin/CSRF, user isolation, body cap, cached SSE, backup verification, restart persistence, and logout revocation")
         except Exception:
             subprocess.run(
                 compose + ["logs", "--tail", "100"], check=False, text=True)

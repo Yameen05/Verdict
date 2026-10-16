@@ -1,3 +1,4 @@
+import legalManifest from "../lib/legalManifest.json";
 /** Authentication + invite endpoints. Re-exported through client.ts. */
 
 import { BASE_URL, clearCsrfToken, errorFromResponse, requestHeaders } from "./http";
@@ -43,8 +44,23 @@ async function authJson<T>(
   return (await res.json()) as T;
 }
 
+export interface LegalManifest {
+  versions: { terms: string; risk: string; privacy: string };
+  content_sha256: string;
+}
+export function legalDocumentsCurrent(remote: LegalManifest | undefined): boolean {
+  return !!remote && remote.content_sha256 === legalManifest.content_sha256 &&
+    Object.entries(legalManifest.versions).every(([key, value]) => remote.versions[key as keyof LegalManifest["versions"]] === value);
+}
+export function explicitLegalAcceptance() {
+  return { accepted: true, terms_version: legalManifest.versions.terms,
+    risk_version: legalManifest.versions.risk, privacy_version: legalManifest.versions.privacy,
+    content_sha256: legalManifest.content_sha256 };
+}
+
 export interface AuthStatus {
   bootstrap_required: boolean;
+  legal_manifest: LegalManifest;
   public_signup_enabled: boolean;
   password_reset_available: boolean;
   google_client_id: string | null;
@@ -54,16 +70,17 @@ export const authApi = {
   status: () => authJson<AuthStatus>("/auth/status"),
   me: () => authJson<AuthSession>("/auth/me"),
   googleNonce: () => authJson<{ nonce: string }>("/auth/google/nonce"),
-  googleLogin: (credential: string, inviteCode: string) =>
+  googleLogin: (credential: string, inviteCode: string, accepted = false) =>
     authJson<AuthSession>("/auth/google", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential, invite_code: inviteCode }),
+      body: JSON.stringify({ credential, invite_code: inviteCode, ...(accepted ? {legal_acceptance: explicitLegalAcceptance()} : {}) }),
     }),
   bootstrap: (
     email: string,
     password: string,
     bootstrapToken: string,
+    accepted: boolean,
   ) =>
     authJson<AuthSession>("/auth/bootstrap", {
       method: "POST",
@@ -71,7 +88,7 @@ export const authApi = {
         "Content-Type": "application/json",
         "X-Bootstrap-Token": bootstrapToken,
       },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...(accepted ? {legal_acceptance: explicitLegalAcceptance()} : {}) }),
     }),
   login: (email: string, password: string) =>
     authJson<AuthSession>("/auth/login", {
@@ -79,13 +96,14 @@ export const authApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     }),
-  register: (inviteCode: string, email: string, password: string) =>
+  register: (inviteCode: string, email: string, password: string, accepted: boolean) =>
     authJson<AuthSession>("/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // Omit the code entirely for open-signup registrations.
       body: JSON.stringify({
         ...(inviteCode ? { invite_code: inviteCode } : {}),
+        ...(accepted ? {legal_acceptance: explicitLegalAcceptance()} : {}),
         email,
         password,
       }),

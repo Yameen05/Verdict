@@ -544,3 +544,66 @@ names above describe the relevant behavior; tests provide reproduction evidence.
 - [`backend/app/tests/test_mailer.py:112`](../backend/app/tests/test_mailer.py#L112) — `def test_implicit_tls`
 - [`backend/app/tests/test_password_reset.py:183`](../backend/app/tests/test_password_reset.py#L183) — `async def test_failed_delivery`
 - [`frontend/src/lib/safeUrl.test.ts:4`](../frontend/src/lib/safeUrl.test.ts#L4) — `describe(`
+
+## Follow-up: research boundaries, privacy and explicit signup agreement
+
+The original scanner counts and evidence above describe the original audited
+snapshot. This follow-up keeps those historical artifacts and records its current
+checks in `security-audit/followup-validation.json`.
+
+- Replaced the false absolute exclusion of personal details from provider traffic:
+  questions, recent chat history and supplied report context can contain personal
+  information and can reach the configured AI provider. Privacy now describes
+  actual workspace/shared-research/audit/agreement data, unknown operator/provider
+  settings and the absence of a self-service deletion/request channel.
+- Kept general stock Buy/Hold/Sell and authentic issued prediction values, dates
+  and horizons. Shared policy guards cover common personal trade, allocation,
+  holding and earnings requests before calculator/LLM spending. Model instructions
+  and an output backstop reinforce the same boundary; a regex classifier is not
+  complete protection against every wording. General evidence explanations and
+  explicitly hypothetical historical arithmetic remain available. Removed
+  deterministic personal actions and compounding future-account projections.
+- Changed score presentation throughout reports, history, chart/timing surfaces,
+  scoreboard/diagnostics and exports to AI assessment/setup scores on a 0–100
+  scale. Explain that these are not verified profit odds or calibrated accuracy,
+  and Hold is not a validated 50/50. Existing statistics/formulas and stored scores
+  are preserved; a Brier-style diagnostic using score/100 does not establish
+  probability calibration or validate future performance.
+- Added an initially unchecked, separate agreement step with readable Terms,
+  Risk & Data Disclosure and Privacy Policy, prominent possible-loss notice and
+  qualified liability language preserving non-waivable rights. No marketing or
+  unrelated processing consent, arbitrary liability cap, billing/arbitration
+  scheme, legal entity or governing jurisdiction was invented.
+- Enforced explicit **current** document versions and content fingerprint on
+  owner bootstrap, public/invite email and first-time Google creation. Atomic
+  per-user evidence stores server time and versions with an audit event. Existing
+  accounts/logins/authorized linking are usable; migrations do not backfill
+  consent. Google 428 rejection creates no account/identity and leaves the invite
+  unused while consuming the challenge, so the next attempt needs a fresh nonce.
+- Rejection/persistence/migration tests cover omitted, false and individually
+  stale versions/fingerprints, caller-supplied timestamp rejection, successful
+  routes and pre-feature login. Existing auth/race tests explicitly provide
+  synthetic agreement; there is no test-client auto-consent injection.
+
+The [comparison note](TERMS_COMPARISON_2026-10-15.md) cites current official
+Seeking Alpha and TradingView terms, paraphrases lessons and explains the
+proportionate original Verdict choices and rejected clauses. These are product
+safeguards and template copy, not a determination of registration, exemption,
+contract enforceability or immunity. Operator identity/contact/jurisdiction,
+monetization/conflicts, privacy retention/deletion procedure, provider settings
+and data licenses remain public-launch inputs alongside the operational/security
+gates already documented.
+
+Actual local-browser evidence is separately identified in
+`security-audit/signup-flow-validation.json`, with a clean agreement screenshot.
+A real synthetic email signup is exercised against the disposable production
+instance; Google UI uses local test doubles and backend tests use locally signed
+JWTs. Live Google and user credentials are not part of this verification.
+
+Follow-up validation: **430 backend tests and 85 frontend tests pass**, with Ruff,
+Bandit, pip-audit/npm audit, TypeScript/build, both images, secret scanning and the
+isolated production/browser exercise. Current native-image rescans retain the
+same 164 backend advisories (44 high package matches, eight unique high CVEs;
+none fixable) and zero frontend advisories. The optional unused Gunicorn control
+socket is disabled so the read-only production filesystem does not produce a
+control-socket startup error. No dependency or runtime security gate was waived.

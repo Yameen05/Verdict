@@ -1,4 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { legalDocumentsCurrent } from "../api/auth";
+import { ApiError } from "../api/http";
 import {
   authApi,
   setCsrfToken,
@@ -7,6 +9,7 @@ import {
 } from "../api/client";
 import { LegalModal } from "./LegalModal";
 import { GoogleSignIn } from "./GoogleSignIn";
+import { SignupAgreement } from "./SignupAgreement";
 
 type View =
   | "loading"
@@ -29,6 +32,9 @@ export function AuthGate({ children }: Props) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [agreementMode, setAgreementMode] = useState<"email" | "google" | null>(null);
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [googleAgreed, setGoogleAgreed] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -89,12 +95,23 @@ export function AuthGate({ children }: Props) {
       setError("Passwords do not match.");
       return;
     }
+    if (view === "bootstrap" || view === "register") {
+      if (agreementMode !== "email") {
+        setAgreementAccepted(false);
+        setAgreementMode("email");
+        return;
+      }
+      if (!agreementAccepted || !legalDocumentsCurrent(authStatus?.legal_manifest)) {
+        setError("Explicit agreement to the current documents is required.");
+        return;
+      }
+    }
     setBusy(true);
     try {
       if (view === "bootstrap") {
-        acceptSession(await authApi.bootstrap(email, password, bootstrapToken));
+        acceptSession(await authApi.bootstrap(email, password, bootstrapToken, agreementAccepted));
       } else if (view === "register") {
-        acceptSession(await authApi.register(inviteCode.trim(), email, password));
+        acceptSession(await authApi.register(inviteCode.trim(), email, password, agreementAccepted));
         setInviteCode("");
       } else {
         acceptSession(await authApi.login(email, password));
@@ -131,12 +148,22 @@ export function AuthGate({ children }: Props) {
     setNotice("");
     setBusy(true);
     try {
-      acceptSession(await authApi.googleLogin(credential, inviteCode.trim()));
+      const accepted = agreementMode === "google" && agreementAccepted &&
+        googleAgreed && legalDocumentsCurrent(authStatus?.legal_manifest);
+      acceptSession(await authApi.googleLogin(credential, inviteCode.trim(), accepted));
       setInviteCode("");
       setPassword("");
       setConfirmPassword("");
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 428) {
+        setView("register");
+        setAgreementMode("google");
+        setAgreementAccepted(false);
+        setGoogleAgreed(false);
+        setError("No account was created. Review the documents, then agree and restart Google signup.");
+      } else {
+        setError((e as Error).message);
+      }
       throw e;
     } finally {
       setBusy(false);
@@ -254,6 +281,39 @@ export function AuthGate({ children }: Props) {
     );
   }
 
+  if (agreementMode && (view === "register" || view === "bootstrap")) {
+    const current = legalDocumentsCurrent(authStatus?.legal_manifest);
+    return (
+      <AuthShell title="Account agreement" subtitle="Step 2 of 2 · Account creation requires your explicit agreement.">
+        <form className="space-y-4" onSubmit={agreementMode === "email" ? submitCredentials : event => {
+          event.preventDefault();
+          if (agreementAccepted && current) setGoogleAgreed(true);
+        }}>
+          <SignupAgreement checked={agreementAccepted} current={current} onChange={value => {
+            setAgreementAccepted(value);
+            setGoogleAgreed(false);
+          }} />
+          <ErrorMessage message={error} />
+          {agreementMode === "google" && googleAgreed && authStatus?.google_client_id ? (
+            <GoogleSignIn key="agreed-google-signup" clientId={authStatus.google_client_id}
+              disabled={busy || !agreementAccepted || !current} signup onCredential={signInWithGoogle} />
+          ) : (
+            <SubmitButton busy={busy} disabled={!agreementAccepted || !current} label={
+              agreementMode === "google" ? "I agree — continue to Google signup" :
+              view === "bootstrap" ? "I agree — create owner account" : "I agree — create my account"
+            } />
+          )}
+          <button type="button" disabled={busy} onClick={() => {
+            setAgreementMode(null);
+            setAgreementAccepted(false);
+            setGoogleAgreed(false);
+            setError("");
+          }} className="w-full text-xs text-slate-400 underline">Back without creating an account</button>
+        </form>
+      </AuthShell>
+    );
+  }
+
   const isBootstrap = view === "bootstrap";
   const isRegister = view === "register";
   const publicSignup = authStatus?.public_signup_enabled ?? false;
@@ -271,7 +331,7 @@ export function AuthGate({ children }: Props) {
       }
       subtitle={
         isBootstrap
-          ? "This one-time setup closes permanently after the first account is created."
+          ? "Owner setup requires the bootstrap token and explicit account agreement."
           : isRegister
           ? publicSignup
             ? "Free to join. Research runs are shared and daily quotas keep things fair."
@@ -293,8 +353,8 @@ export function AuthGate({ children }: Props) {
           />
         )}
         {!isBootstrap && authStatus?.google_client_id && (
-          <GoogleSignIn clientId={authStatus.google_client_id} disabled={busy}
-            onCredential={signInWithGoogle} />
+          isRegister ? <button type="button" disabled={busy} onClick={()=>{setAgreementMode("google");setAgreementAccepted(false);setGoogleAgreed(false);setError("");}} className="w-full rounded-full border border-slate-600 px-4 py-2 text-sm text-slate-200">Continue with Google signup</button>
+          : <GoogleSignIn clientId={authStatus.google_client_id} disabled={busy} onCredential={signInWithGoogle} />
         )}
         <Field
           label="Email"
@@ -340,9 +400,9 @@ export function AuthGate({ children }: Props) {
           busy={busy}
           label={
             isBootstrap
-              ? "Create owner account"
+              ? "Review owner account agreement"
               : isRegister
-              ? "Create my account"
+              ? "Review account agreement"
               : "Continue securely"
           }
         />
@@ -364,6 +424,7 @@ export function AuthGate({ children }: Props) {
             type="button"
             onClick={() => {
               setView(isRegister ? "login" : "register");
+              setAgreementMode(null); setAgreementAccepted(false); setGoogleAgreed(false);
               setError("");
               setNotice("");
             }}
@@ -413,13 +474,13 @@ function AuthShell({
           Every stock gets a trial.
         </p>
         <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-500">
-          Educational research tool — not investment advice. By continuing you accept the{" "}
+          General research · AI scores are not profit odds. Read the{" "}
           <button
             type="button"
             onClick={() => setLegalOpen(true)}
             className="underline decoration-slate-600 underline-offset-2 hover:text-slate-300"
           >
-            terms, privacy policy, and risk disclosure
+            Terms of Service, Privacy Notice, and Risk & Data Disclosure
           </button>
           .
         </p>
@@ -479,10 +540,10 @@ function NoticeMessage({ message }: { message: string }) {
   ) : null;
 }
 
-function SubmitButton({ busy, label }: { busy: boolean; label: string }) {
+function SubmitButton({ busy, label, disabled = false }: { busy: boolean; label: string; disabled?: boolean }) {
   return (
     <button
-      disabled={busy}
+      disabled={busy || disabled}
       className="w-full rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-950/50 transition hover:bg-indigo-500 disabled:opacity-50"
       type="submit"
     >

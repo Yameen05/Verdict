@@ -144,7 +144,7 @@ class ResearchReport(BaseModel):
     key_risks: list[str] = Field(default_factory=list)
     news_summary: str | None = None
     # --- verdict extensions (all optional so pre-debate stored runs still parse) ---
-    confidence: int | None = Field(default=None, ge=0, le=100)
+    confidence: int | None = Field(default=None, ge=0, le=100, description="Uncalibrated AI evidence assessment score; not verified odds of profit or guaranteed accuracy")
     scores: DimensionScores | None = None
     falsifiers: list[str] = Field(default_factory=list)
     dissent: str | None = None  # strongest opposing argument the judge overruled

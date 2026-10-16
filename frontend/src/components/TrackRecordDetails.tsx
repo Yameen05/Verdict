@@ -1,3 +1,4 @@
+import { CONFIDENCE_EXPLANATION, TRACK_RECORD_EXPLANATION } from "../lib/confidence";
 import { useEffect, useRef, useState } from "react";
 import { api, type ScoreboardDetail } from "../api/client";
 import { downloadReportMarkdown } from "../lib/exportMarkdown";
@@ -8,7 +9,7 @@ import { ReportPanel } from "./ReportPanel";
 import { VerdictCard, horizonLabel } from "./VerdictCard";
 
 function exportDetail(detail: ScoreboardDetail) {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(detail, null, 2)], { type: "application/json" }));
+  const url = URL.createObjectURL(new Blob([JSON.stringify({ ...detail, score_explanation: CONFIDENCE_EXPLANATION, track_record_explanation: TRACK_RECORD_EXPLANATION }, null, 2)], { type: "application/json" }));
   const link = document.createElement("a");
   link.href = url;
   link.download = `verdict-${detail.entry.ticker}-${detail.entry.id}.json`;
@@ -64,6 +65,7 @@ export function TrackRecordDetails({ id, onClose, refreshKey }: {
               <span className="text-xs text-slate-400">{confidenceLabel(entry)}</span>
             </div>
             <p className="mt-2 text-sm text-slate-300">{entry.status_reason}</p>
+            <p className="mt-2 text-xs leading-5 text-slate-400">{CONFIDENCE_EXPLANATION} {TRACK_RECORD_EXPLANATION}</p>
             <p className="mt-2 text-sm text-amber-200">{predictionTypeLabel[entry.prediction_kind ?? "ai"]}{entry.analysis_warning ? ` · Analysis incomplete. ${entry.analysis_warning}` : ""}</p>
             <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
               {[

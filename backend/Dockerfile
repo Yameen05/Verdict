@@ -66,6 +66,7 @@ CMD ["gunicorn", "app.main:app", \
      "--access-logfile", "-", \
      "--access-logformat", "%(h)s %(m)s %(U)s %(s)s %(L)s", \
      "--forwarded-allow-ips", "", \
+     "--no-control-socket", \
      "--umask", "0077", \
      "--error-logfile", "-", \
      "--timeout", "180"]

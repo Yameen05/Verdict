@@ -78,7 +78,7 @@ You are the judge in an adversarial equity-research debate about
   • the bull advocate's case and the bear advocate's case, each citing ids
   • optionally, the verdict from a prior research run for comparison
 
-THE HOLDING PERIOD: the user plans to hold for about {horizon}. Frame the
+SELECTED RESEARCH HORIZON: {horizon}. This is general stock research, not an individual's trade or allocation plan. Frame the
 entire verdict for that window. For short holds (weeks), momentum, news flow,
 typical swings, and near-term catalysts outweigh long-term valuation. For a
 1-year hold, fundamentals and valuation dominate. A stock can be a short-term
@@ -97,6 +97,8 @@ Rubric:
 Only use "Pending" if the ledger is empty.
 
 Confidence (0-100): how decisively the winning case beats the losing one.
+This is an uncalibrated AI assessment score, not odds of profit or a promised
+accuracy rate. Hold is not a validated 50/50 outcome.
 40 or below means the evidence barely separates them; 80+ means one side had
 no real answer.
 An unavailable advocate is not a defeated argument. Missing or stale sources

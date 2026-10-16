@@ -12,7 +12,7 @@ interface GoogleAccounts {
     type: "standard";
     theme: "outline";
     size: "large";
-    text: "signin_with";
+    text: "signin_with" | "signup_with";
     shape: "pill";
     width: number;
   }) => void;
@@ -52,8 +52,9 @@ function loadGoogle(): Promise<GoogleAccounts> {
   return scriptPromise;
 }
 
-export function GoogleSignIn({ clientId, disabled, onCredential }: {
+export function GoogleSignIn({ clientId, disabled, onCredential, signup = false }: {
   clientId: string;
+  signup?: boolean;
   disabled: boolean;
   onCredential: (credential: string) => Promise<void>;
 }) {
@@ -93,7 +94,7 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
         });
         google.renderButton(container.current, {
           type: "standard", theme: "outline", size: "large",
-          text: "signin_with", shape: "pill",
+          text: signup ? "signup_with" : "signin_with", shape: "pill",
           width: Math.min(400, container.current.clientWidth),
         });
         setLoading(false);
@@ -106,7 +107,7 @@ export function GoogleSignIn({ clientId, disabled, onCredential }: {
     }
     void prepare();
     return () => { cancelled = true; };
-  }, [clientId, attempt]);
+  }, [clientId, attempt, signup]);
 
   return (
     <div className="space-y-3">

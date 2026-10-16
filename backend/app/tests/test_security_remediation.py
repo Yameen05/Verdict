@@ -20,6 +20,7 @@ from app.persistence.db import PasswordResetToken, User, get_sessionmaker
 from app.resource_limits import ResourceLimitsMiddleware
 from app.security import token_digest
 from app.services.budgets import reserve_provider_operation
+from app.services.legal_agreements import current_legal_acceptance
 
 SECURE = dict(environment="production", session_cookie_secure=True, docs_enabled=False,
               cors_origins="https://verdict.example.com", allowed_hosts="verdict.example.com",
@@ -46,9 +47,9 @@ def test_signup_cannot_lock_out_first_owner(monkeypatch):
     monkeypatch.setenv("PUBLIC_SIGNUP_ENABLED", "true")
     get_settings.cache_clear()
     with TestClient(create_app()) as visitor:
-        res = visitor.post("/auth/register", json={
+        res = visitor.post("/auth/register", json=dict({
             "email": "member@example.com", "password": "A-new-long-password-123",
-        })
+        }, legal_acceptance=current_legal_acceptance()))
         assert res.status_code == 403
         assert visitor.get("/auth/status").json()["bootstrap_required"] is True
 
@@ -102,10 +103,10 @@ async def test_concurrent_invite_has_only_one_member(client):
     code = client.post("/auth/invites", json={"note": "race"}).json()["code"]
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()),
                                 base_url="http://testserver") as c:
-        responses = await asyncio.gather(*(c.post("/auth/register", json={
+        responses = await asyncio.gather(*(c.post("/auth/register", json=dict({
             "invite_code": code, "email": f"member{i}@example.com",
             "password": "A-member-long-password-123",
-        }) for i in range(2)))
+        }, legal_acceptance=current_legal_acceptance())) for i in range(2)))
     assert sorted(r.status_code for r in responses) == [201, 401]
     async with get_sessionmaker()() as db:
         assert len((await db.scalars(select(User))).all()) == 2
@@ -246,7 +247,7 @@ async def test_owner_setup_recovers_pre_owner_members_without_deleting_them():
         assert c.get("/auth/status").json()["bootstrap_required"] is True
         response = c.post("/auth/bootstrap", headers={
             "X-Bootstrap-Token": "test-bootstrap-token-with-at-least-32-characters",
-        }, json={"email": "owner@example.com", "password": "A-strong-test-password-123"})
+        }, json=dict({"email": "owner@example.com", "password": "A-strong-test-password-123"}, legal_acceptance=current_legal_acceptance()))
         assert response.status_code == 201
         async with get_sessionmaker()() as db:
             users = (await db.scalars(select(User))).all()

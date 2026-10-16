@@ -38,6 +38,11 @@ from app.security import (
     validate_password,
 )
 from app.services.budgets import reserve_auth_attempt
+from app.services.legal_agreements import (
+    LegalAcceptance,
+    record_acceptance,
+    require_current_acceptance,
+)
 
 router = APIRouter()
 
@@ -49,6 +54,7 @@ class InviteCreateRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
+    legal_acceptance: LegalAcceptance | None = None
     # Optional when PUBLIC_SIGNUP_ENABLED=true; required (and validated)
     # whenever a code is supplied.
     invite_code: str | None = Field(default=None, min_length=8, max_length=128)
@@ -170,6 +176,7 @@ async def register(
         await db.commit()
         raise HTTPException(status_code=401, detail="An invite code is required to register")
 
+    require_current_acceptance(body.legal_acceptance)
     email = normalize_email(body.email)
     validate_password(body.password)
 
@@ -201,6 +208,7 @@ async def register(
             await db.rollback()
             raise HTTPException(status_code=401, detail="Invalid or expired invite code")
 
+    await record_acceptance(db, request, user.id)
     user_session, raw_token = await create_session(
         db, request, user
     )

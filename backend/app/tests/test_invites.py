@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.services.legal_agreements import current_legal_acceptance
+
 
 def _create_invite(client, note="for a friend"):
     res = client.post("/auth/invites", json={"note": note})
@@ -12,7 +14,7 @@ def _create_invite(client, note="for a friend"):
 def _register(client, code, email="friend@example.com", password="A-strong-member-pass-123"):
     return client.post(
         "/auth/register",
-        json={"invite_code": code, "email": email, "password": password},
+        json=dict({"invite_code": code, "email": email, "password": password}, legal_acceptance=current_legal_acceptance()),
     )
 
 

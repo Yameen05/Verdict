@@ -1,3 +1,4 @@
+import { SETUP_SCORE_EXPLANATION } from "../../lib/confidence";
 import { useState } from "react";
 import { api, type TimingAction, type TimingAssessment } from "../../api/client";
 import { InfoTip } from "../InfoTip";
@@ -13,23 +14,23 @@ const ACTION_STYLE: Record<TimingAction, string> = {
 const ACTION_HELP: Record<TimingAction, { title: string; body: string }> = {
   buy_now: {
     title: "Buy now",
-    body: "The setup looks good enough to enter now for the selected time window. It does not mean guaranteed profit.",
+    body: "The general setup assessment favors an entry scenario over this research window; it does not determine a suitable trade for an individual.",
   },
   accumulate: {
     title: "Accumulate gradually",
-    body: "Do not put all the money in at once. Split the buy into smaller chunks so a bad entry hurts less.",
+    body: "The assessment describes a staged-entry scenario. It does not choose a personal allocation or order size.",
   },
   wait_pullback: {
     title: "Wait for a pullback",
-    body: "The stock may be worth watching, but the current price looks stretched. Wait for a dip toward a better entry zone.",
+    body: "The stock may be worth watching, but the current price looks stretched. Its hypothetical entry scenario depends on a pullback.",
   },
   wait_watch: {
     title: "Wait and watch",
-    body: "The signals are mixed or unclear. Staying out for now is cleaner than forcing a trade.",
+    body: "The signals are mixed or unclear. The model has no clear general setup preference.",
   },
   avoid: {
     title: "Avoid for now",
-    body: "The current setup looks weak or too risky. Do not buy unless the chart, news, or fundamentals improve.",
+    body: "The current setup looks weak or too risky. The general research assessment depends on improvement in the evidence.",
   },
 };
 
@@ -164,8 +165,9 @@ export function TimingPanel({
               {data.action_label}
             </span>
             <span className="text-xs text-slate-400">
-              Confidence <span className="font-semibold text-slate-200">{data.confidence}%</span>
+              Setup score <span className="font-semibold text-slate-200">{data.confidence}/100</span>
             </span>
+            <span className="text-xs text-slate-500">{SETUP_SCORE_EXPLANATION}</span>
             <span className="text-xs text-slate-500">
               · {data.horizon_days}-day horizon · {data.source === "llm" ? "AI + technicals" : "rules + technicals"}
             </span>

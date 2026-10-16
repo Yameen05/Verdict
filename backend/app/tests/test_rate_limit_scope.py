@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.config import get_settings
 from app.limiter import limiter
+from app.services.legal_agreements import current_legal_acceptance
 
 BOOTSTRAP_TOKEN = "test-bootstrap-token-with-at-least-32-characters"
 
@@ -28,7 +29,7 @@ def capped_client(monkeypatch):
         created = client.post(
             "/auth/bootstrap",
             headers={"X-Bootstrap-Token": BOOTSTRAP_TOKEN},
-            json={"email": "owner@example.com", "password": "A-strong-test-password-123"},
+            json=dict({"email": "owner@example.com", "password": "A-strong-test-password-123"}, legal_acceptance=current_legal_acceptance()),
         )
         assert created.status_code == 201, created.text
         client.headers.update({"X-CSRF-Token": created.json()["csrf_token"]})

@@ -1,0 +1,6 @@
+{
+  "origin": "disposable local TLS instance",
+  "email_flow": "PASS: separate step, readable inline/modal documents, initially unchecked, disabled action, Back creates nothing and clears acceptance, mobile fit, accepted signup returns 201 and authenticated session",
+  "google_flow": "PASS with local GIS/API doubles: unknown login 428 opens unchecked agreement; acceptance precedes signup button and sends current versions with a fresh challenge. Real Google login not attempted; backend separately tests locally signed JWTs.",
+  "live_google_verified": false
+}

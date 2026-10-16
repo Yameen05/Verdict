@@ -261,3 +261,65 @@ OS security updates; digest-pinned bases and Python constraints require reviewed
 updates. Keep one backend worker. Scaling requires coordinated background jobs,
 shared limits and a database concurrency/recovery design; enabling Redis alone
 is not a complete scaling solution.
+
+## 8. Signup agreement and public-launch disclosures
+
+New-account creation now requires explicit agreement to current Terms of Service,
+understanding of the Risk & Data Disclosure and receipt of the Privacy Notice.
+The separate signup step applies to owner bootstrap, public/invite email signup
+and first-time Google signup. A Google login for an unknown identity with no
+agreement returns HTTP 428 without creating an account; its single-use nonce is
+still consumed. Review the documents and restart Google with a fresh challenge.
+Existing password/linked-Google login and authenticated linking remain usable
+without fabricated acceptance records.
+
+`legal_acceptances` is an additive table keyed by user ID. Versions, source
+fingerprint and server UTC acceptance time are committed with account creation;
+`account_legal_agreement` also records request-associated audit evidence. Existing
+users receive no backfilled rows. This evidence records an affirmative request,
+not proof that a person read every word or that any clause is legally enforceable.
+
+When legal copy changes, assign new affected document versions, regenerate the
+SHA-256 of `frontend/src/lib/legal.ts`, and update **both**
+`backend/app/legal_manifest.json` and `frontend/src/lib/legalManifest.json` in the
+same release. The manifest-contract test rejects source/fingerprint drift. Deploy
+the matching frontend and backend together: stale frontend versions cannot create
+accounts. Retain the released source/artifact with each version in reviewed Git
+history. The software does not silently record later agreement for older users;
+any future reacceptance requirement needs a separate reviewed design.
+
+Before public launch, complete these deployment-specific inputs:
+
+- Actual operator/legal identity, jurisdiction, intended users, contact details
+  and free/subscription/advertising/affiliate model, including any conflicts.
+- Qualified review of research/recommendation behavior, applicable registration
+  or exemption requirements, agreement wording and non-waivable consumer rights.
+  Disclaimers are not immunity or a legal-compliance determination.
+- A real privacy-rights/deletion request channel and implemented procedure,
+  retention/backups schedule, provider/hosting inventory and processing settings.
+  This release has no self-service account deletion or implemented request channel.
+- Commercial/public-display/redistribution permission for configured data and AI
+  services. NewsAPI's Developer plan excludes staging/production; yfinance warns
+  about personal use. A working API key does not resolve these licenses.
+- The operational gates elsewhere in this document: public TLS/domain, provider
+  setup, SMTP/recovery, monitoring, off-host backup/restoration and unresolved
+  runtime-image advisories.
+
+See [the official-source comparison](TERMS_COMPARISON_2026-10-15.md). Keep copy
+aligned with actual behavior: chat questions/history can send personal details to
+AI providers, scores are model assessments rather than profit probabilities, and
+historical/practice outcomes do not forecast actual account returns.
+
+Optional actual-browser check on this Mac (requires installed local Chrome and
+`frontend/node_modules/puppeteer-core`; it uses a new temporary browser profile):
+
+```bash
+python3 scripts/verify_release.py --browser-check
+```
+
+It creates a synthetic email account in the disposable TLS instance, verifies the
+unchecked/disabled agreement step, readable inline/modal documents, Back/reset
+behavior and mobile width, and captures `security-audit/signup-agreement.png`.
+The Google UI handoff uses local GIS/API test doubles; backend JWT tests cover
+first-time agreement and challenge replay. Neither verifies live Google login or
+uses the user's Chrome profile/credentials.
